@@ -1,0 +1,28 @@
+# Node dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.*
+
+# Logs & caches
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+.parcel-cache/
+
+# Testing coverage
+coverage/
+
+# Editor directories & files
+.vscode/
+.idea/
+*.swp
+
+# macOS metadata
+.DS_Store
