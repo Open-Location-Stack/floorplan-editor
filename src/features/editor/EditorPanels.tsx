@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { DrawMode } from "../../components/MapCanvas";
 import {
   convertArea,
   convertLength,
@@ -6,79 +7,254 @@ import {
   featureLengthMeters,
 } from "../../lib/geometry/measurements";
 import { exportGeoJson, parseGeoJsonImport } from "../../lib/importExport/geojson";
-import type { FloorFeature, FloorOverlay } from "../../lib/types";
+import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay } from "../../lib/types";
 
 type EditorPanelsProps = {
+  buildings: Building[];
+  floors: Floor[];
+  selectedBuildingId: string;
+  selectedFloorId: string;
+  onSelectBuilding: (buildingId: string) => void;
+  onAddBuilding: () => void;
+  onDeleteBuilding: (buildingId: string) => void;
+  onRenameBuilding: (buildingId: string, name: string) => void;
+  onSelectFloor: (floorId: string) => void;
+  onAddFloor: () => void;
+  onDeleteFloor: (floorId: string) => void;
+  onRenameFloor: (floorId: string, name: string) => void;
   features: FloorFeature[];
   selectedFeatureId: string | undefined;
-  overlays: FloorOverlay[];
-  onSelect: (featureId: string | undefined) => void;
-  onAdd: (kind: "point" | "line" | "polygon") => void;
-  onDeleteSelected: () => void;
+  drawMode: DrawMode;
+  draftVertexCount: number;
+  selectedVertexIndex: number | undefined;
+  selectedVertexCoordinates: Coordinates | undefined;
+  isVertexMoveMode: boolean;
+  isAppendVertexMode: boolean;
+  onSelectFeature: (featureId: string | undefined) => void;
+  onStartDraw: (mode: "point" | "line" | "polygon") => void;
+  onCompleteDraw: () => void;
+  onCancelDraw: () => void;
+  onRemoveLastVertex: () => void;
+  onDeleteSelectedFeature: () => void;
+  onRenameSelectedFeature: (name: string) => void;
+  onSetSelectedFeatureKind: (kind: string) => void;
+  onSelectVertexIndex: (index: number | undefined) => void;
+  onUpdateSelectedVertex: (coordinates: Coordinates) => void;
+  onDeleteSelectedVertex: () => void;
+  onToggleVertexMoveMode: () => void;
+  onToggleAppendVertexMode: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onImport: (features: FloorFeature[]) => void;
-  onOverlayChange: (overlay: FloorOverlay) => void;
+  overlay: FloorOverlay | undefined;
+  onOverlayUpload: (file: File) => void;
+  onOverlayOpacityChange: (opacity: number) => void;
+  onOverlayRecenter: () => void;
+  onOverlayNudge: (dx: number, dy: number) => void;
+  onOverlayScale: (factor: number) => void;
+  onOverlayRotate: (degrees: number) => void;
+  onOverlayToggleLock: () => void;
 };
 
-const defaultOverlay = (): FloorOverlay => ({
-  id: "overlay-default",
-  floorId: "floor-1",
-  imageName: "",
-  imageDataUrl: "",
-  opacity: 70,
-  corners: {
-    topLeft: [0, 0],
-    topRight: [0.001, 0],
-    bottomRight: [0.001, -0.001],
-    bottomLeft: [0, -0.001],
-  },
-  updatedAt: new Date().toISOString(),
-});
+const isVertexEditable = (feature: FloorFeature | undefined): boolean =>
+  feature?.geometry.type === "LineString" || feature?.geometry.type === "Polygon";
+
+const vertexCountForFeature = (feature: FloorFeature | undefined): number => {
+  if (!feature) {
+    return 0;
+  }
+
+  if (feature.geometry.type === "LineString") {
+    return feature.geometry.coordinates.length;
+  }
+
+  if (feature.geometry.type === "Polygon") {
+    const ring = feature.geometry.coordinates[0] ?? [];
+    return Math.max(0, ring.length - 1);
+  }
+
+  if (feature.geometry.type === "Point") {
+    return 1;
+  }
+
+  return 0;
+};
 
 export const EditorPanels = ({
+  buildings,
+  floors,
+  selectedBuildingId,
+  selectedFloorId,
+  onSelectBuilding,
+  onAddBuilding,
+  onDeleteBuilding,
+  onRenameBuilding,
+  onSelectFloor,
+  onAddFloor,
+  onDeleteFloor,
+  onRenameFloor,
   features,
   selectedFeatureId,
-  overlays,
-  onSelect,
-  onAdd,
-  onDeleteSelected,
+  drawMode,
+  draftVertexCount,
+  selectedVertexIndex,
+  selectedVertexCoordinates,
+  isVertexMoveMode,
+  isAppendVertexMode,
+  onSelectFeature,
+  onStartDraw,
+  onCompleteDraw,
+  onCancelDraw,
+  onRemoveLastVertex,
+  onDeleteSelectedFeature,
+  onRenameSelectedFeature,
+  onSetSelectedFeatureKind,
+  onSelectVertexIndex,
+  onUpdateSelectedVertex,
+  onDeleteSelectedVertex,
+  onToggleVertexMoveMode,
+  onToggleAppendVertexMode,
   onUndo,
   onRedo,
   onImport,
-  onOverlayChange,
+  overlay,
+  onOverlayUpload,
+  onOverlayOpacityChange,
+  onOverlayRecenter,
+  onOverlayNudge,
+  onOverlayScale,
+  onOverlayRotate,
+  onOverlayToggleLock,
 }: EditorPanelsProps) => {
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState<string | undefined>();
+  const [exportText, setExportText] = useState("");
+  const [overlayFile, setOverlayFile] = useState<File | undefined>();
+
+  const selectedBuilding = useMemo(
+    () => buildings.find((building) => building.id === selectedBuildingId),
+    [buildings, selectedBuildingId],
+  );
+  const selectedFloor = useMemo(
+    () => floors.find((floor) => floor.id === selectedFloorId),
+    [floors, selectedFloorId],
+  );
   const selectedFeature = useMemo(
     () => features.find((feature) => feature.id === selectedFeatureId),
     [features, selectedFeatureId],
   );
 
-  const [importText, setImportText] = useState("");
-  const [importError, setImportError] = useState<string | undefined>();
-  const [exportText, setExportText] = useState("");
-
-  const overlay = overlays[0] ?? defaultOverlay();
-
   const lengthMeters = selectedFeature ? featureLengthMeters(selectedFeature) : 0;
   const areaSquareMeters = selectedFeature ? featureAreaSquareMeters(selectedFeature) : 0;
+
+  const vertexEditable = isVertexEditable(selectedFeature);
+  const vertexCount = vertexCountForFeature(selectedFeature);
 
   return (
     <div className="flex h-full flex-col gap-4">
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
-          <h2 className="card-title text-lg">Editing</h2>
+          <h2 className="card-title text-lg">Buildings & Floors</h2>
+
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              <select
+                className="select select-bordered select-sm w-full"
+                value={selectedBuildingId}
+                onChange={(event) => onSelectBuilding(event.currentTarget.value)}
+              >
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.id}>
+                    {building.name}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
+                Add
+              </button>
+              <button
+                className="btn btn-sm btn-error"
+                type="button"
+                disabled={buildings.length <= 1}
+                onClick={() => onDeleteBuilding(selectedBuildingId)}
+              >
+                Delete
+              </button>
+            </div>
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              value={selectedBuilding?.name ?? ""}
+              placeholder="Building name"
+              onChange={(event) => onRenameBuilding(selectedBuildingId, event.currentTarget.value)}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              <select
+                className="select select-bordered select-sm w-full"
+                value={selectedFloorId}
+                onChange={(event) => onSelectFloor(event.currentTarget.value)}
+              >
+                {floors
+                  .filter((floor) => floor.buildingId === selectedBuildingId)
+                  .map((floor) => (
+                    <option key={floor.id} value={floor.id}>
+                      {floor.name}
+                    </option>
+                  ))}
+              </select>
+              <button className="btn btn-sm" type="button" onClick={onAddFloor}>
+                Add
+              </button>
+              <button
+                className="btn btn-sm btn-error"
+                type="button"
+                disabled={floors.filter((floor) => floor.buildingId === selectedBuildingId).length <= 1}
+                onClick={() => onDeleteFloor(selectedFloorId)}
+              >
+                Delete
+              </button>
+            </div>
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              value={selectedFloor?.name ?? ""}
+              placeholder="Floor name"
+              onChange={(event) => onRenameFloor(selectedFloorId, event.currentTarget.value)}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="card bg-base-100 shadow">
+        <div className="card-body gap-3">
+          <h2 className="card-title text-lg">Drawing & Editing</h2>
           <div className="grid grid-cols-2 gap-2">
-            <button className="btn btn-sm" type="button" onClick={() => onAdd("point")}>
-              Add point
+            <button
+              className={`btn btn-sm ${drawMode === "point" ? "btn-primary" : ""}`}
+              type="button"
+              onClick={() => onStartDraw("point")}
+            >
+              Draw point
             </button>
-            <button className="btn btn-sm" type="button" onClick={() => onAdd("line")}>
-              Add line
+            <button
+              className={`btn btn-sm ${drawMode === "line" ? "btn-primary" : ""}`}
+              type="button"
+              onClick={() => onStartDraw("line")}
+            >
+              Draw line
             </button>
-            <button className="btn btn-sm" type="button" onClick={() => onAdd("polygon")}>
-              Add polygon
+            <button
+              className={`btn btn-sm ${drawMode === "polygon" ? "btn-primary" : ""}`}
+              type="button"
+              onClick={() => onStartDraw("polygon")}
+            >
+              Draw polygon
             </button>
-            <button className="btn btn-sm btn-error" type="button" onClick={onDeleteSelected}>
-              Delete selected
+            <button className="btn btn-sm" type="button" onClick={onCancelDraw}>
+              Select mode
             </button>
             <button className="btn btn-sm" type="button" onClick={onUndo}>
               Undo
@@ -87,37 +263,262 @@ export const EditorPanels = ({
               Redo
             </button>
           </div>
-          <p className="text-xs text-base-content/70">
-            Keyboard: Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y.
-          </p>
+          {drawMode === "select" || drawMode === "point" ? (
+            <p className="text-sm text-base-content/70">
+              Select features by clicking on the map. For lines/polygons, click map to add vertices and press Enter or Finish to commit.
+            </p>
+          ) : (
+            <div className="rounded-box bg-base-200 p-3 text-sm">
+              <div>Vertices in draft: {draftVertexCount}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className="btn btn-xs" type="button" onClick={onRemoveLastVertex}>
+                  Remove last vertex
+                </button>
+                <button className="btn btn-xs btn-primary" type="button" onClick={onCompleteDraw}>
+                  Finish shape
+                </button>
+                <button className="btn btn-xs" type="button" onClick={onCancelDraw}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
-          <ul className="menu max-h-56 rounded-box bg-base-200 p-2 text-sm">
+          <ul className="menu max-h-48 rounded-box bg-base-200 p-2 text-sm">
             {features.map((feature) => (
               <li key={feature.id}>
                 <button
                   type="button"
                   className={selectedFeatureId === feature.id ? "active" : ""}
-                  onClick={() => onSelect(feature.id)}
+                  onClick={() => onSelectFeature(feature.id)}
                 >
                   <span className="font-mono text-xs">{feature.geometry.type}</span>
                   <span>{feature.properties.name ?? feature.id}</span>
                 </button>
               </li>
             ))}
-            {features.length === 0 ? (
-              <li className="px-2 py-1 text-base-content/70">No features yet.</li>
-            ) : null}
+            {features.length === 0 ? <li className="px-2 py-1 text-base-content/70">No floor features yet.</li> : null}
           </ul>
+
+          <input
+            className="input input-bordered input-sm"
+            type="text"
+            placeholder="Selected feature name"
+            value={selectedFeature?.properties.name ?? ""}
+            onChange={(event) => onRenameSelectedFeature(event.currentTarget.value)}
+            disabled={!selectedFeature}
+          />
+          <select
+            className="select select-bordered select-sm"
+            value={selectedFeature?.properties.kind ?? "unit"}
+            disabled={!selectedFeature}
+            onChange={(event) => onSetSelectedFeatureKind(event.currentTarget.value)}
+          >
+            {[
+              "unit",
+              "path",
+              "amenity",
+              "opening",
+              "section",
+              "detail",
+              "anchor",
+              "level",
+              "building",
+              "venue",
+            ].map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
+          </select>
+
+          {vertexEditable ? (
+            <div className="rounded-box bg-base-200 p-3 text-sm">
+              <div className="mb-2 font-medium">Vertices</div>
+              <div className="mb-2 flex items-center gap-2">
+                <select
+                  className="select select-bordered select-xs w-full"
+                  value={selectedVertexIndex ?? ""}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    onSelectVertexIndex(value === "" ? undefined : Number(value));
+                  }}
+                >
+                  <option value="">No vertex selected</option>
+                  {Array.from({ length: vertexCount }, (_, index) => (
+                    <option key={index} value={index}>
+                      Vertex {index + 1}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={`btn btn-xs ${isVertexMoveMode ? "btn-primary" : ""}`}
+                  type="button"
+                  disabled={selectedVertexIndex === undefined}
+                  onClick={onToggleVertexMoveMode}
+                >
+                  Pick on map
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  className="input input-xs input-bordered"
+                  type="number"
+                  step="0.000001"
+                  value={selectedVertexCoordinates?.[0] ?? ""}
+                  placeholder="Longitude"
+                  disabled={selectedVertexCoordinates === undefined}
+                  onChange={(event) => {
+                    if (!selectedVertexCoordinates) {
+                      return;
+                    }
+
+                    onUpdateSelectedVertex([
+                      Number(event.currentTarget.value),
+                      selectedVertexCoordinates[1],
+                    ]);
+                  }}
+                />
+                <input
+                  className="input input-xs input-bordered"
+                  type="number"
+                  step="0.000001"
+                  value={selectedVertexCoordinates?.[1] ?? ""}
+                  placeholder="Latitude"
+                  disabled={selectedVertexCoordinates === undefined}
+                  onChange={(event) => {
+                    if (!selectedVertexCoordinates) {
+                      return;
+                    }
+
+                    onUpdateSelectedVertex([
+                      selectedVertexCoordinates[0],
+                      Number(event.currentTarget.value),
+                    ]);
+                  }}
+                />
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  className={`btn btn-xs ${isAppendVertexMode ? "btn-primary" : ""}`}
+                  type="button"
+                  onClick={onToggleAppendVertexMode}
+                >
+                  Append by map click
+                </button>
+                <button
+                  className="btn btn-xs btn-error"
+                  type="button"
+                  disabled={selectedVertexIndex === undefined}
+                  onClick={onDeleteSelectedVertex}
+                >
+                  Delete vertex
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            className="btn btn-sm btn-error"
+            type="button"
+            onClick={onDeleteSelectedFeature}
+            disabled={!selectedFeature}
+          >
+            Delete selected feature
+          </button>
 
           <div className="rounded-box bg-base-200 p-3 text-sm">
             <div>
               Length: {convertLength(lengthMeters, "m")} m / {convertLength(lengthMeters, "ft")} ft
             </div>
             <div>
-              Area: {convertArea(areaSquareMeters, "m2")} m2 /{" "}
-              {convertArea(areaSquareMeters, "ft2")} ft2
+              Area: {convertArea(areaSquareMeters, "m2")} m2 / {convertArea(areaSquareMeters, "ft2")} ft2
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="card bg-base-100 shadow">
+        <div className="card-body gap-3">
+          <h2 className="card-title text-lg">Floor Overlay Image</h2>
+
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="file-input file-input-bordered file-input-sm"
+            onChange={(event) => {
+              setOverlayFile(event.currentTarget.files?.[0]);
+            }}
+          />
+          <div className="flex gap-2">
+            <button
+              className="btn btn-sm btn-primary"
+              type="button"
+              disabled={!overlayFile}
+              onClick={() => {
+                if (!overlayFile) {
+                  return;
+                }
+
+                onOverlayUpload(overlayFile);
+                setOverlayFile(undefined);
+              }}
+            >
+              Upload image
+            </button>
+            <button className="btn btn-sm" type="button" onClick={onOverlayRecenter} disabled={!overlay}>
+              Recenter at map view
+            </button>
+          </div>
+
+          <label className="label-text" htmlFor="overlay-opacity">
+            Opacity: {overlay?.opacity ?? 70}%
+          </label>
+          <input
+            type="range"
+            id="overlay-opacity"
+            min={0}
+            max={100}
+            value={overlay?.opacity ?? 70}
+            className="range range-sm"
+            onChange={(event) => {
+              onOverlayOpacityChange(Number(event.currentTarget.value));
+            }}
+            disabled={!overlay}
+          />
+
+          <div className="grid grid-cols-3 gap-2">
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(-0.00002, 0)}>
+              Left
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0, 0.00002)}>
+              Up
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0.00002, 0)}>
+              Right
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayScale(1.05)}>
+              Scale +
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0, -0.00002)}>
+              Down
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayScale(0.95)}>
+              Scale -
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayRotate(-2)}>
+              Rotate -2°
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={onOverlayToggleLock}>
+              {overlay?.locked ? "Unlock" : "Lock"}
+            </button>
+            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayRotate(2)}>
+              Rotate +2°
+            </button>
+          </div>
+          <p className="text-xs text-base-content/70">
+            Upload places image near current center; use nudge/scale/rotate to align.
+          </p>
         </div>
       </section>
 
@@ -157,102 +558,13 @@ export const EditorPanels = ({
               setExportText(exportGeoJson(features));
             }}
           >
-            Generate Export
+            Generate Export (Current Floor)
           </button>
           <textarea
             className="textarea textarea-bordered h-28 w-full font-mono text-xs"
             readOnly
             value={exportText}
           />
-        </div>
-      </section>
-
-      <section className="card bg-base-100 shadow">
-        <div className="card-body gap-3">
-          <h2 className="card-title text-lg">Floor Overlay</h2>
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="file-input file-input-bordered file-input-sm"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              if (!file) {
-                return;
-              }
-
-              const reader = new FileReader();
-              reader.onload = () => {
-                onOverlayChange({
-                  ...overlay,
-                  imageName: file.name,
-                  imageDataUrl: typeof reader.result === "string" ? reader.result : "",
-                  updatedAt: new Date().toISOString(),
-                });
-              };
-              reader.readAsDataURL(file);
-            }}
-          />
-
-          <label className="label-text" htmlFor="overlay-opacity">
-            Opacity: {overlay.opacity}%
-          </label>
-          <input
-            type="range"
-            id="overlay-opacity"
-            min={0}
-            max={100}
-            value={overlay.opacity}
-            className="range range-sm"
-            onChange={(event) => {
-              onOverlayChange({
-                ...overlay,
-                opacity: Number(event.currentTarget.value),
-                updatedAt: new Date().toISOString(),
-              });
-            }}
-          />
-
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            {(["topLeft", "topRight", "bottomRight", "bottomLeft"] as const).map((cornerName) => (
-              <div key={cornerName} className="rounded-box bg-base-200 p-2">
-                <div className="mb-1 font-semibold">{cornerName}</div>
-                <input
-                  className="input input-xs input-bordered mb-1 w-full"
-                  type="number"
-                  step="0.000001"
-                  value={overlay.corners[cornerName][0]}
-                  onChange={(event) => {
-                    const lng = Number(event.currentTarget.value);
-                    onOverlayChange({
-                      ...overlay,
-                      corners: {
-                        ...overlay.corners,
-                        [cornerName]: [lng, overlay.corners[cornerName][1]],
-                      },
-                      updatedAt: new Date().toISOString(),
-                    });
-                  }}
-                />
-                <input
-                  className="input input-xs input-bordered w-full"
-                  type="number"
-                  step="0.000001"
-                  value={overlay.corners[cornerName][1]}
-                  onChange={(event) => {
-                    const lat = Number(event.currentTarget.value);
-                    onOverlayChange({
-                      ...overlay,
-                      corners: {
-                        ...overlay.corners,
-                        [cornerName]: [overlay.corners[cornerName][0], lat],
-                      },
-                      updatedAt: new Date().toISOString(),
-                    });
-                  }}
-                />
-              </div>
-            ))}
-          </div>
         </div>
       </section>
     </div>

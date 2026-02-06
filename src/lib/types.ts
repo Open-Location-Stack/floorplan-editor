@@ -52,8 +52,20 @@ export type FloorOverlay = {
   imageName: string;
   imageDataUrl: string;
   opacity: number;
+  locked?: boolean;
   corners: OverlayCorners;
   updatedAt: string;
+};
+
+export type Building = {
+  id: string;
+  name: string;
+};
+
+export type Floor = {
+  id: string;
+  buildingId: string;
+  name: string;
 };
 
 export type ProjectSnapshot = {
@@ -63,4 +75,6 @@ export type ProjectSnapshot = {
   updatedAt: string;
   features: FloorFeature[];
   overlays: FloorOverlay[];
+  buildings?: Building[];
+  floors?: Floor[];
 };

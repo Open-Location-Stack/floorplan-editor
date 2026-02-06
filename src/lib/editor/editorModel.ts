@@ -41,6 +41,29 @@ export const addFeature = (state: EditorState, feature: FloorFeature): EditorSta
     selectedFeatureId: feature.id,
   });
 
+export const updateFeature = (
+  state: EditorState,
+  featureId: string,
+  updater: (feature: FloorFeature) => FloorFeature,
+): EditorState => {
+  const index = state.features.findIndex((feature) => feature.id === featureId);
+  if (index < 0) {
+    return state;
+  }
+
+  const nextFeatures = [...state.features];
+  const currentFeature = nextFeatures[index];
+  if (!currentFeature) {
+    return state;
+  }
+  nextFeatures[index] = updater(currentFeature);
+
+  return applyWithHistory(state, {
+    features: nextFeatures,
+    selectedFeatureId: state.selectedFeatureId,
+  });
+};
+
 export const deleteSelectedFeature = (state: EditorState): EditorState => {
   if (!state.selectedFeatureId) {
     return state;

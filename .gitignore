@@ -18,6 +18,8 @@ pnpm-debug.log*
 
 # Testing coverage
 coverage/
+playwright-report/
+test-results/
 
 # Editor directories & files
 .vscode/
