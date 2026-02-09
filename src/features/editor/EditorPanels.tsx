@@ -31,9 +31,6 @@ type EditorPanelsProps = {
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
   onOverlayRecenter: () => void;
-  onOverlayNudge: (dx: number, dy: number) => void;
-  onOverlayScale: (factor: number) => void;
-  onOverlayRotate: (degrees: number) => void;
   onOverlayToggleVisibility: () => void;
   onOverlayToggleLock: () => void;
 };
@@ -79,9 +76,6 @@ export const EditorPanels = ({
   onOverlayUpload,
   onOverlayOpacityChange,
   onOverlayRecenter,
-  onOverlayNudge,
-  onOverlayScale,
-  onOverlayRotate,
   onOverlayToggleVisibility,
   onOverlayToggleLock,
 }: EditorPanelsProps) => {
@@ -413,63 +407,7 @@ export const EditorPanels = ({
             disabled={!overlay}
           />
 
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayNudge(-0.00002, 0)}
-            >
-              Left
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayNudge(0, 0.00002)}
-            >
-              Up
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayNudge(0.00002, 0)}
-            >
-              Right
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayScale(1.05)}
-            >
-              Scale +
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayNudge(0, -0.00002)}
-            >
-              Down
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayScale(0.95)}
-            >
-              Scale -
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayRotate(-2)}
-            >
-              Rotate -2°
-            </button>
+          <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-xs"
               type="button"
@@ -484,19 +422,11 @@ export const EditorPanels = ({
               disabled={!overlay}
               onClick={onOverlayToggleLock}
             >
-              {overlay?.locked ? "Unlock" : "Lock"}
-            </button>
-            <button
-              className="btn btn-xs"
-              type="button"
-              disabled={!overlay}
-              onClick={() => onOverlayRotate(2)}
-            >
-              Rotate +2°
+              {overlay?.locked ? "Edit" : "Stop editing"}
             </button>
           </div>
           <p className="text-xs text-base-content/70">
-            Upload places image near current center; use nudge/scale/rotate to align.
+            Drag the blue center handle to move the image; drag orange corners to scale/rotate.
           </p>
         </div>
       </section>

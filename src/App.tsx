@@ -13,7 +13,6 @@ import {
   undo,
   updateFeature,
 } from "./lib/editor/editorModel";
-import { rotateAroundPoint } from "./lib/geometry/overlayTransforms";
 import { createId } from "./lib/id";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { projectRepository } from "./lib/persistence/projectRepository";
@@ -65,41 +64,6 @@ const cornersAroundView = (center: Coordinates, zoom: number): OverlayCorners =>
     bottomRight: [center[0] + span, center[1] - span],
     bottomLeft: [center[0] - span, center[1] - span],
   };
-};
-
-const mapCorners = (
-  corners: OverlayCorners,
-  transform: (point: Coordinates) => Coordinates,
-): OverlayCorners => ({
-  topLeft: transform(corners.topLeft),
-  topRight: transform(corners.topRight),
-  bottomRight: transform(corners.bottomRight),
-  bottomLeft: transform(corners.bottomLeft),
-});
-
-const overlayCenter = (corners: OverlayCorners): Coordinates => {
-  const values = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft];
-  const sum = values.reduce<[number, number]>(
-    (acc, point) => [acc[0] + point[0], acc[1] + point[1]],
-    [0, 0],
-  );
-  return [sum[0] / 4, sum[1] / 4];
-};
-
-const shiftCorners = (corners: OverlayCorners, dx: number, dy: number): OverlayCorners =>
-  mapCorners(corners, (point) => [point[0] + dx, point[1] + dy]);
-
-const scaleCorners = (corners: OverlayCorners, factor: number): OverlayCorners => {
-  const center = overlayCenter(corners);
-  return mapCorners(corners, (point) => [
-    center[0] + (point[0] - center[0]) * factor,
-    center[1] + (point[1] - center[1]) * factor,
-  ]);
-};
-
-const rotateCorners = (corners: OverlayCorners, degrees: number): OverlayCorners => {
-  const center = overlayCenter(corners);
-  return mapCorners(corners, (point) => rotateAroundPoint(point, center, degrees));
 };
 
 const kindForGeometry = (geometryType: GeometryType): string => {
@@ -668,27 +632,6 @@ function App() {
                   applyToCurrentOverlay((overlay) => ({
                     ...overlay,
                     corners: cornersAroundView(mapView.center, mapView.zoom),
-                    updatedAt: new Date().toISOString(),
-                  }));
-                }}
-                onOverlayNudge={(dx, dy) => {
-                  applyToCurrentOverlay((overlay) => ({
-                    ...overlay,
-                    corners: shiftCorners(overlay.corners, dx, dy),
-                    updatedAt: new Date().toISOString(),
-                  }));
-                }}
-                onOverlayScale={(factor) => {
-                  applyToCurrentOverlay((overlay) => ({
-                    ...overlay,
-                    corners: scaleCorners(overlay.corners, factor),
-                    updatedAt: new Date().toISOString(),
-                  }));
-                }}
-                onOverlayRotate={(degrees) => {
-                  applyToCurrentOverlay((overlay) => ({
-                    ...overlay,
-                    corners: rotateCorners(overlay.corners, degrees),
                     updatedAt: new Date().toISOString(),
                   }));
                 }}
