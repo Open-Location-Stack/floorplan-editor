@@ -160,6 +160,8 @@ function App() {
   const [selectedFloorId, setSelectedFloorId] = useState(defaultFloor(defaultBuilding().id).id);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
+  const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
+  const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>({
     center: [5.1214, 52.0907],
     zoom: 17,
@@ -253,6 +255,7 @@ function App() {
 
   const startDrawMode = useCallback((mode: DrawMode) => {
     setDrawMode(mode);
+    setHasSelectedVertex(false);
     if (mode !== "select") {
       setEditorState((current) => selectFeature(current, undefined));
     }
@@ -260,10 +263,15 @@ function App() {
 
   const cancelDrawMode = useCallback(() => {
     setDrawMode("select");
+    setHasSelectedVertex(false);
   }, []);
 
   const deleteSelection = useCallback(() => {
     setDeleteRequestVersion((current) => current + 1);
+  }, []);
+
+  const deleteVertex = useCallback(() => {
+    setDeleteVertexRequestVersion((current) => current + 1);
   }, []);
 
   const onDrawFeaturesChange = useCallback(
@@ -324,6 +332,9 @@ function App() {
 
   const onInteractionModeChange = useCallback((mode: DrawMode) => {
     setDrawMode(mode);
+    if (mode !== "select") {
+      setHasSelectedVertex(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -344,7 +355,11 @@ function App() {
 
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        deleteSelection();
+        if (hasSelectedVertex) {
+          deleteVertex();
+        } else {
+          deleteSelection();
+        }
         return;
       }
 
@@ -374,7 +389,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cancelDrawMode, deleteSelection]);
+  }, [cancelDrawMode, deleteSelection, deleteVertex, hasSelectedVertex]);
 
   const applyToCurrentOverlay = useCallback(
     (transform: (overlay: FloorOverlay) => FloorOverlay) => {
@@ -814,6 +829,25 @@ function App() {
                         </svg>
                       </button>
                       <button
+                        className="btn btn-sm join-item"
+                        type="button"
+                        aria-label="Delete selected vertex"
+                        title="Delete selected vertex"
+                        onClick={deleteVertex}
+                        disabled={!hasSelectedVertex}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-4 8h8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
                         className="btn btn-sm btn-error join-item"
                         type="button"
                         aria-label="Delete selection"
@@ -834,7 +868,7 @@ function App() {
                     </div>
                     <div className="rounded-box bg-base-100/95 px-3 py-2 text-xs shadow">
                       {drawMode === "select"
-                        ? "Select mode: click features, drag features, or drag vertices."
+                        ? "Select mode: click features, drag features, or select a vertex and use Delete vertex."
                         : "Draw mode: click to add geometry. Press Escape to cancel."}
                     </div>
                   </div>
@@ -845,10 +879,12 @@ function App() {
                     overlay={selectedOverlay}
                     drawMode={drawMode}
                     deleteRequestVersion={deleteRequestVersion}
+                    deleteVertexRequestVersion={deleteVertexRequestVersion}
                     onFeaturesChange={onDrawFeaturesChange}
                     onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}
                     onInteractionModeChange={onInteractionModeChange}
+                    onVertexSelectionChange={(hasVertex) => setHasSelectedVertex(hasVertex)}
                     onOverlayCornersChange={(corners) => {
                       applyToCurrentOverlay((overlay) => ({
                         ...overlay,

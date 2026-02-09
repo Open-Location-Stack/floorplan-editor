@@ -12,6 +12,7 @@ type FeatureSelectionChangeHandler = (featureId: string | undefined) => void;
 type ViewStateHandler = (center: Coordinates, zoom: number) => void;
 type InteractionModeChangeHandler = (mode: DrawMode) => void;
 type OverlayCornersChangeHandler = (corners: FloorOverlay["corners"]) => void;
+type VertexSelectionChangeHandler = (hasSelectedVertex: boolean) => void;
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
@@ -19,6 +20,7 @@ type MapController = {
   setOverlay: (overlay: FloorOverlay | undefined) => void;
   setInteractionMode: (mode: DrawMode) => void;
   deleteSelection: () => void;
+  deleteVertex: () => void;
   resize: () => void;
   destroy: () => void;
 };
@@ -49,6 +51,11 @@ type RenderedProperties = {
   meta?: unknown;
   id?: unknown;
   [key: string]: unknown;
+};
+
+type RenderedFeatureHit = {
+  id?: unknown;
+  properties?: RenderedProperties;
 };
 
 const isUpdateImageSource = (
@@ -114,7 +121,7 @@ const normalizePolygon = (value: unknown): Coordinates[][] | undefined => {
   const normalizedRing = outerRing
     .map((entry) => normalizePoint(entry))
     .filter((entry) => Boolean(entry));
-  if (normalizedRing.length < 4) {
+  if (normalizedRing.length < 3) {
     return undefined;
   }
 
@@ -246,9 +253,7 @@ const configureDrawClassesForMapLibre = (DrawConstructor: typeof MapboxDraw) => 
 const sameFeature = (left: FloorFeature, right: FloorFeature): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
 
-const getRenderableFeatureIdAtPoint = (
-  rendered: Array<{ id?: unknown; properties?: RenderedProperties }>,
-): string | undefined => {
+const getRenderableFeatureIdAtPoint = (rendered: RenderedFeatureHit[]): string | undefined => {
   for (const hit of rendered) {
     const meta = hit.properties?.meta;
     if (meta !== "feature") {
@@ -263,6 +268,32 @@ const getRenderableFeatureIdAtPoint = (
 
   return undefined;
 };
+
+const toHoverCursor = (meta: unknown, mode: DrawMode): string | undefined => {
+  if (meta === "vertex" || meta === "midpoint") {
+    return "pointer";
+  }
+
+  if (meta === "feature") {
+    return mode === "select" ? "grab" : "pointer";
+  }
+
+  return undefined;
+};
+
+const isDrawInMode = (
+  draw: {
+    getMode?: () => string;
+  },
+  mode: string,
+): boolean => draw.getMode?.() === mode;
+
+const drawHasSelectedFeature = (
+  draw: {
+    getSelectedIds?: () => string[];
+  },
+  featureId: string,
+): boolean => (draw.getSelectedIds?.() ?? []).includes(featureId);
 
 const firstDrawLayerId = (
   styleLayers:
@@ -294,6 +325,7 @@ export const createMapController = async (
     onViewStateChange: ViewStateHandler;
     onInteractionModeChange: InteractionModeChangeHandler;
     onOverlayCornersChange: OverlayCornersChangeHandler;
+    onVertexSelectionChange?: VertexSelectionChangeHandler;
   },
 ): Promise<MapController> => {
   const maplibre = (await import("maplibre-gl")) as MapLibreModule;
@@ -318,8 +350,28 @@ export const createMapController = async (
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentSelectedFeatureId: string | undefined;
+  type DrawWithSelectedPoints = {
+    getSelectedPoints?: () => {
+      features?: unknown[];
+    };
+  };
   type MarkerInstance = InstanceType<MapLibreModule["Marker"]>;
   const overlayHandleMarkers: Partial<Record<OverlayCornerKey, MarkerInstance>> = {};
+
+  const hasSelectedVertex = () => {
+    try {
+      const selectedPoints = (draw as unknown as DrawWithSelectedPoints).getSelectedPoints?.();
+      return Array.isArray(selectedPoints?.features) && selectedPoints.features.length > 0;
+    } catch {
+      // Mapbox Draw may transiently hold stale coord paths while deleting a vertex.
+      // Treat that brief state as "no selected vertex" instead of crashing the app.
+      return false;
+    }
+  };
+
+  const emitVertexSelectionChange = () => {
+    handlers.onVertexSelectionChange?.(hasSelectedVertex());
+  };
 
   const withExternalSyncGuard = (action: () => void) => {
     isSyncingExternalState = true;
@@ -338,7 +390,9 @@ export const createMapController = async (
     } else if (currentInteractionMode === "polygon") {
       draw.changeMode("draw_polygon");
     } else {
-      draw.changeMode("simple_select");
+      if (!isDrawInMode(draw, "direct_select")) {
+        draw.changeMode("simple_select");
+      }
     }
 
     if (currentInteractionMode === "select") {
@@ -355,6 +409,17 @@ export const createMapController = async (
     }
 
     if (currentSelectedFeatureId && draw.get(currentSelectedFeatureId)) {
+      if (isDrawInMode(draw, "direct_select")) {
+        if (drawHasSelectedFeature(draw, currentSelectedFeatureId)) {
+          return;
+        }
+
+        draw.changeMode("direct_select", {
+          featureId: currentSelectedFeatureId,
+        });
+        return;
+      }
+
       draw.changeMode("simple_select", {
         featureIds: [currentSelectedFeatureId],
       });
@@ -551,6 +616,7 @@ export const createMapController = async (
       applySelection();
       applyOverlay();
     });
+    emitVertexSelectionChange();
   };
 
   const emitFeaturesChange = () => {
@@ -586,6 +652,7 @@ export const createMapController = async (
     }
 
     emitFeaturesChange();
+    emitVertexSelectionChange();
   });
 
   map.on("draw.update" as never, () => {
@@ -594,6 +661,7 @@ export const createMapController = async (
     }
 
     emitFeaturesChange();
+    emitVertexSelectionChange();
   });
 
   map.on("draw.delete" as never, () => {
@@ -602,6 +670,7 @@ export const createMapController = async (
     }
 
     emitFeaturesChange();
+    emitVertexSelectionChange();
   });
 
   map.on("draw.selectionchange" as never, (event: { features?: GeoJsonFeature[] }) => {
@@ -611,6 +680,7 @@ export const createMapController = async (
 
     const selectedFeatureId = parseFeatureId(event.features?.[0]?.id);
     handlers.onFeatureSelectionChange(selectedFeatureId);
+    emitVertexSelectionChange();
   });
 
   map.on("draw.modechange" as never, (event: { mode?: string }) => {
@@ -623,25 +693,43 @@ export const createMapController = async (
     }
 
     if (isSyncingExternalState) {
+      emitVertexSelectionChange();
       return;
     }
 
     currentInteractionMode = nextMode;
     handlers.onInteractionModeChange(nextMode);
+    emitVertexSelectionChange();
   });
 
   map.on("click", (event) => {
-    if (currentInteractionMode === "select") {
+    const featureId = getRenderableFeatureIdAtPoint(
+      map.queryRenderedFeatures(event.point) as RenderedFeatureHit[],
+    );
+    if (!featureId) {
       return;
     }
 
-    const featureId = getRenderableFeatureIdAtPoint(
-      map.queryRenderedFeatures(event.point) as Array<{
-        id?: unknown;
-        properties?: RenderedProperties;
-      }>,
-    );
-    if (!featureId) {
+    if (currentInteractionMode === "select") {
+      const clickedFeature = draw.get(featureId);
+      if (!clickedFeature || clickedFeature.geometry.type === "Point") {
+        return;
+      }
+
+      withExternalSyncGuard(() => {
+        currentSelectedFeatureId = featureId;
+        draw.changeMode("direct_select", {
+          featureId,
+        });
+      });
+
+      handlers.onFeatureSelectionChange(featureId);
+      handlers.onVertexSelectionChange?.(hasSelectedVertex());
+      return;
+    }
+
+    const isPersistedFeature = currentFeatures.features.some((feature) => feature.id === featureId);
+    if (!isPersistedFeature) {
       return;
     }
 
@@ -654,6 +742,19 @@ export const createMapController = async (
 
     handlers.onInteractionModeChange("select");
     handlers.onFeatureSelectionChange(featureId);
+    handlers.onVertexSelectionChange?.(false);
+  });
+
+  map.on("mousemove", (event) => {
+    const hovered = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
+    const cursor = hovered
+      .map((hit) => toHoverCursor(hit.properties?.meta, currentInteractionMode))
+      .find((value) => typeof value === "string");
+    map.getCanvas().style.cursor = cursor ?? "";
+  });
+
+  map.on("mouseout", () => {
+    map.getCanvas().style.cursor = "";
   });
 
   return {
@@ -678,6 +779,17 @@ export const createMapController = async (
     },
     deleteSelection: () => {
       if (!isStyleReady) {
+        return;
+      }
+
+      draw.trash();
+    },
+    deleteVertex: () => {
+      if (!isStyleReady) {
+        return;
+      }
+
+      if (!hasSelectedVertex()) {
         return;
       }
 

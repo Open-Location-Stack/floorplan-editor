@@ -13,11 +13,13 @@ type MapCanvasProps = {
   overlay: FloorOverlay | undefined;
   drawMode: DrawMode;
   deleteRequestVersion: number;
+  deleteVertexRequestVersion: number;
   onFeaturesChange: (features: FloorFeature[]) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
   onInteractionModeChange: (mode: DrawMode) => void;
   onOverlayCornersChange: (corners: OverlayCorners) => void;
+  onVertexSelectionChange: (hasSelectedVertex: boolean) => void;
 };
 
 export const MapCanvas = ({
@@ -27,11 +29,13 @@ export const MapCanvas = ({
   overlay,
   drawMode,
   deleteRequestVersion,
+  deleteVertexRequestVersion,
   onFeaturesChange,
   onFeatureSelectionChange,
   onViewStateChange,
   onInteractionModeChange,
   onOverlayCornersChange,
+  onVertexSelectionChange,
 }: MapCanvasProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<Awaited<ReturnType<typeof createMapController>> | null>(null);
@@ -41,6 +45,7 @@ export const MapCanvas = ({
   const viewStateHandlerRef = useRef(onViewStateChange);
   const modeHandlerRef = useRef(onInteractionModeChange);
   const overlayChangeHandlerRef = useRef(onOverlayCornersChange);
+  const vertexSelectionHandlerRef = useRef(onVertexSelectionChange);
 
   const featuresRef = useRef(features);
   const selectedFeatureRef = useRef(selectedFeature);
@@ -66,6 +71,10 @@ export const MapCanvas = ({
   useEffect(() => {
     overlayChangeHandlerRef.current = onOverlayCornersChange;
   }, [onOverlayCornersChange]);
+
+  useEffect(() => {
+    vertexSelectionHandlerRef.current = onVertexSelectionChange;
+  }, [onVertexSelectionChange]);
 
   useEffect(() => {
     featuresRef.current = features;
@@ -106,6 +115,9 @@ export const MapCanvas = ({
       },
       onOverlayCornersChange: (corners) => {
         overlayChangeHandlerRef.current(corners);
+      },
+      onVertexSelectionChange: (hasSelectedVertex) => {
+        vertexSelectionHandlerRef.current(hasSelectedVertex);
       },
     }).then((controller) => {
       if (cancelled) {
@@ -162,6 +174,14 @@ export const MapCanvas = ({
 
     controllerRef.current?.deleteSelection();
   }, [deleteRequestVersion]);
+
+  useEffect(() => {
+    if (!deleteVertexRequestVersion) {
+      return;
+    }
+
+    controllerRef.current?.deleteVertex();
+  }, [deleteVertexRequestVersion]);
 
   return (
     <div

@@ -17,14 +17,39 @@ type DrawFeature = {
 type MockDrawInstance = {
   mode: string;
   selectedIds: string[];
+  selectedPoints: DrawFeature[];
   features: Map<string, DrawFeature>;
   onAdd: () => HTMLElement;
   onRemove: () => void;
   getAll: () => { type: "FeatureCollection"; features: DrawFeature[] };
+  getSelectedPoints: (() => {
+    type: "FeatureCollection";
+    features: DrawFeature[];
+  }) & {
+    mockReturnValueOnce: (value: { type: "FeatureCollection"; features: DrawFeature[] }) => void;
+    mockImplementationOnce: (
+      implementation: () => { type: "FeatureCollection"; features: DrawFeature[] },
+    ) => void;
+  };
   get: (id: string) => DrawFeature | undefined;
-  add: (input: DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] }) => string[];
-  delete: (input: string | string[]) => void;
-  changeMode: (mode: string, options?: { featureIds?: string[] }) => void;
+  add: ((
+    input: DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] },
+  ) => string[]) & {
+    mockClear: () => void;
+  };
+  delete: ((input: string | string[]) => void) & {
+    mockClear: () => void;
+  };
+  getMode: () => string;
+  getSelectedIds: () => string[];
+  changeMode: (
+    mode: string,
+    options?: {
+      featureIds?: string[];
+      featureId?: string;
+      coordPath?: string;
+    },
+  ) => void;
   trash: () => MockDrawInstance;
 };
 
@@ -142,6 +167,7 @@ vi.mock("@mapbox/mapbox-gl-draw", () => ({
   default: class MockDraw {
     mode = "simple_select";
     selectedIds: string[] = [];
+    selectedPoints: DrawFeature[] = [];
     features = new Map<string, DrawFeature>();
 
     constructor(_options: unknown) {
@@ -154,6 +180,11 @@ vi.mock("@mapbox/mapbox-gl-draw", () => ({
     getAll = vi.fn(() => ({
       type: "FeatureCollection" as const,
       features: Array.from(this.features.values()),
+    }));
+
+    getSelectedPoints = vi.fn(() => ({
+      type: "FeatureCollection" as const,
+      features: this.selectedPoints,
     }));
 
     get = vi.fn((id: string) => this.features.get(id));
@@ -174,10 +205,24 @@ vi.mock("@mapbox/mapbox-gl-draw", () => ({
       }
     });
 
-    changeMode = vi.fn((mode: string, options?: { featureIds?: string[] }) => {
-      this.mode = mode;
-      this.selectedIds = options?.featureIds ?? [];
-    });
+    getMode = vi.fn(() => this.mode);
+
+    getSelectedIds = vi.fn(() => this.selectedIds);
+
+    changeMode = vi.fn(
+      (
+        mode: string,
+        options?: { featureIds?: string[]; featureId?: string; coordPath?: string },
+      ) => {
+        this.mode = mode;
+        if (mode === "direct_select") {
+          this.selectedIds = options?.featureId ? [options.featureId] : this.selectedIds;
+          return;
+        }
+
+        this.selectedIds = options?.featureIds ?? [];
+      },
+    );
 
     trash = vi.fn(() => {
       if (this.selectedIds.length > 0) {
@@ -217,6 +262,31 @@ const pointFeatureCollection = (): FeatureCollection => ({
       },
       properties: {
         kind: "amenity",
+        floorId: "f1",
+      },
+    },
+  ],
+});
+
+const polygonFeatureCollection = (): FeatureCollection => ({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      id: "shape-1",
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [5.12, 52.09],
+            [5.121, 52.091],
+            [5.122, 52.09],
+            [5.12, 52.09],
+          ],
+        ],
+      },
+      properties: {
+        kind: "unit",
         floorId: "f1",
       },
     },
@@ -342,6 +412,132 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("normalizes unclosed polygons during draw updates", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange,
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.091],
+                [5.122, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {});
+
+    expect(onFeaturesChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "shape-1",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [5.12, 52.09],
+              [5.121, 52.091],
+              [5.122, 52.09],
+            ],
+          ],
+        },
+      }),
+    ]);
+
+    controller.destroy();
+  });
+
+  it("does not replace active polygons during draw-driven state sync", async () => {
+    let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
+
+    controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: (features) => {
+        controller?.setFeatures({
+          type: "FeatureCollection",
+          features,
+        });
+      },
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    controller.setInteractionMode("polygon");
+
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.091],
+                [5.122, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    draw.add.mockClear();
+    draw.delete.mockClear();
+
+    map.emit("draw.update", {});
+
+    expect(draw.delete).not.toHaveBeenCalled();
+    expect(draw.add).not.toHaveBeenCalled();
+
+    controller.destroy();
+  });
+
   it("emits selection and mode changes from draw", async () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
@@ -447,6 +643,76 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("deletes only selected vertices when requested", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+
+    draw.selectedPoints = [];
+    controller.deleteVertex();
+    expect(draw.trash).toHaveBeenCalledTimes(0);
+
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.12, 52.09],
+        },
+        properties: {},
+      },
+    ];
+    controller.deleteVertex();
+    expect(draw.trash).toHaveBeenCalledTimes(1);
+
+    controller.destroy();
+  });
+
+  it("does not crash when selected vertex probing fails during draw.update", async () => {
+    const onVertexSelectionChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange,
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.getSelectedPoints.mockImplementationOnce(() => {
+      throw new Error("JSON.parse failure");
+    });
+
+    expect(() => map.emit("draw.update", {})).not.toThrow();
+    expect(onVertexSelectionChange).toHaveBeenCalledWith(false);
+
+    controller.destroy();
+  });
+
   it("selects clicked feature and exits draw mode when a feature is clicked", async () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
@@ -484,6 +750,189 @@ describe("createMapController", () => {
 
     expect(onInteractionModeChange).toHaveBeenCalledWith("select");
     expect(onFeatureSelectionChange).toHaveBeenCalledWith("f1");
+
+    controller.destroy();
+  });
+
+  it("keeps draw mode when clicking non-persisted draw features", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const onInteractionModeChange = vi.fn();
+
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange,
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange,
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setFeatures(pointFeatureCollection());
+    map.emit("load");
+    controller.setInteractionMode("polygon");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "draft-shape",
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 4, y: 5 },
+    });
+
+    expect(onInteractionModeChange).not.toHaveBeenCalledWith("select");
+    expect(onFeatureSelectionChange).not.toHaveBeenCalledWith("draft-shape");
+
+    controller.destroy();
+  });
+
+  it("enters direct_select on first click for non-point features in select mode", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange,
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures(polygonFeatureCollection());
+    map.emit("load");
+    controller.setInteractionMode("select");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "shape-1",
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 10, y: 12 },
+    });
+
+    expect(draw.mode).toBe("direct_select");
+    expect(draw.selectedIds).toEqual(["shape-1"]);
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith("shape-1");
+
+    controller.destroy();
+  });
+
+  it("preserves direct_select during draw-driven state sync", async () => {
+    let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
+    const collection = polygonFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected polygon feature");
+    }
+
+    controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: (features) => {
+        controller?.setFeatures({
+          type: "FeatureCollection",
+          features,
+        });
+      },
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.changeMode("direct_select", { featureId: "shape-1" });
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+
+    map.emit("draw.update", {});
+
+    expect(draw.mode).toBe("direct_select");
+    const switchedToSimpleSelect = (
+      draw.changeMode as unknown as { mock: { calls: Array<[string, unknown?]> } }
+    ).mock.calls.some(([mode]) => mode === "simple_select");
+    expect(switchedToSimpleSelect).toBe(false);
+
+    controller.destroy();
+  });
+
+  it("updates cursor when hovering controllable draw elements", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    map.emit("load");
+    controller.setInteractionMode("select");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+    map.emit("mousemove", {
+      point: { x: 4, y: 5 },
+    });
+    expect(map.canvas.style.cursor).toBe("grab");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        properties: {
+          meta: "vertex",
+        },
+      },
+    ] as never);
+    map.emit("mousemove", {
+      point: { x: 6, y: 7 },
+    });
+    expect(map.canvas.style.cursor).toBe("pointer");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([] as never);
+    map.emit("mousemove", {
+      point: { x: 8, y: 9 },
+    });
+    expect(map.canvas.style.cursor).toBe("");
+
+    map.emit("mouseout");
+    expect(map.canvas.style.cursor).toBe("");
 
     controller.destroy();
   });
