@@ -1,94 +1,77 @@
 import "maplibre-gl/dist/maplibre-gl.css";
+import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import { useEffect, useRef } from "react";
-import {
-  createMapController,
-  type GeometryDragPayload,
-  type MapClickPayload,
-} from "../lib/map/mapBootstrap";
+import { createMapController, type DrawMode } from "../lib/map/mapBootstrap";
 import type { Coordinates, FloorFeature, FloorOverlay } from "../lib/types";
 
-export type DrawMode = "select" | "point" | "line" | "polygon";
+export type { DrawMode } from "../lib/map/mapBootstrap";
 
 type MapCanvasProps = {
   maptilerApiKey: string;
   features: FloorFeature[];
   selectedFeature: FloorFeature | undefined;
-  editableVertices: Coordinates[];
-  selectedVertexIndex: number | undefined;
   overlay: FloorOverlay | undefined;
-  draftVertices: Coordinates[];
   drawMode: DrawMode;
-  onMapClick: (payload: MapClickPayload) => void;
-  onGeometryDragStart: (payload: GeometryDragPayload) => void;
-  onGeometryDrag: (payload: GeometryDragPayload) => void;
-  onGeometryDragEnd: () => void;
+  deleteRequestVersion: number;
+  onFeaturesChange: (features: FloorFeature[]) => void;
+  onFeatureSelectionChange: (featureId: string | undefined) => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
+  onInteractionModeChange: (mode: DrawMode) => void;
 };
 
 export const MapCanvas = ({
   maptilerApiKey,
   features,
   selectedFeature,
-  editableVertices,
-  selectedVertexIndex,
   overlay,
-  draftVertices,
   drawMode,
-  onMapClick,
-  onGeometryDragStart,
-  onGeometryDrag,
-  onGeometryDragEnd,
+  deleteRequestVersion,
+  onFeaturesChange,
+  onFeatureSelectionChange,
   onViewStateChange,
+  onInteractionModeChange,
 }: MapCanvasProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<Awaited<ReturnType<typeof createMapController>> | null>(null);
-  const clickHandlerRef = useRef(onMapClick);
-  const dragStartHandlerRef = useRef(onGeometryDragStart);
-  const dragHandlerRef = useRef(onGeometryDrag);
-  const dragEndHandlerRef = useRef(onGeometryDragEnd);
+
+  const featuresHandlerRef = useRef(onFeaturesChange);
+  const selectionHandlerRef = useRef(onFeatureSelectionChange);
   const viewStateHandlerRef = useRef(onViewStateChange);
+  const modeHandlerRef = useRef(onInteractionModeChange);
+
   const featuresRef = useRef(features);
   const selectedFeatureRef = useRef(selectedFeature);
-  const editableVerticesRef = useRef(editableVertices);
-  const selectedVertexIndexRef = useRef(selectedVertexIndex);
   const overlayRef = useRef(overlay);
-  const draftVerticesRef = useRef(draftVertices);
   const drawModeRef = useRef(drawMode);
 
   useEffect(() => {
-    clickHandlerRef.current = onMapClick;
-  }, [onMapClick]);
+    featuresHandlerRef.current = onFeaturesChange;
+  }, [onFeaturesChange]);
+
+  useEffect(() => {
+    selectionHandlerRef.current = onFeatureSelectionChange;
+  }, [onFeatureSelectionChange]);
 
   useEffect(() => {
     viewStateHandlerRef.current = onViewStateChange;
   }, [onViewStateChange]);
+
   useEffect(() => {
-    dragStartHandlerRef.current = onGeometryDragStart;
-  }, [onGeometryDragStart]);
-  useEffect(() => {
-    dragHandlerRef.current = onGeometryDrag;
-  }, [onGeometryDrag]);
-  useEffect(() => {
-    dragEndHandlerRef.current = onGeometryDragEnd;
-  }, [onGeometryDragEnd]);
+    modeHandlerRef.current = onInteractionModeChange;
+  }, [onInteractionModeChange]);
+
   useEffect(() => {
     featuresRef.current = features;
   }, [features]);
+
   useEffect(() => {
     selectedFeatureRef.current = selectedFeature;
   }, [selectedFeature]);
-  useEffect(() => {
-    editableVerticesRef.current = editableVertices;
-  }, [editableVertices]);
-  useEffect(() => {
-    selectedVertexIndexRef.current = selectedVertexIndex;
-  }, [selectedVertexIndex]);
+
   useEffect(() => {
     overlayRef.current = overlay;
   }, [overlay]);
-  useEffect(() => {
-    draftVerticesRef.current = draftVertices;
-  }, [draftVertices]);
+
   useEffect(() => {
     drawModeRef.current = drawMode;
   }, [drawMode]);
@@ -102,20 +85,17 @@ export const MapCanvas = ({
     let cancelled = false;
 
     void createMapController(element, maptilerApiKey, {
-      onMapClick: (payload) => {
-        clickHandlerRef.current(payload);
+      onFeaturesChange: (nextFeatures) => {
+        featuresHandlerRef.current(nextFeatures);
+      },
+      onFeatureSelectionChange: (featureId) => {
+        selectionHandlerRef.current(featureId);
       },
       onViewStateChange: (center, zoom) => {
         viewStateHandlerRef.current(center, zoom);
       },
-      onGeometryDragStart: (payload) => {
-        dragStartHandlerRef.current(payload);
-      },
-      onGeometryDrag: (payload) => {
-        dragHandlerRef.current(payload);
-      },
-      onGeometryDragEnd: () => {
-        dragEndHandlerRef.current();
+      onInteractionModeChange: (mode) => {
+        modeHandlerRef.current(mode);
       },
     }).then((controller) => {
       if (cancelled) {
@@ -129,14 +109,7 @@ export const MapCanvas = ({
         features: featuresRef.current,
       });
       controller.setSelection(selectedFeatureRef.current);
-      controller.setEditableVertices(
-        selectedFeatureRef.current?.id,
-        selectedFeatureRef.current?.geometry.type,
-        editableVerticesRef.current,
-        selectedVertexIndexRef.current,
-      );
       controller.setOverlay(overlayRef.current);
-      controller.setDrawDraft(drawModeRef.current, draftVerticesRef.current);
       controller.setInteractionMode(drawModeRef.current);
     });
 
@@ -165,25 +138,20 @@ export const MapCanvas = ({
   }, [selectedFeature]);
 
   useEffect(() => {
-    controllerRef.current?.setEditableVertices(
-      selectedFeature?.id,
-      selectedFeature?.geometry.type,
-      editableVertices,
-      selectedVertexIndex,
-    );
-  }, [editableVertices, selectedFeature?.geometry.type, selectedFeature?.id, selectedVertexIndex]);
-
-  useEffect(() => {
     controllerRef.current?.setOverlay(overlay);
   }, [overlay]);
 
   useEffect(() => {
-    controllerRef.current?.setDrawDraft(drawMode, draftVertices);
-  }, [drawMode, draftVertices]);
-
-  useEffect(() => {
     controllerRef.current?.setInteractionMode(drawMode);
   }, [drawMode]);
+
+  useEffect(() => {
+    if (!deleteRequestVersion) {
+      return;
+    }
+
+    controllerRef.current?.deleteSelection();
+  }, [deleteRequestVersion]);
 
   return (
     <div

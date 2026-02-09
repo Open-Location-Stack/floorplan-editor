@@ -4,7 +4,32 @@ import { createMapController } from "./mapBootstrap";
 
 type EventHandler = (payload?: unknown) => void;
 
+type DrawFeature = {
+  type: "Feature";
+  id: string;
+  geometry: {
+    type: "Point" | "LineString" | "Polygon";
+    coordinates: unknown;
+  };
+  properties: Record<string, unknown>;
+};
+
+type MockDrawInstance = {
+  mode: string;
+  selectedIds: string[];
+  features: Map<string, DrawFeature>;
+  onAdd: () => HTMLElement;
+  onRemove: () => void;
+  getAll: () => { type: "FeatureCollection"; features: DrawFeature[] };
+  get: (id: string) => DrawFeature | undefined;
+  add: (input: DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] }) => string[];
+  delete: (input: string | string[]) => void;
+  changeMode: (mode: string, options?: { featureIds?: string[] }) => void;
+  trash: () => MockDrawInstance;
+};
+
 let lastMockMap: MockMap | undefined;
+let lastMockDraw: MockDrawInstance | undefined;
 
 class MockMap {
   styleLoaded = false;
@@ -37,16 +62,9 @@ class MockMap {
     }
   };
 
-  addSource = vi.fn((id: string, spec: { type: string; data?: unknown }) => {
+  addSource = vi.fn((id: string, spec: { type: string }) => {
     if (!this.styleLoaded) {
       throw new Error("Style is not done loading.");
-    }
-
-    if (spec.type === "geojson") {
-      this.sources.set(id, {
-        setData: vi.fn(),
-      });
-      return;
     }
 
     if (spec.type === "image") {
@@ -80,6 +98,7 @@ class MockMap {
   });
 
   setPaintProperty = vi.fn();
+  addControl = vi.fn((control: { onAdd: (map: MockMap) => HTMLElement }) => control.onAdd(this));
   queryRenderedFeatures = vi.fn(() => []);
   getCenter = vi.fn(() => ({ lng: 5.1214, lat: 52.0907 }));
   getZoom = vi.fn(() => 17);
@@ -90,6 +109,58 @@ class MockMap {
 
 vi.mock("maplibre-gl", () => ({
   Map: MockMap,
+}));
+
+vi.mock("@mapbox/mapbox-gl-draw", () => ({
+  default: class MockDraw {
+    mode = "simple_select";
+    selectedIds: string[] = [];
+    features = new Map<string, DrawFeature>();
+
+    constructor(_options: unknown) {
+      lastMockDraw = this;
+    }
+
+    onAdd = vi.fn(() => document.createElement("div"));
+    onRemove = vi.fn();
+
+    getAll = vi.fn(() => ({
+      type: "FeatureCollection" as const,
+      features: Array.from(this.features.values()),
+    }));
+
+    get = vi.fn((id: string) => this.features.get(id));
+
+    add = vi.fn((input: DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] }) => {
+      const features = input.type === "FeatureCollection" ? input.features : [input];
+      for (const feature of features) {
+        this.features.set(String(feature.id), feature);
+      }
+
+      return features.map((feature) => String(feature.id));
+    });
+
+    delete = vi.fn((input: string | string[]) => {
+      const ids = Array.isArray(input) ? input : [input];
+      for (const id of ids) {
+        this.features.delete(String(id));
+      }
+    });
+
+    changeMode = vi.fn((mode: string, options?: { featureIds?: string[] }) => {
+      this.mode = mode;
+      this.selectedIds = options?.featureIds ?? [];
+    });
+
+    trash = vi.fn(() => {
+      if (this.selectedIds.length > 0) {
+        this.delete(this.selectedIds);
+        this.selectedIds = [];
+      }
+
+      return this;
+    });
+  },
 }));
 
 const createOverlay = (): FloorOverlay => ({
@@ -107,20 +178,37 @@ const createOverlay = (): FloorOverlay => ({
   updatedAt: "2026-02-09T00:00:00.000Z",
 });
 
+const pointFeatureCollection = (): FeatureCollection => ({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      id: "f1",
+      geometry: {
+        type: "Point",
+        coordinates: [5.12, 52.09],
+      },
+      properties: {
+        kind: "amenity",
+        floorId: "f1",
+      },
+    },
+  ],
+});
+
 describe("createMapController", () => {
   beforeEach(() => {
     lastMockMap = undefined;
+    lastMockDraw = undefined;
     vi.clearAllMocks();
   });
 
   it("defers overlay updates until style load", async () => {
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -140,385 +228,227 @@ describe("createMapController", () => {
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({ id: "floor-overlay-layer" }),
-      "editor-features-fill",
     );
   });
 
-  it("applies buffered feature collection after style load", async () => {
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
+  it("applies buffered features into draw after style load", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+    });
+
+    controller.setFeatures(pointFeatureCollection());
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+
+    expect(draw.add).toHaveBeenCalled();
+    expect(draw.get("f1")).toEqual(
+      expect.objectContaining({
+        id: "f1",
+        geometry: expect.objectContaining({ type: "Point" }),
+      }),
+    );
+  });
+
+  it("emits draw feature mutations", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange,
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
     });
 
     const map = lastMockMap;
+    const draw = lastMockDraw;
     expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
     }
 
-    const features: FeatureCollection = {
+    map.emit("load");
+    draw.add({
       type: "FeatureCollection",
       features: [
         {
           type: "Feature",
-          id: "f1",
+          id: "shape-1",
           geometry: {
-            type: "Point",
-            coordinates: [5.12, 52.09],
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
           },
           properties: {
-            kind: "amenity",
+            kind: "path",
             floorId: "f1",
           },
         },
       ],
-    };
-
-    controller.setFeatures(features);
-    map.emit("load");
-
-    const featureSource = map.getSource("editor-features") as
-      | { setData?: ReturnType<typeof vi.fn> }
-      | undefined;
-    expect(featureSource?.setData).toHaveBeenCalledWith({
-      type: "FeatureCollection",
-      features: [
-        expect.objectContaining({
-          id: "f1",
-          properties: expect.objectContaining({
-            kind: "amenity",
-            floorId: "f1",
-            __featureId: "f1",
-          }),
-        }),
-      ],
-    });
-  });
-
-  it("applies buffered selection, editable vertices, and draft after style load", async () => {
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
     });
 
-    const map = lastMockMap;
-    expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
-    }
+    map.emit("draw.update", {});
 
-    const selectedFeature = {
-      type: "Feature" as const,
-      id: "selected-1",
-      geometry: {
-        type: "LineString" as const,
-        coordinates: [[5.12, 52.09] as [number, number], [5.121, 52.091] as [number, number]],
-      },
-      properties: {
-        kind: "path",
-        floorId: "f1",
-      },
-    };
-
-    controller.setSelection(selectedFeature);
-    controller.setEditableVertices(
-      selectedFeature.id,
-      selectedFeature.geometry.type,
-      [
-        [5.12, 52.09],
-        [5.121, 52.091],
-      ],
-      1,
-    );
-    controller.setDrawDraft("polygon", [
-      [5.12, 52.09],
-      [5.121, 52.09],
-      [5.121, 52.091],
+    expect(onFeaturesChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "shape-1",
+        geometry: expect.objectContaining({ type: "LineString" }),
+      }),
     ]);
 
-    map.emit("load");
-
-    const selectedSource = map.getSource("editor-selected") as
-      | { setData?: ReturnType<typeof vi.fn> }
-      | undefined;
-    const verticesSource = map.getSource("editor-edit-vertices") as
-      | { setData?: ReturnType<typeof vi.fn> }
-      | undefined;
-    const midpointSource = map.getSource("editor-edit-midpoints") as
-      | { setData?: ReturnType<typeof vi.fn> }
-      | undefined;
-    const draftSource = map.getSource("editor-draft") as
-      | { setData?: ReturnType<typeof vi.fn> }
-      | undefined;
-
-    expect(selectedSource?.setData).toHaveBeenCalled();
-    expect(verticesSource?.setData).toHaveBeenCalled();
-    expect(midpointSource?.setData).toHaveBeenCalled();
-    expect(draftSource?.setData).toHaveBeenCalled();
+    controller.destroy();
   });
 
-  it("sets pointer cursor when hovering an editable feature in select mode", async () => {
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
+  it("emits selection and mode changes from draw", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const onInteractionModeChange = vi.fn();
+
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange,
       onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange,
     });
 
     const map = lastMockMap;
     expect(map).toBeDefined();
     if (!map) {
-      throw new Error("Expected map mock instance");
+      throw new Error("Expected map instance");
     }
 
     map.emit("load");
-    map.queryRenderedFeatures.mockReturnValueOnce([
-      {
-        id: "feature-1",
-      },
-    ] as never);
 
-    map.emit("mousemove", {
-      point: { x: 10, y: 12 },
+    map.emit("draw.selectionchange", {
+      features: [
+        {
+          id: "shape-2",
+        },
+      ],
+    });
+    map.emit("draw.modechange", {
+      mode: "draw_polygon",
     });
 
-    expect(map.getCanvas().style.cursor).toBe("pointer");
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith("shape-2");
+    expect(onInteractionModeChange).toHaveBeenCalledWith("polygon");
 
     controller.destroy();
   });
 
-  it("treats ids containing -vertex- as regular feature ids unless suffixed with a vertex index", async () => {
-    const onMapClick = vi.fn();
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick,
+  it("syncs external selection and interaction mode to draw", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange: vi.fn(),
     });
 
     const map = lastMockMap;
+    const draw = lastMockDraw;
     expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
     }
 
+    controller.setFeatures(pointFeatureCollection());
     map.emit("load");
-    map.queryRenderedFeatures.mockReturnValueOnce([
-      {
-        id: "unit-vertex-east",
+
+    controller.setSelection({
+      type: "Feature",
+      id: "f1",
+      geometry: {
+        type: "Point",
+        coordinates: [5.12, 52.09],
       },
-    ] as never);
-
-    map.emit("click", {
-      point: { x: 0, y: 0 },
-      lngLat: { lng: 5.1215, lat: 52.0908 },
+      properties: {
+        kind: "amenity",
+        floorId: "f1",
+      },
     });
 
-    expect(onMapClick).toHaveBeenCalledWith({
-      coordinates: [5.1215, 52.0908],
-      featureId: "unit-vertex-east",
-      vertexFeatureId: undefined,
-      vertexIndex: undefined,
-      midpointFeatureId: undefined,
-      midpointAfterIndex: undefined,
+    expect(draw.changeMode).toHaveBeenCalledWith("simple_select", {
+      featureIds: ["f1"],
     });
+
+    controller.setInteractionMode("line");
+    expect(draw.mode).toBe("draw_line_string");
 
     controller.destroy();
   });
 
-  it("reports vertex selection when clicking a rendered vertex handle", async () => {
-    const onMapClick = vi.fn();
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick,
+  it("uses draw trash for delete selection", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange: vi.fn(),
     });
 
     const map = lastMockMap;
+    const draw = lastMockDraw;
     expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
     }
 
     map.emit("load");
-    map.queryRenderedFeatures.mockReturnValueOnce([
-      {
-        id: "shape-1",
-      },
-      {
-        id: "shape-1-vertex-2",
-      },
-    ] as never);
+    controller.deleteSelection();
 
-    map.emit("click", {
-      point: { x: 4, y: 4 },
-      lngLat: { lng: 5.1215, lat: 52.0908 },
-    });
-
-    expect(onMapClick).toHaveBeenCalledWith({
-      coordinates: [5.1215, 52.0908],
-      featureId: "shape-1",
-      vertexFeatureId: "shape-1",
-      vertexIndex: 2,
-      midpointFeatureId: undefined,
-      midpointAfterIndex: undefined,
-    });
+    expect(draw.trash).toHaveBeenCalledTimes(1);
 
     controller.destroy();
   });
 
-  it("starts vertex drag when pressing a rendered vertex handle", async () => {
-    const onGeometryDragStart = vi.fn();
-    const onGeometryDrag = vi.fn();
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
+  it("selects clicked feature and exits draw mode when a feature is clicked", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const onInteractionModeChange = vi.fn();
+
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange,
       onViewStateChange: vi.fn(),
-      onGeometryDragStart,
-      onGeometryDrag,
-      onGeometryDragEnd: vi.fn(),
+      onInteractionModeChange,
     });
 
     const map = lastMockMap;
     expect(map).toBeDefined();
     if (!map) {
-      throw new Error("Expected map mock instance");
+      throw new Error("Expected map instance");
     }
 
+    controller.setFeatures(pointFeatureCollection());
     map.emit("load");
+    controller.setInteractionMode("line");
+
     map.queryRenderedFeatures.mockReturnValueOnce([
       {
-        id: "shape-1-vertex-1",
-      },
-    ] as never);
-
-    map.emit("mousedown", {
-      point: { x: 8, y: 8 },
-      lngLat: { lng: 5.1214, lat: 52.0907 },
-    });
-    map.emit("mousemove", {
-      point: { x: 9, y: 9 },
-      lngLat: { lng: 5.1216, lat: 52.0909 },
-    });
-
-    expect(onGeometryDragStart).toHaveBeenCalledWith({
-      mode: "vertex",
-      featureId: "shape-1",
-      vertexIndex: 1,
-      coordinates: [5.1214, 52.0907],
-      startCoordinates: [5.1214, 52.0907],
-    });
-    expect(onGeometryDrag).toHaveBeenCalledWith({
-      mode: "vertex",
-      featureId: "shape-1",
-      vertexIndex: 1,
-      coordinates: [5.1216, 52.0909],
-      startCoordinates: [5.1214, 52.0907],
-    });
-
-    controller.destroy();
-  });
-
-  it("selects a vertex using hit properties when rendered ids are unavailable", async () => {
-    const onMapClick = vi.fn();
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick,
-      onViewStateChange: vi.fn(),
-      onGeometryDragStart: vi.fn(),
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
-    });
-
-    const map = lastMockMap;
-    expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
-    }
-
-    map.emit("load");
-    map.queryRenderedFeatures.mockReturnValueOnce([
-      {
+        id: "f1",
         properties: {
-          featureId: "shape-2",
-          __featureId: "shape-2",
-          __vertexIndex: 3,
+          meta: "feature",
         },
       },
     ] as never);
 
     map.emit("click", {
-      point: { x: 12, y: 15 },
-      lngLat: { lng: 5.1217, lat: 52.091 },
+      point: { x: 4, y: 5 },
     });
 
-    expect(onMapClick).toHaveBeenCalledWith({
-      coordinates: [5.1217, 52.091],
-      featureId: "shape-2",
-      vertexFeatureId: "shape-2",
-      vertexIndex: 3,
-      midpointFeatureId: undefined,
-      midpointAfterIndex: undefined,
-    });
-
-    controller.destroy();
-  });
-
-  it("starts vertex drag using hit properties when rendered ids are unavailable", async () => {
-    const onGeometryDragStart = vi.fn();
-    const container = document.createElement("div");
-    const controller = await createMapController(container, "fake-key", {
-      onMapClick: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onGeometryDragStart,
-      onGeometryDrag: vi.fn(),
-      onGeometryDragEnd: vi.fn(),
-    });
-
-    const map = lastMockMap;
-    expect(map).toBeDefined();
-    if (!map) {
-      throw new Error("Expected map mock instance");
-    }
-
-    map.emit("load");
-    map.queryRenderedFeatures.mockReturnValueOnce([
-      {
-        properties: {
-          featureId: "shape-3",
-          __featureId: "shape-3",
-          __vertexIndex: 1,
-        },
-      },
-    ] as never);
-
-    map.emit("mousedown", {
-      point: { x: 16, y: 10 },
-      lngLat: { lng: 5.1216, lat: 52.0909 },
-    });
-
-    expect(onGeometryDragStart).toHaveBeenCalledWith({
-      mode: "vertex",
-      featureId: "shape-3",
-      vertexIndex: 1,
-      coordinates: [5.1216, 52.0909],
-      startCoordinates: [5.1216, 52.0909],
-    });
+    expect(onInteractionModeChange).toHaveBeenCalledWith("select");
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith("f1");
 
     controller.destroy();
   });

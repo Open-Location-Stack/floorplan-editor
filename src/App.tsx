@@ -4,7 +4,6 @@ import { type DrawMode, MapCanvas } from "./components/MapCanvas";
 import { EditorPanels } from "./features/editor/EditorPanels";
 import { getRuntimeConfig } from "./lib/config/runtimeConfig";
 import {
-  addFeature,
   createInitialEditorState,
   deleteSelectedFeature,
   type EditorState,
@@ -17,7 +16,6 @@ import {
 import { rotateAroundPoint } from "./lib/geometry/overlayTransforms";
 import { createId } from "./lib/id";
 import { clientLogger } from "./lib/logging/clientLogger";
-import type { GeometryDragPayload, MapClickPayload } from "./lib/map/mapBootstrap";
 import { projectRepository } from "./lib/persistence/projectRepository";
 import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSanitizer";
 import type {
@@ -26,6 +24,7 @@ import type {
   Floor,
   FloorFeature,
   FloorOverlay,
+  GeometryType,
   OverlayCorners,
   ThemeId,
 } from "./lib/types";
@@ -103,96 +102,35 @@ const rotateCorners = (corners: OverlayCorners, degrees: number): OverlayCorners
   return mapCorners(corners, (point) => rotateAroundPoint(point, center, degrees));
 };
 
-const getFeatureVertices = (feature: FloorFeature | undefined): Coordinates[] => {
-  if (!feature) {
-    return [];
+const kindForGeometry = (geometryType: GeometryType): string => {
+  if (geometryType === "Point") {
+    return "amenity";
   }
 
-  if (feature.geometry.type === "LineString") {
-    return feature.geometry.coordinates;
+  if (geometryType === "LineString") {
+    return "path";
   }
 
-  if (feature.geometry.type === "Polygon") {
-    const ring = feature.geometry.coordinates[0] ?? [];
-    return ring.slice(0, -1);
-  }
-
-  return [];
+  return "unit";
 };
 
-const withUpdatedVertices = (feature: FloorFeature, vertices: Coordinates[]): FloorFeature => {
-  if (feature.geometry.type === "LineString") {
-    return {
-      ...feature,
-      geometry: {
-        ...feature.geometry,
-        coordinates: vertices,
-      },
-    };
+const nameForGeometry = (geometryType: GeometryType): string => {
+  if (geometryType === "Point") {
+    return "New point";
   }
 
-  if (feature.geometry.type === "Polygon") {
-    if (vertices.length === 0) {
-      return feature;
-    }
-
-    const firstVertex = vertices[0];
-    if (!firstVertex) {
-      return feature;
-    }
-
-    return {
-      ...feature,
-      geometry: {
-        ...feature.geometry,
-        coordinates: [[...vertices, firstVertex]],
-      },
-    };
+  if (geometryType === "LineString") {
+    return "New line";
   }
 
-  return feature;
+  return "New polygon";
 };
 
-const withTranslatedFeature = (feature: FloorFeature, dx: number, dy: number): FloorFeature => {
-  if (feature.geometry.type === "Point") {
-    return {
-      ...feature,
-      geometry: {
-        ...feature.geometry,
-        coordinates: [feature.geometry.coordinates[0] + dx, feature.geometry.coordinates[1] + dy],
-      },
-    };
-  }
+const isFeatureOnSelectedFloor = (feature: FloorFeature, selectedFloorId: string): boolean =>
+  feature.properties.floorId === selectedFloorId || !feature.properties.floorId;
 
-  const currentVertices = getFeatureVertices(feature);
-  const translated = currentVertices.map(
-    (vertex) => [vertex[0] + dx, vertex[1] + dy] as Coordinates,
-  );
-  return withUpdatedVertices(feature, translated);
-};
-
-const withInsertedVertex = (
-  feature: FloorFeature,
-  afterIndex: number,
-  coordinates: Coordinates,
-): FloorFeature => {
-  if (feature.geometry.type !== "LineString" && feature.geometry.type !== "Polygon") {
-    return feature;
-  }
-
-  const currentVertices = getFeatureVertices(feature);
-  if (afterIndex < -1 || afterIndex >= currentVertices.length) {
-    return feature;
-  }
-
-  const insertAt = afterIndex + 1;
-  const nextVertices = [
-    ...currentVertices.slice(0, insertAt),
-    coordinates,
-    ...currentVertices.slice(insertAt),
-  ];
-  return withUpdatedVertices(feature, nextVertices);
-};
+const areFeatureListsEqual = (left: FloorFeature[], right: FloorFeature[]): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 const saveEditorSnapshot = async (
   features: FloorFeature[],
@@ -221,15 +159,7 @@ function App() {
   const [selectedBuildingId, setSelectedBuildingId] = useState(defaultBuilding().id);
   const [selectedFloorId, setSelectedFloorId] = useState(defaultFloor(defaultBuilding().id).id);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
-  const [draftVertices, setDraftVertices] = useState<Coordinates[]>([]);
-  const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | undefined>();
-  const [_dragSnapshot, setDragSnapshot] = useState<{
-    featureId: string;
-    startCoordinates: Coordinates;
-    startFeature: FloorFeature;
-    mode: "feature" | "vertex";
-    vertexIndex?: number;
-  } | null>(null);
+  const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>({
     center: [5.1214, 52.0907],
     zoom: 17,
@@ -321,112 +251,80 @@ function App() {
     [editorState.features, editorState.selectedFeatureId],
   );
 
-  const editableVertices = useMemo(() => getFeatureVertices(selectedFeature), [selectedFeature]);
-
-  const commitDraftShape = useCallback(() => {
-    if (drawMode === "line" && draftVertices.length >= 2) {
-      const feature: FloorFeature = {
-        type: "Feature",
-        id: createId(),
-        geometry: {
-          type: "LineString",
-          coordinates: draftVertices,
-        },
-        properties: {
-          kind: "path",
-          floorId: selectedFloorId,
-          name: "New line",
-        },
-      };
-      setEditorState((current) => addFeature(current, feature));
-    }
-
-    if (drawMode === "polygon" && draftVertices.length >= 3) {
-      const firstVertex = draftVertices[0];
-      if (firstVertex) {
-        const feature: FloorFeature = {
-          type: "Feature",
-          id: createId(),
-          geometry: {
-            type: "Polygon",
-            coordinates: [[...draftVertices, firstVertex]],
-          },
-          properties: {
-            kind: "unit",
-            floorId: selectedFloorId,
-            name: "New polygon",
-          },
-        };
-        setEditorState((current) => addFeature(current, feature));
-      }
-    }
-
-    setDrawMode("select");
-    setDraftVertices([]);
-  }, [drawMode, draftVertices, selectedFloorId]);
-
   const startDrawMode = useCallback((mode: DrawMode) => {
     setDrawMode(mode);
-    setDraftVertices([]);
-    setSelectedVertexIndex(undefined);
-    setDragSnapshot(null);
-    setEditorState((current) => selectFeature(current, undefined));
+    if (mode !== "select") {
+      setEditorState((current) => selectFeature(current, undefined));
+    }
   }, []);
 
   const cancelDrawMode = useCallback(() => {
     setDrawMode("select");
-    setDraftVertices([]);
-    setSelectedVertexIndex(undefined);
-    setDragSnapshot(null);
   }, []);
 
-  const deleteSelectedVertex = useCallback((): boolean => {
-    if (!selectedFeature || selectedVertexIndex === undefined) {
-      return false;
-    }
-
-    const currentVertices = getFeatureVertices(selectedFeature);
-    const nextVertices = currentVertices.filter((_, index) => index !== selectedVertexIndex);
-
-    if (selectedFeature.geometry.type === "LineString" && nextVertices.length < 2) {
-      return false;
-    }
-
-    if (selectedFeature.geometry.type === "Polygon" && nextVertices.length < 3) {
-      return false;
-    }
-
-    if (selectedFeature.geometry.type === "Point") {
-      return false;
-    }
-
-    setEditorState((current) =>
-      updateFeature(current, selectedFeature.id, (feature) =>
-        withUpdatedVertices(feature, nextVertices),
-      ),
-    );
-    setSelectedVertexIndex((current) => {
-      if (current === undefined) {
-        return undefined;
-      }
-
-      if (current >= nextVertices.length) {
-        return nextVertices.length - 1;
-      }
-
-      return current;
-    });
-
-    return true;
-  }, [selectedFeature, selectedVertexIndex]);
-
   const deleteSelection = useCallback(() => {
-    if (deleteSelectedVertex()) {
-      return;
-    }
+    setDeleteRequestVersion((current) => current + 1);
+  }, []);
 
-    setEditorState((current) => deleteSelectedFeature(current));
-  }, [deleteSelectedVertex]);
+  const onDrawFeaturesChange = useCallback(
+    (featuresFromMap: FloorFeature[]) => {
+      setEditorState((current) => {
+        const currentVisible = current.features.filter((feature) =>
+          isFeatureOnSelectedFloor(feature, selectedFloorId),
+        );
+        const currentVisibleById = new Map(currentVisible.map((feature) => [feature.id, feature]));
+
+        const nextVisible = featuresFromMap.map((feature) => {
+          const existing = currentVisibleById.get(feature.id);
+          const mergedProperties = {
+            ...(existing?.properties ?? {}),
+            ...feature.properties,
+          };
+
+          return {
+            ...feature,
+            properties: {
+              ...mergedProperties,
+              floorId: mergedProperties.floorId ?? existing?.properties.floorId ?? selectedFloorId,
+              kind:
+                typeof mergedProperties.kind === "string" && mergedProperties.kind
+                  ? mergedProperties.kind
+                  : kindForGeometry(feature.geometry.type),
+              name:
+                typeof mergedProperties.name === "string" && mergedProperties.name
+                  ? mergedProperties.name
+                  : (existing?.properties.name ?? nameForGeometry(feature.geometry.type)),
+            },
+          };
+        });
+
+        if (areFeatureListsEqual(currentVisible, nextVisible)) {
+          return current;
+        }
+
+        const nonVisible = current.features.filter(
+          (feature) => !isFeatureOnSelectedFloor(feature, selectedFloorId),
+        );
+        const nextFeatures = [...nonVisible, ...nextVisible];
+        const nextSelectedFeatureId =
+          current.selectedFeatureId &&
+          nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
+            ? current.selectedFeatureId
+            : undefined;
+
+        return selectFeature(replaceAllFeatures(current, nextFeatures), nextSelectedFeatureId);
+      });
+    },
+    [selectedFloorId],
+  );
+
+  const onDrawSelectionChange = useCallback((featureId: string | undefined) => {
+    setEditorState((current) => selectFeature(current, featureId));
+  }, []);
+
+  const onInteractionModeChange = useCallback((mode: DrawMode) => {
+    setDrawMode(mode);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -441,12 +339,6 @@ function App() {
       if (event.key === "Escape") {
         event.preventDefault();
         cancelDrawMode();
-        return;
-      }
-
-      if (event.key === "Enter" && (drawMode === "line" || drawMode === "polygon")) {
-        event.preventDefault();
-        commitDraftShape();
         return;
       }
 
@@ -482,7 +374,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cancelDrawMode, commitDraftShape, deleteSelection, drawMode]);
+  }, [cancelDrawMode, deleteSelection]);
 
   const applyToCurrentOverlay = useCallback(
     (transform: (overlay: FloorOverlay) => FloorOverlay) => {
@@ -498,138 +390,6 @@ function App() {
     },
     [selectedFloorId],
   );
-
-  const onMapClick = useCallback(
-    (payload: MapClickPayload) => {
-      const {
-        coordinates,
-        featureId,
-        vertexFeatureId,
-        vertexIndex,
-        midpointFeatureId,
-        midpointAfterIndex,
-      } = payload;
-
-      if (vertexFeatureId && vertexIndex !== undefined) {
-        if (drawMode !== "select") {
-          setDrawMode("select");
-        }
-        setEditorState((current) => selectFeature(current, vertexFeatureId));
-        setSelectedVertexIndex(vertexIndex);
-        return;
-      }
-
-      if (midpointFeatureId && midpointAfterIndex !== undefined) {
-        if (drawMode !== "select") {
-          setDrawMode("select");
-        }
-        setEditorState((current) =>
-          updateFeature(current, midpointFeatureId, (feature) =>
-            withInsertedVertex(feature, midpointAfterIndex, coordinates),
-          ),
-        );
-        setSelectedVertexIndex(midpointAfterIndex + 1);
-        return;
-      }
-
-      if (featureId) {
-        if (drawMode !== "select") {
-          setDrawMode("select");
-        }
-        setEditorState((current) => selectFeature(current, featureId));
-        setSelectedVertexIndex(undefined);
-        return;
-      }
-
-      if (drawMode === "point") {
-        const feature: FloorFeature = {
-          type: "Feature",
-          id: createId(),
-          geometry: {
-            type: "Point",
-            coordinates,
-          },
-          properties: {
-            kind: "amenity",
-            floorId: selectedFloorId,
-            name: "New point",
-          },
-        };
-        setEditorState((current) => addFeature(current, feature));
-        return;
-      }
-
-      if (drawMode === "line" || drawMode === "polygon") {
-        setDraftVertices((current) => [...current, coordinates]);
-        return;
-      }
-
-      setEditorState((current) => selectFeature(current, undefined));
-      setSelectedVertexIndex(undefined);
-    },
-    [drawMode, selectedFloorId],
-  );
-
-  const onGeometryDragStart = useCallback(
-    (payload: GeometryDragPayload) => {
-      if (drawMode !== "select") {
-        return;
-      }
-
-      const feature = editorState.features.find((candidate) => candidate.id === payload.featureId);
-      if (!feature) {
-        return;
-      }
-
-      setEditorState((current) => selectFeature(current, feature.id));
-      if (payload.mode === "vertex" && payload.vertexIndex !== undefined) {
-        setSelectedVertexIndex(payload.vertexIndex);
-      }
-
-      setDragSnapshot({
-        featureId: feature.id,
-        startCoordinates: payload.startCoordinates,
-        startFeature: structuredClone(feature),
-        mode: payload.mode,
-        ...(payload.vertexIndex !== undefined ? { vertexIndex: payload.vertexIndex } : {}),
-      });
-    },
-    [drawMode, editorState.features],
-  );
-
-  const onGeometryDrag = useCallback((payload: GeometryDragPayload) => {
-    setDragSnapshot((snapshot) => {
-      if (!snapshot || snapshot.featureId !== payload.featureId) {
-        return snapshot;
-      }
-
-      const dx = payload.coordinates[0] - snapshot.startCoordinates[0];
-      const dy = payload.coordinates[1] - snapshot.startCoordinates[1];
-
-      setEditorState((current) =>
-        updateFeature(current, snapshot.featureId, () => {
-          if (snapshot.mode === "vertex" && snapshot.vertexIndex !== undefined) {
-            const startVertices = getFeatureVertices(snapshot.startFeature);
-            const startVertex = startVertices[snapshot.vertexIndex];
-            if (!startVertex) {
-              return snapshot.startFeature;
-            }
-
-            const nextVertices = [...startVertices];
-            nextVertices[snapshot.vertexIndex] = [startVertex[0] + dx, startVertex[1] + dy];
-            return withUpdatedVertices(snapshot.startFeature, nextVertices);
-          }
-
-          return withTranslatedFeature(snapshot.startFeature, dx, dy);
-        }),
-      );
-      return snapshot;
-    });
-  }, []);
-
-  const onGeometryDragEnd = useCallback(() => {
-    setDragSnapshot(null);
-  }, []);
 
   const onViewStateChange = useCallback((center: Coordinates, zoom: number) => {
     setMapView({ center, zoom });
@@ -717,8 +477,6 @@ function App() {
                   const firstFloor = floors.find((floor) => floor.buildingId === buildingId);
                   if (firstFloor) {
                     setSelectedFloorId(firstFloor.id);
-                    setSelectedVertexIndex(undefined);
-                    setDragSnapshot(null);
                     setEditorState((current) => selectFeature(current, undefined));
                   }
                 }}
@@ -738,8 +496,6 @@ function App() {
                   setFloors((current) => [...current, floor]);
                   setSelectedBuildingId(buildingId);
                   setSelectedFloorId(floorId);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
                   setEditorState((current) => selectFeature(current, undefined));
                 }}
                 onDeleteBuilding={(buildingId) => {
@@ -773,8 +529,6 @@ function App() {
                   }
                   setSelectedBuildingId(primaryBuilding.id);
                   setSelectedFloorId(primaryFloor.id);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
                 }}
                 onRenameBuilding={(buildingId, name) => {
                   setBuildings((current) =>
@@ -787,8 +541,6 @@ function App() {
                 }}
                 onSelectFloor={(floorId) => {
                   setSelectedFloorId(floorId);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
                   setEditorState((current) => selectFeature(current, undefined));
                 }}
                 onAddFloor={() => {
@@ -799,8 +551,6 @@ function App() {
                   };
                   setFloors((current) => [...current, floor]);
                   setSelectedFloorId(floor.id);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
                   setEditorState((current) => selectFeature(current, undefined));
                 }}
                 onDeleteFloor={(floorId) => {
@@ -827,8 +577,6 @@ function App() {
                     return;
                   }
                   setSelectedFloorId(primarySibling.id);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
                 }}
                 onRenameFloor={(floorId, name) => {
                   setFloors((current) =>
@@ -1070,49 +818,23 @@ function App() {
                         </svg>
                       </button>
                     </div>
-                    {drawMode === "line" || drawMode === "polygon" ? (
-                      <div className="rounded-box bg-base-100/95 p-2 text-sm shadow">
-                        <div>Draft vertices: {draftVertices.length}</div>
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            className="btn btn-xs"
-                            type="button"
-                            onClick={() => setDraftVertices((current) => current.slice(0, -1))}
-                          >
-                            Remove last
-                          </button>
-                          <button
-                            className="btn btn-xs btn-primary"
-                            type="button"
-                            onClick={commitDraftShape}
-                          >
-                            Finish
-                          </button>
-                          <button className="btn btn-xs" type="button" onClick={cancelDrawMode}>
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-box bg-base-100/95 px-3 py-2 text-xs shadow">
-                        Select mode: click, drag vertices, or drag selected features.
-                      </div>
-                    )}
+                    <div className="rounded-box bg-base-100/95 px-3 py-2 text-xs shadow">
+                      {drawMode === "select"
+                        ? "Select mode: click features, drag features, or drag vertices."
+                        : "Draw mode: click to add geometry. Press Escape to cancel."}
+                    </div>
                   </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
                     features={visibleFeatures}
                     selectedFeature={selectedFeature}
-                    editableVertices={editableVertices}
-                    selectedVertexIndex={selectedVertexIndex}
                     overlay={selectedOverlay}
-                    draftVertices={draftVertices}
                     drawMode={drawMode}
-                    onMapClick={onMapClick}
-                    onGeometryDragStart={onGeometryDragStart}
-                    onGeometryDrag={onGeometryDrag}
-                    onGeometryDragEnd={onGeometryDragEnd}
+                    deleteRequestVersion={deleteRequestVersion}
+                    onFeaturesChange={onDrawFeaturesChange}
+                    onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}
+                    onInteractionModeChange={onInteractionModeChange}
                   />
                 </div>
                 <div className="rounded-box bg-base-200 p-3 text-sm">

@@ -4,55 +4,50 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const MockMapCanvas = ({
   onViewStateChange,
-  onMapClick,
+  onFeatureSelectionChange,
+  onInteractionModeChange,
+  onFeaturesChange,
+  deleteRequestVersion,
 }: {
   onViewStateChange: (center: [number, number], zoom: number) => void;
-  onMapClick: (payload: {
-    coordinates: [number, number];
-    featureId: string | undefined;
-    vertexFeatureId: string | undefined;
-    vertexIndex: number | undefined;
-    midpointFeatureId: string | undefined;
-    midpointAfterIndex: number | undefined;
-  }) => void;
+  onFeatureSelectionChange: (featureId: string | undefined) => void;
+  onInteractionModeChange: (mode: "select" | "point" | "line" | "polygon") => void;
+  onFeaturesChange: (
+    features: Array<{
+      type: "Feature";
+      id: string;
+      geometry: {
+        type: "Point" | "LineString" | "Polygon";
+        coordinates: unknown;
+      };
+      properties: Record<string, unknown>;
+    }>,
+  ) => void;
+  deleteRequestVersion: number;
 }) => {
   useEffect(() => {
     onViewStateChange([5.1214, 52.0907], 17);
   }, [onViewStateChange]);
+
+  useEffect(() => {
+    if (deleteRequestVersion < 1) {
+      return;
+    }
+
+    onFeaturesChange([]);
+  }, [deleteRequestVersion, onFeaturesChange]);
 
   return (
     <div data-testid="map-canvas">
       <button
         type="button"
         data-testid="mock-map-select-feature"
-        onClick={() =>
-          onMapClick({
-            coordinates: [5.1215, 52.0908],
-            featureId: "shape-1",
-            vertexFeatureId: undefined,
-            vertexIndex: undefined,
-            midpointFeatureId: undefined,
-            midpointAfterIndex: undefined,
-          })
-        }
+        onClick={() => {
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("shape-1");
+        }}
       >
         select feature
-      </button>
-      <button
-        type="button"
-        data-testid="mock-map-select-vertex"
-        onClick={() =>
-          onMapClick({
-            coordinates: [5.122, 52.091],
-            featureId: "shape-1",
-            vertexFeatureId: "shape-1",
-            vertexIndex: 1,
-            midpointFeatureId: undefined,
-            midpointAfterIndex: undefined,
-          })
-        }
-      >
-        select vertex
       </button>
     </div>
   );
@@ -227,7 +222,7 @@ describe("App browser smoke", () => {
     });
   });
 
-  it("deletes selected vertices before deleting selected features", async () => {
+  it("applies draw-driven deletes from keyboard", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
@@ -261,10 +256,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("mock-map-select-vertex")).toBeInTheDocument();
+      expect(screen.getByTestId("mock-map-select-feature")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByTestId("mock-map-select-vertex"));
+    fireEvent.click(screen.getByTestId("mock-map-select-feature"));
     fireEvent.keyDown(window, { key: "Delete" });
 
     await waitFor(() => {
@@ -272,16 +267,11 @@ describe("App browser smoke", () => {
       expect(saveCalls.length).toBeGreaterThan(0);
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
         features: Array<{
-          geometry: {
-            type: string;
-            coordinates: number[][][];
-          };
+          id: string;
         }>;
       };
 
-      expect(latestSnapshot.features).toHaveLength(1);
-      expect(latestSnapshot.features[0]?.geometry.type).toBe("Polygon");
-      expect(latestSnapshot.features[0]?.geometry.coordinates[0]).toHaveLength(4);
+      expect(latestSnapshot.features).toHaveLength(0);
     });
   });
 });
