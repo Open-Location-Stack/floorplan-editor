@@ -303,104 +303,6 @@ function App() {
     };
   }, [editorState.features, overlays, buildings, floors]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName ?? "";
-      if (tagName === "INPUT" || tagName === "TEXTAREA") {
-        return;
-      }
-
-      const isMeta = event.ctrlKey || event.metaKey;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setDrawMode("select");
-        setDraftVertices([]);
-        setDragSnapshot(null);
-        return;
-      }
-
-      if (event.key === "Enter" && (drawMode === "line" || drawMode === "polygon")) {
-        event.preventDefault();
-        setDraftVertices((current) => {
-          if (drawMode === "line" && current.length >= 2) {
-            const feature: FloorFeature = {
-              type: "Feature",
-              id: createId(),
-              geometry: {
-                type: "LineString",
-                coordinates: current,
-              },
-              properties: {
-                kind: "path",
-                floorId: selectedFloorId,
-                name: "New line",
-              },
-            };
-            setEditorState((state) => addFeature(state, feature));
-          }
-
-          if (drawMode === "polygon" && current.length >= 3) {
-            const firstVertex = current[0];
-            if (firstVertex) {
-              const feature: FloorFeature = {
-                type: "Feature",
-                id: createId(),
-                geometry: {
-                  type: "Polygon",
-                  coordinates: [[...current, firstVertex]],
-                },
-                properties: {
-                  kind: "unit",
-                  floorId: selectedFloorId,
-                  name: "New polygon",
-                },
-              };
-              setEditorState((state) => addFeature(state, feature));
-            }
-          }
-
-          setDrawMode("select");
-          return [];
-        });
-        return;
-      }
-
-      if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        setEditorState((current) => deleteSelectedFeature(current));
-        return;
-      }
-
-      if (!isMeta) {
-        return;
-      }
-
-      if (event.key.toLowerCase() === "z" && event.shiftKey) {
-        event.preventDefault();
-        setEditorState((current) => redo(current));
-        return;
-      }
-
-      if (event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        setEditorState((current) => undo(current));
-        return;
-      }
-
-      if (event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        setEditorState((current) => redo(current));
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [drawMode, selectedFloorId]);
-
   const visibleFeatures = useMemo(
     () =>
       editorState.features.filter(
@@ -462,6 +364,125 @@ function App() {
     setDrawMode("select");
     setDraftVertices([]);
   }, [drawMode, draftVertices, selectedFloorId]);
+
+  const startDrawMode = useCallback((mode: DrawMode) => {
+    setDrawMode(mode);
+    setDraftVertices([]);
+    setSelectedVertexIndex(undefined);
+    setDragSnapshot(null);
+    setEditorState((current) => selectFeature(current, undefined));
+  }, []);
+
+  const cancelDrawMode = useCallback(() => {
+    setDrawMode("select");
+    setDraftVertices([]);
+    setSelectedVertexIndex(undefined);
+    setDragSnapshot(null);
+  }, []);
+
+  const deleteSelectedVertex = useCallback((): boolean => {
+    if (!selectedFeature || selectedVertexIndex === undefined) {
+      return false;
+    }
+
+    const currentVertices = getFeatureVertices(selectedFeature);
+    const nextVertices = currentVertices.filter((_, index) => index !== selectedVertexIndex);
+
+    if (selectedFeature.geometry.type === "LineString" && nextVertices.length < 2) {
+      return false;
+    }
+
+    if (selectedFeature.geometry.type === "Polygon" && nextVertices.length < 3) {
+      return false;
+    }
+
+    if (selectedFeature.geometry.type === "Point") {
+      return false;
+    }
+
+    setEditorState((current) =>
+      updateFeature(current, selectedFeature.id, (feature) =>
+        withUpdatedVertices(feature, nextVertices),
+      ),
+    );
+    setSelectedVertexIndex((current) => {
+      if (current === undefined) {
+        return undefined;
+      }
+
+      if (current >= nextVertices.length) {
+        return nextVertices.length - 1;
+      }
+
+      return current;
+    });
+
+    return true;
+  }, [selectedFeature, selectedVertexIndex]);
+
+  const deleteSelection = useCallback(() => {
+    if (deleteSelectedVertex()) {
+      return;
+    }
+
+    setEditorState((current) => deleteSelectedFeature(current));
+  }, [deleteSelectedVertex]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      if (tagName === "INPUT" || tagName === "TEXTAREA") {
+        return;
+      }
+
+      const isMeta = event.ctrlKey || event.metaKey;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelDrawMode();
+        return;
+      }
+
+      if (event.key === "Enter" && (drawMode === "line" || drawMode === "polygon")) {
+        event.preventDefault();
+        commitDraftShape();
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deleteSelection();
+        return;
+      }
+
+      if (!isMeta) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "z" && event.shiftKey) {
+        event.preventDefault();
+        setEditorState((current) => redo(current));
+        return;
+      }
+
+      if (event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        setEditorState((current) => undo(current));
+        return;
+      }
+
+      if (event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        setEditorState((current) => redo(current));
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [cancelDrawMode, commitDraftShape, deleteSelection, drawMode]);
 
   const applyToCurrentOverlay = useCallback(
     (transform: (overlay: FloorOverlay) => FloorOverlay) => {
@@ -818,29 +839,6 @@ function App() {
                 }}
                 features={visibleFeatures}
                 selectedFeatureId={editorState.selectedFeatureId}
-                drawMode={drawMode}
-                draftVertexCount={draftVertices.length}
-                selectedVertexIndex={selectedVertexIndex}
-                onSelectFeature={(featureId) => {
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
-                  setEditorState((current) => selectFeature(current, featureId));
-                }}
-                onStartDraw={(mode) => {
-                  setDrawMode(mode);
-                  setDraftVertices([]);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
-                  setEditorState((current) => selectFeature(current, undefined));
-                }}
-                onCompleteDraw={commitDraftShape}
-                onCancelDraw={() => {
-                  setDrawMode("select");
-                  setDraftVertices([]);
-                  setSelectedVertexIndex(undefined);
-                  setDragSnapshot(null);
-                }}
-                onRemoveLastVertex={() => setDraftVertices((current) => current.slice(0, -1))}
                 onDeleteSelectedFeature={() =>
                   setEditorState((current) => deleteSelectedFeature(current))
                 }
@@ -874,44 +872,6 @@ function App() {
                     })),
                   );
                 }}
-                onSelectVertexIndex={(index) => setSelectedVertexIndex(index)}
-                onDeleteSelectedVertex={() => {
-                  if (!selectedFeature || selectedVertexIndex === undefined) {
-                    return;
-                  }
-
-                  const currentVertices = getFeatureVertices(selectedFeature);
-                  const nextVertices = currentVertices.filter(
-                    (_, index) => index !== selectedVertexIndex,
-                  );
-
-                  if (selectedFeature.geometry.type === "LineString" && nextVertices.length < 2) {
-                    return;
-                  }
-
-                  if (selectedFeature.geometry.type === "Polygon" && nextVertices.length < 3) {
-                    return;
-                  }
-
-                  setEditorState((current) =>
-                    updateFeature(current, selectedFeature.id, (feature) =>
-                      withUpdatedVertices(feature, nextVertices),
-                    ),
-                  );
-                  setSelectedVertexIndex((current) => {
-                    if (current === undefined) {
-                      return undefined;
-                    }
-
-                    if (current >= nextVertices.length) {
-                      return nextVertices.length - 1;
-                    }
-
-                    return current;
-                  });
-                }}
-                onUndo={() => setEditorState((current) => undo(current))}
-                onRedo={() => setEditorState((current) => redo(current))}
                 onImport={(importedFeatures) => {
                   const normalized = importedFeatures.map((feature) => ({
                     ...feature,
@@ -987,7 +947,158 @@ function App() {
             <section className="card bg-base-100 shadow xl:min-h-0">
               <div className="card-body gap-3 xl:min-h-0">
                 <h2 className="card-title text-lg">Map View</h2>
-                <div className="h-[50vh] xl:min-h-0 xl:flex-1">
+                <div className="relative h-[50vh] xl:min-h-0 xl:flex-1">
+                  <div className="absolute left-3 top-3 z-10 flex flex-col gap-2">
+                    <div
+                      className="join bg-base-100/95 p-1 shadow"
+                      role="toolbar"
+                      aria-label="Map edit tools"
+                    >
+                      <button
+                        className={`btn btn-sm join-item ${drawMode === "select" ? "btn-primary" : ""}`}
+                        type="button"
+                        aria-label="Select mode"
+                        title="Select mode"
+                        onClick={cancelDrawMode}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="m4 3 6 15 2.8-5.2L18 10 4 3Z"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className={`btn btn-sm join-item ${drawMode === "point" ? "btn-primary" : ""}`}
+                        type="button"
+                        aria-label="Draw point"
+                        title="Draw point"
+                        onClick={() => startDrawMode("point")}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <circle cx="12" cy="12" r="4" fill="currentColor" />
+                        </svg>
+                      </button>
+                      <button
+                        className={`btn btn-sm join-item ${drawMode === "line" ? "btn-primary" : ""}`}
+                        type="button"
+                        aria-label="Draw line"
+                        title="Draw line"
+                        onClick={() => startDrawMode("line")}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M4 18 20 6"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className={`btn btn-sm join-item ${drawMode === "polygon" ? "btn-primary" : ""}`}
+                        type="button"
+                        aria-label="Draw polygon"
+                        title="Draw polygon"
+                        onClick={() => startDrawMode("polygon")}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M6 6h8l4 6-6 6H5l1-12Z"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className="btn btn-sm join-item"
+                        type="button"
+                        aria-label="Undo"
+                        title="Undo"
+                        onClick={() => setEditorState((current) => undo(current))}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M8 8 4 12l4 4M5 12h9a6 6 0 1 1 0 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className="btn btn-sm join-item"
+                        type="button"
+                        aria-label="Redo"
+                        title="Redo"
+                        onClick={() => setEditorState((current) => redo(current))}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="m16 8 4 4-4 4M19 12h-9a6 6 0 1 0 0 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className="btn btn-sm btn-error join-item"
+                        type="button"
+                        aria-label="Delete selection"
+                        title="Delete selection"
+                        onClick={deleteSelection}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M4 7h16M9 7V5h6v2m-7 0v12h8V7"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    {drawMode === "line" || drawMode === "polygon" ? (
+                      <div className="rounded-box bg-base-100/95 p-2 text-sm shadow">
+                        <div>Draft vertices: {draftVertices.length}</div>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            className="btn btn-xs"
+                            type="button"
+                            onClick={() => setDraftVertices((current) => current.slice(0, -1))}
+                          >
+                            Remove last
+                          </button>
+                          <button
+                            className="btn btn-xs btn-primary"
+                            type="button"
+                            onClick={commitDraftShape}
+                          >
+                            Finish
+                          </button>
+                          <button className="btn btn-xs" type="button" onClick={cancelDrawMode}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-box bg-base-100/95 px-3 py-2 text-xs shadow">
+                        Select mode: click, drag vertices, or drag selected features.
+                      </div>
+                    )}
+                  </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
                     features={visibleFeatures}

@@ -28,6 +28,12 @@ export type GeometryDragPayload = {
 type MapClickHandler = (payload: MapClickPayload) => void;
 type ViewStateHandler = (center: Coordinates, zoom: number) => void;
 type GeometryDragHandler = (payload: GeometryDragPayload) => void;
+type RenderedProperties = Record<string, unknown> & {
+  featureId?: unknown;
+  vertexIndex?: unknown;
+  afterIndex?: unknown;
+};
+type RenderedHit = { id?: unknown; properties?: RenderedProperties };
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
@@ -69,6 +75,9 @@ const DRAFT_POINT_LAYER_ID = "editor-draft-point";
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
+const FEATURE_ID_PROPERTY = "__featureId";
+const VERTEX_INDEX_PROPERTY = "__vertexIndex";
+const MIDPOINT_AFTER_INDEX_PROPERTY = "__afterIndex";
 
 const INTERACTIVE_CLICK_LAYERS = [
   EDIT_VERTEX_SELECTED_LAYER_ID,
@@ -95,9 +104,17 @@ const emptyFeatureCollection = (): FeatureCollection => ({
   features: [],
 });
 
+const withFeatureIdProperty = (feature: FloorFeature): FloorFeature => ({
+  ...feature,
+  properties: {
+    ...feature.properties,
+    [FEATURE_ID_PROPERTY]: feature.id,
+  },
+});
+
 const singleFeatureCollection = (feature: FloorFeature | undefined): FeatureCollection => ({
   type: "FeatureCollection",
-  features: feature ? [feature] : [],
+  features: feature ? [withFeatureIdProperty(feature)] : [],
 });
 
 const toDraftFeatures = (
@@ -208,7 +225,9 @@ const toVertexFeatures = (
       properties: {
         kind: "vertex",
         name: `Vertex ${index + 1}`,
-        floorId: featureId,
+        featureId,
+        [FEATURE_ID_PROPERTY]: featureId,
+        [VERTEX_INDEX_PROPERTY]: index,
       },
     })),
   };
@@ -256,6 +275,8 @@ const toMidpointFeatures = (
         kind: "midpoint",
         featureId,
         afterIndex: index,
+        [FEATURE_ID_PROPERTY]: featureId,
+        [MIDPOINT_AFTER_INDEX_PROPERTY]: index,
       },
     };
   }).filter((feature) => Boolean(feature));
@@ -293,7 +314,9 @@ const toSelectedVertexFeature = (
         properties: {
           kind: "selected-vertex",
           name: `Selected vertex ${selectedVertexIndex + 1}`,
-          floorId: featureId,
+          featureId,
+          [FEATURE_ID_PROPERTY]: featureId,
+          [VERTEX_INDEX_PROPERTY]: selectedVertexIndex,
         },
       },
     ],
@@ -325,7 +348,7 @@ const parseNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
-const parseFeatureIdFromVertex = (
+const parseFeatureIdFromVertexId = (
   id: unknown,
 ): { featureId: string | undefined; vertexIndex: number | undefined } => {
   if (typeof id !== "string") {
@@ -361,7 +384,7 @@ const parseFeatureIdFromVertex = (
   };
 };
 
-const parseFeatureIdFromMidpoint = (
+const parseFeatureIdFromMidpointId = (
   id: unknown,
 ): { featureId: string | undefined; afterIndex: number | undefined } => {
   if (typeof id !== "string") {
@@ -399,6 +422,52 @@ const parseFeatureId = (id: unknown): string | undefined => {
   return undefined;
 };
 
+const parseFeatureIdFromProperties = (properties: RenderedProperties | undefined) => {
+  if (!properties) {
+    return undefined;
+  }
+
+  return parseFeatureId(properties[FEATURE_ID_PROPERTY] ?? properties.featureId);
+};
+
+const parseFeatureIdFromVertexProperties = (
+  properties: RenderedProperties | undefined,
+): { featureId: string | undefined; vertexIndex: number | undefined } => {
+  if (!properties) {
+    return {
+      featureId: undefined,
+      vertexIndex: undefined,
+    };
+  }
+
+  const featureId = parseFeatureId(properties.featureId ?? properties[FEATURE_ID_PROPERTY]);
+  const vertexIndex = parseNumber(properties[VERTEX_INDEX_PROPERTY] ?? properties.vertexIndex);
+  return {
+    featureId,
+    vertexIndex,
+  };
+};
+
+const parseFeatureIdFromMidpointProperties = (
+  properties: RenderedProperties | undefined,
+): { featureId: string | undefined; afterIndex: number | undefined } => {
+  if (!properties) {
+    return {
+      featureId: undefined,
+      afterIndex: undefined,
+    };
+  }
+
+  const featureId = parseFeatureId(properties.featureId ?? properties[FEATURE_ID_PROPERTY]);
+  const afterIndex = parseNumber(
+    properties[MIDPOINT_AFTER_INDEX_PROPERTY] ?? properties.afterIndex,
+  );
+  return {
+    featureId,
+    afterIndex,
+  };
+};
+
 const getSourceSetData = (map: import("maplibre-gl").Map, sourceId: string) => {
   const source = map.getSource(sourceId);
   return isSetDataSource(source) ? source : undefined;
@@ -431,26 +500,36 @@ const setCursor = (
   canvas.style.cursor = options.isHoveringInteractive ? "pointer" : "";
 };
 
-const hasInteractiveHit = (rendered: Array<{ id?: unknown }>): boolean =>
+const hasInteractiveHit = (rendered: RenderedHit[]): boolean =>
   rendered.some((hit) => {
-    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    const fromVertex =
+      parseFeatureIdFromVertexProperties(hit.properties).featureId !== undefined
+        ? parseFeatureIdFromVertexProperties(hit.properties)
+        : parseFeatureIdFromVertexId(hit.id);
     if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
       return true;
     }
 
-    const fromMidpoint = parseFeatureIdFromMidpoint(hit.id);
+    const fromMidpoint =
+      parseFeatureIdFromMidpointProperties(hit.properties).featureId !== undefined
+        ? parseFeatureIdFromMidpointProperties(hit.properties)
+        : parseFeatureIdFromMidpointId(hit.id);
     if (fromMidpoint.featureId && fromMidpoint.afterIndex !== undefined) {
       return true;
     }
 
-    return Boolean(parseFeatureId(hit.id));
+    return Boolean(parseFeatureIdFromProperties(hit.properties) ?? parseFeatureId(hit.id));
   });
 
 const getVertexDragTarget = (
-  rendered: Array<{ id?: unknown }>,
+  rendered: RenderedHit[],
 ): { featureId: string; vertexIndex: number } | undefined => {
   for (const hit of rendered) {
-    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    const fromVertexProperties = parseFeatureIdFromVertexProperties(hit.properties);
+    const fromVertex =
+      fromVertexProperties.featureId !== undefined
+        ? fromVertexProperties
+        : parseFeatureIdFromVertexId(hit.id);
     if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
       return {
         featureId: fromVertex.featureId,
@@ -461,9 +540,9 @@ const getVertexDragTarget = (
   return undefined;
 };
 
-const getFeatureDragTarget = (rendered: Array<{ id?: unknown }>): string | undefined => {
+const getFeatureDragTarget = (rendered: RenderedHit[]): string | undefined => {
   for (const hit of rendered) {
-    const featureId = parseFeatureId(hit.id);
+    const featureId = parseFeatureIdFromProperties(hit.properties) ?? parseFeatureId(hit.id);
     if (featureId) {
       return featureId;
     }
@@ -472,7 +551,7 @@ const getFeatureDragTarget = (rendered: Array<{ id?: unknown }>): string | undef
 };
 
 const getClickTarget = (
-  rendered: Array<{ id?: unknown }>,
+  rendered: RenderedHit[],
 ): {
   featureId: string | undefined;
   vertexFeatureId: string | undefined;
@@ -481,7 +560,11 @@ const getClickTarget = (
   midpointAfterIndex: number | undefined;
 } => {
   for (const hit of rendered) {
-    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    const fromVertexProperties = parseFeatureIdFromVertexProperties(hit.properties);
+    const fromVertex =
+      fromVertexProperties.featureId !== undefined
+        ? fromVertexProperties
+        : parseFeatureIdFromVertexId(hit.id);
     if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
       return {
         featureId: fromVertex.featureId,
@@ -494,7 +577,11 @@ const getClickTarget = (
   }
 
   for (const hit of rendered) {
-    const fromMidpoint = parseFeatureIdFromMidpoint(hit.id);
+    const fromMidpointProperties = parseFeatureIdFromMidpointProperties(hit.properties);
+    const fromMidpoint =
+      fromMidpointProperties.featureId !== undefined
+        ? fromMidpointProperties
+        : parseFeatureIdFromMidpointId(hit.id);
     if (fromMidpoint.featureId && fromMidpoint.afterIndex !== undefined) {
       return {
         featureId: fromMidpoint.featureId,
@@ -507,7 +594,7 @@ const getClickTarget = (
   }
 
   for (const hit of rendered) {
-    const featureId = parseFeatureId(hit.id);
+    const featureId = parseFeatureIdFromProperties(hit.properties) ?? parseFeatureId(hit.id);
     if (featureId) {
       return {
         featureId,
@@ -635,14 +722,17 @@ export const createMapController = async (
     }
 
     if (!map.getLayer(OVERLAY_LAYER_ID)) {
-      map.addLayer({
-        id: OVERLAY_LAYER_ID,
-        type: "raster",
-        source: OVERLAY_SOURCE_ID,
-        paint: {
-          "raster-opacity": overlay.opacity / 100,
+      map.addLayer(
+        {
+          id: OVERLAY_LAYER_ID,
+          type: "raster",
+          source: OVERLAY_SOURCE_ID,
+          paint: {
+            "raster-opacity": overlay.opacity / 100,
+          },
         },
-      });
+        FEATURE_FILL_LAYER_ID,
+      );
     } else {
       map.setPaintProperty(OVERLAY_LAYER_ID, "raster-opacity", overlay.opacity / 100);
     }
@@ -696,6 +786,7 @@ export const createMapController = async (
     map.addSource(FEATURE_SOURCE_ID, {
       type: "geojson",
       data: emptyFeatureCollection(),
+      promoteId: FEATURE_ID_PROPERTY,
     });
 
     map.addLayer({
@@ -736,6 +827,7 @@ export const createMapController = async (
     map.addSource(SELECTED_SOURCE_ID, {
       type: "geojson",
       data: emptyFeatureCollection(),
+      promoteId: FEATURE_ID_PROPERTY,
     });
 
     map.addLayer({
@@ -986,11 +1078,14 @@ export const createMapController = async (
 
   return {
     setFeatures: (features) => {
-      currentFeatures = features;
+      currentFeatures = {
+        type: "FeatureCollection",
+        features: features.features.map((feature) => withFeatureIdProperty(feature)),
+      };
       applyPendingState();
     },
     setSelection: (feature) => {
-      currentSelection = feature;
+      currentSelection = feature ? withFeatureIdProperty(feature) : undefined;
       applyPendingState();
     },
     setEditableVertices: (featureId, geometryType, vertices, selectedVertexIndex) => {

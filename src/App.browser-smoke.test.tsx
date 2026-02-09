@@ -38,6 +38,22 @@ const MockMapCanvas = ({
       >
         select feature
       </button>
+      <button
+        type="button"
+        data-testid="mock-map-select-vertex"
+        onClick={() =>
+          onMapClick({
+            coordinates: [5.122, 52.091],
+            featureId: "shape-1",
+            vertexFeatureId: "shape-1",
+            vertexIndex: 1,
+            midpointFeatureId: undefined,
+            midpointAfterIndex: undefined,
+          })
+        }
+      >
+        select vertex
+      </button>
     </div>
   );
 };
@@ -208,6 +224,64 @@ describe("App browser smoke", () => {
     await waitFor(() => {
       expect(screen.getByText(/selected:/i)).toBeInTheDocument();
       expect(screen.getAllByText(/test unit/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("deletes selected vertices before deleting selected features", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 3,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-select-vertex")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-select-vertex"));
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          geometry: {
+            type: string;
+            coordinates: number[][][];
+          };
+        }>;
+      };
+
+      expect(latestSnapshot.features).toHaveLength(1);
+      expect(latestSnapshot.features[0]?.geometry.type).toBe("Polygon");
+      expect(latestSnapshot.features[0]?.geometry.coordinates[0]).toHaveLength(4);
     });
   });
 });

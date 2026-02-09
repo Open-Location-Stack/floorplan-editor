@@ -140,6 +140,7 @@ describe("createMapController", () => {
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({ id: "floor-overlay-layer" }),
+      "editor-features-fill",
     );
   });
 
@@ -183,7 +184,19 @@ describe("createMapController", () => {
     const featureSource = map.getSource("editor-features") as
       | { setData?: ReturnType<typeof vi.fn> }
       | undefined;
-    expect(featureSource?.setData).toHaveBeenCalledWith(features);
+    expect(featureSource?.setData).toHaveBeenCalledWith({
+      type: "FeatureCollection",
+      features: [
+        expect.objectContaining({
+          id: "f1",
+          properties: expect.objectContaining({
+            kind: "amenity",
+            floorId: "f1",
+            __featureId: "f1",
+          }),
+        }),
+      ],
+    });
   });
 
   it("applies buffered selection, editable vertices, and draft after style load", async () => {
@@ -320,6 +333,191 @@ describe("createMapController", () => {
       vertexIndex: undefined,
       midpointFeatureId: undefined,
       midpointAfterIndex: undefined,
+    });
+
+    controller.destroy();
+  });
+
+  it("reports vertex selection when clicking a rendered vertex handle", async () => {
+    const onMapClick = vi.fn();
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick,
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart: vi.fn(),
+      onGeometryDrag: vi.fn(),
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "shape-1",
+      },
+      {
+        id: "shape-1-vertex-2",
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 4, y: 4 },
+      lngLat: { lng: 5.1215, lat: 52.0908 },
+    });
+
+    expect(onMapClick).toHaveBeenCalledWith({
+      coordinates: [5.1215, 52.0908],
+      featureId: "shape-1",
+      vertexFeatureId: "shape-1",
+      vertexIndex: 2,
+      midpointFeatureId: undefined,
+      midpointAfterIndex: undefined,
+    });
+
+    controller.destroy();
+  });
+
+  it("starts vertex drag when pressing a rendered vertex handle", async () => {
+    const onGeometryDragStart = vi.fn();
+    const onGeometryDrag = vi.fn();
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart,
+      onGeometryDrag,
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "shape-1-vertex-1",
+      },
+    ] as never);
+
+    map.emit("mousedown", {
+      point: { x: 8, y: 8 },
+      lngLat: { lng: 5.1214, lat: 52.0907 },
+    });
+    map.emit("mousemove", {
+      point: { x: 9, y: 9 },
+      lngLat: { lng: 5.1216, lat: 52.0909 },
+    });
+
+    expect(onGeometryDragStart).toHaveBeenCalledWith({
+      mode: "vertex",
+      featureId: "shape-1",
+      vertexIndex: 1,
+      coordinates: [5.1214, 52.0907],
+      startCoordinates: [5.1214, 52.0907],
+    });
+    expect(onGeometryDrag).toHaveBeenCalledWith({
+      mode: "vertex",
+      featureId: "shape-1",
+      vertexIndex: 1,
+      coordinates: [5.1216, 52.0909],
+      startCoordinates: [5.1214, 52.0907],
+    });
+
+    controller.destroy();
+  });
+
+  it("selects a vertex using hit properties when rendered ids are unavailable", async () => {
+    const onMapClick = vi.fn();
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick,
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart: vi.fn(),
+      onGeometryDrag: vi.fn(),
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        properties: {
+          featureId: "shape-2",
+          __featureId: "shape-2",
+          __vertexIndex: 3,
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 12, y: 15 },
+      lngLat: { lng: 5.1217, lat: 52.091 },
+    });
+
+    expect(onMapClick).toHaveBeenCalledWith({
+      coordinates: [5.1217, 52.091],
+      featureId: "shape-2",
+      vertexFeatureId: "shape-2",
+      vertexIndex: 3,
+      midpointFeatureId: undefined,
+      midpointAfterIndex: undefined,
+    });
+
+    controller.destroy();
+  });
+
+  it("starts vertex drag using hit properties when rendered ids are unavailable", async () => {
+    const onGeometryDragStart = vi.fn();
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart,
+      onGeometryDrag: vi.fn(),
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        properties: {
+          featureId: "shape-3",
+          __featureId: "shape-3",
+          __vertexIndex: 1,
+        },
+      },
+    ] as never);
+
+    map.emit("mousedown", {
+      point: { x: 16, y: 10 },
+      lngLat: { lng: 5.1216, lat: 52.0909 },
+    });
+
+    expect(onGeometryDragStart).toHaveBeenCalledWith({
+      mode: "vertex",
+      featureId: "shape-3",
+      vertexIndex: 1,
+      coordinates: [5.1216, 52.0909],
+      startCoordinates: [5.1216, 52.0909],
     });
 
     controller.destroy();

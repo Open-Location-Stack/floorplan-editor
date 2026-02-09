@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DrawMode } from "../../components/MapCanvas";
 import {
   convertArea,
   convertLength,
@@ -24,21 +23,9 @@ type EditorPanelsProps = {
   onRenameFloor: (floorId: string, name: string) => void;
   features: FloorFeature[];
   selectedFeatureId: string | undefined;
-  drawMode: DrawMode;
-  draftVertexCount: number;
-  selectedVertexIndex: number | undefined;
-  onSelectFeature: (featureId: string | undefined) => void;
-  onStartDraw: (mode: "point" | "line" | "polygon") => void;
-  onCompleteDraw: () => void;
-  onCancelDraw: () => void;
-  onRemoveLastVertex: () => void;
   onDeleteSelectedFeature: () => void;
   onUpdateSelectedFeatureProperty: (key: string, value: string) => void;
-  onSelectVertexIndex: (index: number | undefined) => void;
-  onDeleteSelectedVertex: () => void;
   onUpdateSelectedFeatureMetadata: (metadata: JsonObject) => void;
-  onUndo: () => void;
-  onRedo: () => void;
   onImport: (features: FloorFeature[]) => void;
   overlay: FloorOverlay | undefined;
   onOverlayUpload: (file: File) => void;
@@ -48,27 +35,6 @@ type EditorPanelsProps = {
   onOverlayScale: (factor: number) => void;
   onOverlayRotate: (degrees: number) => void;
   onOverlayToggleLock: () => void;
-};
-
-const vertexCountForFeature = (feature: FloorFeature | undefined): number => {
-  if (!feature) {
-    return 0;
-  }
-
-  if (feature.geometry.type === "LineString") {
-    return feature.geometry.coordinates.length;
-  }
-
-  if (feature.geometry.type === "Polygon") {
-    const ring = feature.geometry.coordinates[0] ?? [];
-    return Math.max(0, ring.length - 1);
-  }
-
-  if (feature.geometry.type === "Point") {
-    return 1;
-  }
-
-  return 0;
 };
 
 const IMDF_TYPE_OPTIONS = [
@@ -104,21 +70,9 @@ export const EditorPanels = ({
   onRenameFloor,
   features,
   selectedFeatureId,
-  drawMode,
-  draftVertexCount,
-  selectedVertexIndex,
-  onSelectFeature,
-  onStartDraw,
-  onCompleteDraw,
-  onCancelDraw,
-  onRemoveLastVertex,
   onDeleteSelectedFeature,
   onUpdateSelectedFeatureProperty,
-  onSelectVertexIndex,
-  onDeleteSelectedVertex,
   onUpdateSelectedFeatureMetadata,
-  onUndo,
-  onRedo,
   onImport,
   overlay,
   onOverlayUpload,
@@ -163,8 +117,6 @@ export const EditorPanels = ({
 
   const lengthMeters = selectedFeature ? featureLengthMeters(selectedFeature) : 0;
   const areaSquareMeters = selectedFeature ? featureAreaSquareMeters(selectedFeature) : 0;
-  const vertexCount = vertexCountForFeature(selectedFeature);
-
   return (
     <div className="flex h-full flex-col gap-4">
       <section className="card bg-base-100 shadow">
@@ -247,85 +199,10 @@ export const EditorPanels = ({
 
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
-          <h2 className="card-title text-lg">WYSIWYG Geometry Editor</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              className={`btn btn-sm ${drawMode === "point" ? "btn-primary" : ""}`}
-              type="button"
-              onClick={() => onStartDraw("point")}
-            >
-              Draw point
-            </button>
-            <button
-              className={`btn btn-sm ${drawMode === "line" ? "btn-primary" : ""}`}
-              type="button"
-              onClick={() => onStartDraw("line")}
-            >
-              Draw line
-            </button>
-            <button
-              className={`btn btn-sm ${drawMode === "polygon" ? "btn-primary" : ""}`}
-              type="button"
-              onClick={() => onStartDraw("polygon")}
-            >
-              Draw polygon
-            </button>
-            <button className="btn btn-sm" type="button" onClick={onCancelDraw}>
-              Select mode
-            </button>
-            <button className="btn btn-sm" type="button" onClick={onUndo}>
-              Undo
-            </button>
-            <button className="btn btn-sm" type="button" onClick={onRedo}>
-              Redo
-            </button>
-          </div>
-
-          {drawMode === "line" || drawMode === "polygon" ? (
-            <div className="rounded-box bg-base-200 p-3 text-sm">
-              <div>Draft vertices: {draftVertexCount}</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button className="btn btn-xs" type="button" onClick={onRemoveLastVertex}>
-                  Remove last
-                </button>
-                <button className="btn btn-xs btn-primary" type="button" onClick={onCompleteDraw}>
-                  Finish
-                </button>
-                <button className="btn btn-xs" type="button" onClick={onCancelDraw}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-base-content/70">
-              Select mode: click to select, drag a vertex to reshape, drag the selected feature to
-              move it, and click a blue midpoint to insert a vertex.
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="card bg-base-100 shadow">
-        <div className="card-body gap-3">
-          <h2 className="card-title text-lg">Feature Properties</h2>
-
-          <ul className="menu max-h-44 rounded-box bg-base-200 p-2 text-sm">
-            {features.map((feature) => (
-              <li key={feature.id}>
-                <button
-                  type="button"
-                  className={selectedFeatureId === feature.id ? "active" : ""}
-                  onClick={() => onSelectFeature(feature.id)}
-                >
-                  <span className="font-mono text-xs">{feature.geometry.type}</span>
-                  <span>{feature.properties.name ?? feature.id}</span>
-                </button>
-              </li>
-            ))}
-            {features.length === 0 ? (
-              <li className="px-2 py-1 text-base-content/70">No floor features yet.</li>
-            ) : null}
-          </ul>
+          <h2 className="card-title text-lg">Feature Metadata</h2>
+          <p className="text-sm text-base-content/70">
+            Select a feature on the map to edit metadata.
+          </p>
 
           <input
             className="input input-bordered input-sm"
@@ -457,38 +334,6 @@ export const EditorPanels = ({
               </button>
             </div>
             {metadataError ? <div className="mt-2 text-xs text-error">{metadataError}</div> : null}
-          </div>
-
-          <div className="rounded-box bg-base-200 p-3 text-sm">
-            <div className="mb-2 font-medium">Vertices</div>
-            <div className="flex gap-2">
-              <select
-                className="select select-bordered select-xs w-full"
-                value={selectedVertexIndex ?? ""}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  onSelectVertexIndex(value === "" ? undefined : Number(value));
-                }}
-                disabled={!selectedFeature || selectedFeature.geometry.type === "Point"}
-              >
-                <option value="">No vertex selected</option>
-                {Array.from({ length: vertexCount }, (_, index) => index + 1).map(
-                  (vertexNumber) => (
-                    <option key={`vertex-${vertexNumber}`} value={vertexNumber - 1}>
-                      Vertex {vertexNumber}
-                    </option>
-                  ),
-                )}
-              </select>
-              <button
-                className="btn btn-xs btn-error"
-                type="button"
-                disabled={selectedVertexIndex === undefined}
-                onClick={onDeleteSelectedVertex}
-              >
-                Delete vertex
-              </button>
-            </div>
           </div>
 
           <button
