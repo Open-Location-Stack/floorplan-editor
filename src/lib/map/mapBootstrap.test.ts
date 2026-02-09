@@ -251,4 +251,77 @@ describe("createMapController", () => {
     expect(midpointSource?.setData).toHaveBeenCalled();
     expect(draftSource?.setData).toHaveBeenCalled();
   });
+
+  it("sets pointer cursor when hovering an editable feature in select mode", async () => {
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart: vi.fn(),
+      onGeometryDrag: vi.fn(),
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "feature-1",
+      },
+    ] as never);
+
+    map.emit("mousemove", {
+      point: { x: 10, y: 12 },
+    });
+
+    expect(map.getCanvas().style.cursor).toBe("pointer");
+
+    controller.destroy();
+  });
+
+  it("treats ids containing -vertex- as regular feature ids unless suffixed with a vertex index", async () => {
+    const onMapClick = vi.fn();
+    const container = document.createElement("div");
+    const controller = await createMapController(container, "fake-key", {
+      onMapClick,
+      onViewStateChange: vi.fn(),
+      onGeometryDragStart: vi.fn(),
+      onGeometryDrag: vi.fn(),
+      onGeometryDragEnd: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map mock instance");
+    }
+
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "unit-vertex-east",
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 0, y: 0 },
+      lngLat: { lng: 5.1215, lat: 52.0908 },
+    });
+
+    expect(onMapClick).toHaveBeenCalledWith({
+      coordinates: [5.1215, 52.0908],
+      featureId: "unit-vertex-east",
+      vertexFeatureId: undefined,
+      vertexIndex: undefined,
+      midpointFeatureId: undefined,
+      midpointAfterIndex: undefined,
+    });
+
+    controller.destroy();
+  });
 });

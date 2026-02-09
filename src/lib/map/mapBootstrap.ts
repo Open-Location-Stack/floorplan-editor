@@ -335,18 +335,20 @@ const parseFeatureIdFromVertex = (
     };
   }
 
-  const marker = "-vertex-";
-  const selectedMarker = "-selected-vertex-";
-  if (id.includes(selectedMarker)) {
-    const [featureId, suffix] = id.split(selectedMarker);
+  const selectedMatch = id.match(/^(.*)-selected-vertex-(\d+)$/);
+  if (selectedMatch) {
+    const featureId = selectedMatch[1];
+    const suffix = selectedMatch[2];
     return {
       featureId,
       vertexIndex: parseNumber(suffix),
     };
   }
 
-  if (id.includes(marker)) {
-    const [featureId, suffix] = id.split(marker);
+  const vertexMatch = id.match(/^(.*)-vertex-(\d+)$/);
+  if (vertexMatch) {
+    const featureId = vertexMatch[1];
+    const suffix = vertexMatch[2];
     return {
       featureId,
       vertexIndex: parseNumber(suffix),
@@ -369,15 +371,16 @@ const parseFeatureIdFromMidpoint = (
     };
   }
 
-  const marker = "-midpoint-";
-  if (!id.includes(marker)) {
+  const midpointMatch = id.match(/^(.*)-midpoint-(\d+)$/);
+  if (!midpointMatch) {
     return {
       featureId: undefined,
       afterIndex: undefined,
     };
   }
 
-  const [featureId, suffix] = id.split(marker);
+  const featureId = midpointMatch[1];
+  const suffix = midpointMatch[2];
   return {
     featureId,
     afterIndex: parseNumber(suffix),
@@ -409,18 +412,134 @@ const assertDev = (condition: boolean, message: string) => {
   }
 };
 
+const setCursor = (
+  map: import("maplibre-gl").Map,
+  mode: "select" | "point" | "line" | "polygon",
+  options: { isDraggingGeometry: boolean; isHoveringInteractive: boolean },
+) => {
+  const canvas = map.getCanvas();
+  if (options.isDraggingGeometry) {
+    canvas.style.cursor = "grabbing";
+    return;
+  }
+
+  if (mode !== "select") {
+    canvas.style.cursor = "crosshair";
+    return;
+  }
+
+  canvas.style.cursor = options.isHoveringInteractive ? "pointer" : "";
+};
+
+const hasInteractiveHit = (rendered: Array<{ id?: unknown }>): boolean =>
+  rendered.some((hit) => {
+    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
+      return true;
+    }
+
+    const fromMidpoint = parseFeatureIdFromMidpoint(hit.id);
+    if (fromMidpoint.featureId && fromMidpoint.afterIndex !== undefined) {
+      return true;
+    }
+
+    return Boolean(parseFeatureId(hit.id));
+  });
+
+const getVertexDragTarget = (
+  rendered: Array<{ id?: unknown }>,
+): { featureId: string; vertexIndex: number } | undefined => {
+  for (const hit of rendered) {
+    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
+      return {
+        featureId: fromVertex.featureId,
+        vertexIndex: fromVertex.vertexIndex,
+      };
+    }
+  }
+  return undefined;
+};
+
+const getFeatureDragTarget = (rendered: Array<{ id?: unknown }>): string | undefined => {
+  for (const hit of rendered) {
+    const featureId = parseFeatureId(hit.id);
+    if (featureId) {
+      return featureId;
+    }
+  }
+  return undefined;
+};
+
+const getClickTarget = (
+  rendered: Array<{ id?: unknown }>,
+): {
+  featureId: string | undefined;
+  vertexFeatureId: string | undefined;
+  vertexIndex: number | undefined;
+  midpointFeatureId: string | undefined;
+  midpointAfterIndex: number | undefined;
+} => {
+  for (const hit of rendered) {
+    const fromVertex = parseFeatureIdFromVertex(hit.id);
+    if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
+      return {
+        featureId: fromVertex.featureId,
+        vertexFeatureId: fromVertex.featureId,
+        vertexIndex: fromVertex.vertexIndex,
+        midpointFeatureId: undefined,
+        midpointAfterIndex: undefined,
+      };
+    }
+  }
+
+  for (const hit of rendered) {
+    const fromMidpoint = parseFeatureIdFromMidpoint(hit.id);
+    if (fromMidpoint.featureId && fromMidpoint.afterIndex !== undefined) {
+      return {
+        featureId: fromMidpoint.featureId,
+        vertexFeatureId: undefined,
+        vertexIndex: undefined,
+        midpointFeatureId: fromMidpoint.featureId,
+        midpointAfterIndex: fromMidpoint.afterIndex,
+      };
+    }
+  }
+
+  for (const hit of rendered) {
+    const featureId = parseFeatureId(hit.id);
+    if (featureId) {
+      return {
+        featureId,
+        vertexFeatureId: undefined,
+        vertexIndex: undefined,
+        midpointFeatureId: undefined,
+        midpointAfterIndex: undefined,
+      };
+    }
+  }
+
+  return {
+    featureId: undefined,
+    vertexFeatureId: undefined,
+    vertexIndex: undefined,
+    midpointFeatureId: undefined,
+    midpointAfterIndex: undefined,
+  };
+};
+
 const applyInteractionMode = (
   map: import("maplibre-gl").Map,
   mode: "select" | "point" | "line" | "polygon",
 ) => {
   if (mode === "select") {
     map.dragPan.enable();
-    map.getCanvas().style.cursor = "";
+    setCursor(map, mode, { isDraggingGeometry: false, isHoveringInteractive: false });
     return;
   }
 
   map.dragPan.disable();
-  map.getCanvas().style.cursor = "crosshair";
+  setCursor(map, mode, { isDraggingGeometry: false, isHoveringInteractive: false });
 };
 
 const updateDragPanForState = (
@@ -763,28 +882,24 @@ export const createMapController = async (
       layers: INTERACTIVE_DRAG_LAYERS,
     });
 
-    const topHit = rendered[0];
-    if (!topHit) {
-      return;
-    }
-
-    const fromVertex = parseFeatureIdFromVertex(topHit.id);
     const startCoordinates: Coordinates = [event.lngLat.lng, event.lngLat.lat];
+    const vertexTarget = getVertexDragTarget(rendered);
 
-    if (fromVertex.featureId && fromVertex.vertexIndex !== undefined) {
+    if (vertexTarget) {
       activeDrag = {
         mode: "vertex",
-        featureId: fromVertex.featureId,
-        vertexIndex: fromVertex.vertexIndex,
+        featureId: vertexTarget.featureId,
+        vertexIndex: vertexTarget.vertexIndex,
         coordinates: startCoordinates,
         startCoordinates,
       };
       updateDragPanForState(map, interactionMode, true);
+      setCursor(map, interactionMode, { isDraggingGeometry: true, isHoveringInteractive: true });
       handlers.onGeometryDragStart(activeDrag);
       return;
     }
 
-    const featureId = parseFeatureId(topHit.id);
+    const featureId = getFeatureDragTarget(rendered);
     if (!featureId) {
       return;
     }
@@ -796,11 +911,19 @@ export const createMapController = async (
       startCoordinates,
     };
     updateDragPanForState(map, interactionMode, true);
+    setCursor(map, interactionMode, { isDraggingGeometry: true, isHoveringInteractive: true });
     handlers.onGeometryDragStart(activeDrag);
   });
 
   map.on("mousemove", (event) => {
     if (!activeDrag) {
+      const rendered = map.queryRenderedFeatures(event.point, {
+        layers: INTERACTIVE_CLICK_LAYERS,
+      });
+      setCursor(map, interactionMode, {
+        isDraggingGeometry: false,
+        isHoveringInteractive: interactionMode === "select" && hasInteractiveHit(rendered),
+      });
       return;
     }
 
@@ -811,6 +934,7 @@ export const createMapController = async (
 
     activeDrag = next;
     suppressClick = true;
+    setCursor(map, interactionMode, { isDraggingGeometry: true, isHoveringInteractive: true });
     handlers.onGeometryDrag(next);
   });
 
@@ -821,16 +945,19 @@ export const createMapController = async (
 
     activeDrag = undefined;
     updateDragPanForState(map, interactionMode, false);
+    setCursor(map, interactionMode, { isDraggingGeometry: false, isHoveringInteractive: false });
     handlers.onGeometryDragEnd();
   });
 
   map.on("mouseout", () => {
     if (!activeDrag) {
+      setCursor(map, interactionMode, { isDraggingGeometry: false, isHoveringInteractive: false });
       return;
     }
 
     activeDrag = undefined;
     updateDragPanForState(map, interactionMode, false);
+    setCursor(map, interactionMode, { isDraggingGeometry: false, isHoveringInteractive: false });
     handlers.onGeometryDragEnd();
   });
 
@@ -844,28 +971,8 @@ export const createMapController = async (
       layers: INTERACTIVE_CLICK_LAYERS,
     });
 
-    const topHit = rendered[0];
-    let featureId: string | undefined;
-    let vertexFeatureId: string | undefined;
-    let vertexIndex: number | undefined;
-    let midpointFeatureId: string | undefined;
-    let midpointAfterIndex: number | undefined;
-
-    if (topHit) {
-      const fromVertex = parseFeatureIdFromVertex(topHit.id);
-      vertexFeatureId = fromVertex.featureId;
-      vertexIndex = fromVertex.vertexIndex;
-
-      const fromMidpoint = parseFeatureIdFromMidpoint(topHit.id);
-      midpointFeatureId = fromMidpoint.featureId;
-      midpointAfterIndex = fromMidpoint.afterIndex;
-
-      if (!vertexFeatureId && !midpointFeatureId) {
-        featureId = parseFeatureId(topHit.id);
-      } else {
-        featureId = vertexFeatureId ?? midpointFeatureId;
-      }
-    }
+    const { featureId, vertexFeatureId, vertexIndex, midpointFeatureId, midpointAfterIndex } =
+      getClickTarget(rendered);
 
     handlers.onMapClick({
       coordinates: [event.lngLat.lng, event.lngLat.lat],
