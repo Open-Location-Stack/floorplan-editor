@@ -14,6 +14,7 @@ import {
   undo,
   updateFeature,
 } from "./lib/editor/editorModel";
+import { rotateAroundPoint } from "./lib/geometry/overlayTransforms";
 import { createId } from "./lib/id";
 import { clientLogger } from "./lib/logging/clientLogger";
 import type { GeometryDragPayload, MapClickPayload } from "./lib/map/mapBootstrap";
@@ -98,16 +99,8 @@ const scaleCorners = (corners: OverlayCorners, factor: number): OverlayCorners =
 };
 
 const rotateCorners = (corners: OverlayCorners, degrees: number): OverlayCorners => {
-  const radians = (degrees * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
   const center = overlayCenter(corners);
-
-  return mapCorners(corners, (point) => {
-    const dx = point[0] - center[0];
-    const dy = point[1] - center[1];
-    return [center[0] + dx * cos - dy * sin, center[1] + dx * sin + dy * cos];
-  });
+  return mapCorners(corners, (point) => rotateAroundPoint(point, center, degrees));
 };
 
 const getFeatureVertices = (feature: FloorFeature | undefined): Coordinates[] => {
@@ -496,6 +489,37 @@ function App() {
         midpointAfterIndex,
       } = payload;
 
+      if (vertexFeatureId && vertexIndex !== undefined) {
+        if (drawMode !== "select") {
+          setDrawMode("select");
+        }
+        setEditorState((current) => selectFeature(current, vertexFeatureId));
+        setSelectedVertexIndex(vertexIndex);
+        return;
+      }
+
+      if (midpointFeatureId && midpointAfterIndex !== undefined) {
+        if (drawMode !== "select") {
+          setDrawMode("select");
+        }
+        setEditorState((current) =>
+          updateFeature(current, midpointFeatureId, (feature) =>
+            withInsertedVertex(feature, midpointAfterIndex, coordinates),
+          ),
+        );
+        setSelectedVertexIndex(midpointAfterIndex + 1);
+        return;
+      }
+
+      if (featureId) {
+        if (drawMode !== "select") {
+          setDrawMode("select");
+        }
+        setEditorState((current) => selectFeature(current, featureId));
+        setSelectedVertexIndex(undefined);
+        return;
+      }
+
       if (drawMode === "point") {
         const feature: FloorFeature = {
           type: "Feature",
@@ -519,23 +543,7 @@ function App() {
         return;
       }
 
-      if (vertexFeatureId && vertexIndex !== undefined) {
-        setEditorState((current) => selectFeature(current, vertexFeatureId));
-        setSelectedVertexIndex(vertexIndex);
-        return;
-      }
-
-      if (midpointFeatureId && midpointAfterIndex !== undefined) {
-        setEditorState((current) =>
-          updateFeature(current, midpointFeatureId, (feature) =>
-            withInsertedVertex(feature, midpointAfterIndex, coordinates),
-          ),
-        );
-        setSelectedVertexIndex(midpointAfterIndex + 1);
-        return;
-      }
-
-      setEditorState((current) => selectFeature(current, featureId));
+      setEditorState((current) => selectFeature(current, undefined));
       setSelectedVertexIndex(undefined);
     },
     [drawMode, selectedFloorId],
@@ -653,9 +661,9 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <main className="min-h-screen bg-base-200 p-4 lg:p-6">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
-          <header className="navbar rounded-box bg-base-100 shadow">
+      <main className="min-h-screen bg-base-200 xl:h-screen">
+        <div className="flex min-h-screen flex-col gap-4 p-4 xl:h-screen xl:min-h-0">
+          <header className="navbar bg-base-100 shadow">
             <div className="flex-1">
               <h1 className="text-xl font-semibold">FORMATION Floor Plan Editor</h1>
             </div>
@@ -676,316 +684,326 @@ function App() {
             </div>
           </header>
 
-          <div className="grid gap-4 xl:grid-cols-[460px_1fr]">
-            <EditorPanels
-              buildings={buildings}
-              floors={floors}
-              selectedBuildingId={selectedBuildingId}
-              selectedFloorId={selectedFloorId}
-              onSelectBuilding={(buildingId) => {
-                setSelectedBuildingId(buildingId);
-                const firstFloor = floors.find((floor) => floor.buildingId === buildingId);
-                if (firstFloor) {
-                  setSelectedFloorId(firstFloor.id);
+          <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[460px_minmax(0,1fr)]">
+            <aside className="xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+              <EditorPanels
+                buildings={buildings}
+                floors={floors}
+                selectedBuildingId={selectedBuildingId}
+                selectedFloorId={selectedFloorId}
+                onSelectBuilding={(buildingId) => {
+                  setSelectedBuildingId(buildingId);
+                  const firstFloor = floors.find((floor) => floor.buildingId === buildingId);
+                  if (firstFloor) {
+                    setSelectedFloorId(firstFloor.id);
+                    setSelectedVertexIndex(undefined);
+                    setDragSnapshot(null);
+                    setEditorState((current) => selectFeature(current, undefined));
+                  }
+                }}
+                onAddBuilding={() => {
+                  const buildingId = createId();
+                  const floorId = createId();
+                  const building: Building = {
+                    id: buildingId,
+                    name: `Building ${buildings.length + 1}`,
+                  };
+                  const floor: Floor = {
+                    id: floorId,
+                    buildingId,
+                    name: "Ground Floor",
+                  };
+                  setBuildings((current) => [...current, building]);
+                  setFloors((current) => [...current, floor]);
+                  setSelectedBuildingId(buildingId);
+                  setSelectedFloorId(floorId);
                   setSelectedVertexIndex(undefined);
                   setDragSnapshot(null);
                   setEditorState((current) => selectFeature(current, undefined));
-                }
-              }}
-              onAddBuilding={() => {
-                const buildingId = createId();
-                const floorId = createId();
-                const building: Building = {
-                  id: buildingId,
-                  name: `Building ${buildings.length + 1}`,
-                };
-                const floor: Floor = {
-                  id: floorId,
-                  buildingId,
-                  name: "Ground Floor",
-                };
-                setBuildings((current) => [...current, building]);
-                setFloors((current) => [...current, floor]);
-                setSelectedBuildingId(buildingId);
-                setSelectedFloorId(floorId);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-                setEditorState((current) => selectFeature(current, undefined));
-              }}
-              onDeleteBuilding={(buildingId) => {
-                const floorsToDelete = floors
-                  .filter((floor) => floor.buildingId === buildingId)
-                  .map((floor) => floor.id);
-                const nextBuildings = buildings.filter((building) => building.id !== buildingId);
-                const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
-                if (nextBuildings.length === 0 || nextFloors.length === 0) {
-                  return;
-                }
-
-                setBuildings(nextBuildings);
-                setFloors(nextFloors);
-                setOverlays((current) =>
-                  current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
-                );
-                setEditorState((current) =>
-                  replaceAllFeatures(
-                    selectFeature(current, undefined),
-                    current.features.filter(
-                      (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
-                    ),
-                  ),
-                );
-
-                const primaryBuilding = nextBuildings[0];
-                const primaryFloor = nextFloors[0];
-                if (!primaryBuilding || !primaryFloor) {
-                  return;
-                }
-                setSelectedBuildingId(primaryBuilding.id);
-                setSelectedFloorId(primaryFloor.id);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-              }}
-              onRenameBuilding={(buildingId, name) => {
-                setBuildings((current) =>
-                  current.map((building) =>
-                    building.id === buildingId
-                      ? { ...building, name: name || "Untitled building" }
-                      : building,
-                  ),
-                );
-              }}
-              onSelectFloor={(floorId) => {
-                setSelectedFloorId(floorId);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-                setEditorState((current) => selectFeature(current, undefined));
-              }}
-              onAddFloor={() => {
-                const floor: Floor = {
-                  id: createId(),
-                  buildingId: selectedBuildingId,
-                  name: `Floor ${floors.filter((current) => current.buildingId === selectedBuildingId).length + 1}`,
-                };
-                setFloors((current) => [...current, floor]);
-                setSelectedFloorId(floor.id);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-                setEditorState((current) => selectFeature(current, undefined));
-              }}
-              onDeleteFloor={(floorId) => {
-                const nextFloors = floors.filter((floor) => floor.id !== floorId);
-                const siblingFloors = nextFloors.filter(
-                  (floor) => floor.buildingId === selectedBuildingId,
-                );
-                if (siblingFloors.length === 0) {
-                  return;
-                }
-
-                setFloors(nextFloors);
-                setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
-                setEditorState((current) =>
-                  replaceAllFeatures(
-                    selectFeature(current, undefined),
-                    current.features.filter((feature) => feature.properties.floorId !== floorId),
-                  ),
-                );
-                const primarySibling = siblingFloors[0];
-                if (!primarySibling) {
-                  return;
-                }
-                setSelectedFloorId(primarySibling.id);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-              }}
-              onRenameFloor={(floorId, name) => {
-                setFloors((current) =>
-                  current.map((floor) =>
-                    floor.id === floorId ? { ...floor, name: name || "Untitled floor" } : floor,
-                  ),
-                );
-              }}
-              features={visibleFeatures}
-              selectedFeatureId={editorState.selectedFeatureId}
-              drawMode={drawMode}
-              draftVertexCount={draftVertices.length}
-              selectedVertexIndex={selectedVertexIndex}
-              onSelectFeature={(featureId) => {
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-                setEditorState((current) => selectFeature(current, featureId));
-              }}
-              onStartDraw={(mode) => {
-                setDrawMode(mode);
-                setDraftVertices([]);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-                setEditorState((current) => selectFeature(current, undefined));
-              }}
-              onCompleteDraw={commitDraftShape}
-              onCancelDraw={() => {
-                setDrawMode("select");
-                setDraftVertices([]);
-                setSelectedVertexIndex(undefined);
-                setDragSnapshot(null);
-              }}
-              onRemoveLastVertex={() => setDraftVertices((current) => current.slice(0, -1))}
-              onDeleteSelectedFeature={() =>
-                setEditorState((current) => deleteSelectedFeature(current))
-              }
-              onUpdateSelectedFeatureProperty={(key, value) => {
-                if (!editorState.selectedFeatureId) {
-                  return;
-                }
-
-                setEditorState((current) =>
-                  updateFeature(current, editorState.selectedFeatureId ?? "", (feature) => ({
-                    ...feature,
-                    properties: {
-                      ...feature.properties,
-                      [key]: value || undefined,
-                    },
-                  })),
-                );
-              }}
-              onUpdateSelectedFeatureMetadata={(metadata) => {
-                if (!editorState.selectedFeatureId) {
-                  return;
-                }
-
-                setEditorState((current) =>
-                  updateFeature(current, editorState.selectedFeatureId ?? "", (feature) => ({
-                    ...feature,
-                    properties: {
-                      ...feature.properties,
-                      metadata,
-                    },
-                  })),
-                );
-              }}
-              onSelectVertexIndex={(index) => setSelectedVertexIndex(index)}
-              onDeleteSelectedVertex={() => {
-                if (!selectedFeature || selectedVertexIndex === undefined) {
-                  return;
-                }
-
-                const currentVertices = getFeatureVertices(selectedFeature);
-                const nextVertices = currentVertices.filter(
-                  (_, index) => index !== selectedVertexIndex,
-                );
-
-                if (selectedFeature.geometry.type === "LineString" && nextVertices.length < 2) {
-                  return;
-                }
-
-                if (selectedFeature.geometry.type === "Polygon" && nextVertices.length < 3) {
-                  return;
-                }
-
-                setEditorState((current) =>
-                  updateFeature(current, selectedFeature.id, (feature) =>
-                    withUpdatedVertices(feature, nextVertices),
-                  ),
-                );
-                setSelectedVertexIndex((current) => {
-                  if (current === undefined) {
-                    return undefined;
+                }}
+                onDeleteBuilding={(buildingId) => {
+                  const floorsToDelete = floors
+                    .filter((floor) => floor.buildingId === buildingId)
+                    .map((floor) => floor.id);
+                  const nextBuildings = buildings.filter((building) => building.id !== buildingId);
+                  const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
+                  if (nextBuildings.length === 0 || nextFloors.length === 0) {
+                    return;
                   }
 
-                  if (current >= nextVertices.length) {
-                    return nextVertices.length - 1;
-                  }
-
-                  return current;
-                });
-              }}
-              onUndo={() => setEditorState((current) => undo(current))}
-              onRedo={() => setEditorState((current) => redo(current))}
-              onImport={(importedFeatures) => {
-                const normalized = importedFeatures.map((feature) => ({
-                  ...feature,
-                  id: feature.id || createId(),
-                  properties: {
-                    ...feature.properties,
-                    floorId: selectedFloorId,
-                  },
-                }));
-
-                setEditorState((current) => {
-                  const withoutCurrentFloor = current.features.filter(
-                    (feature) => feature.properties.floorId !== selectedFloorId,
+                  setBuildings(nextBuildings);
+                  setFloors(nextFloors);
+                  setOverlays((current) =>
+                    current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
                   );
-                  return replaceAllFeatures(current, [...withoutCurrentFloor, ...normalized]);
-                });
-              }}
-              overlay={selectedOverlay}
-              onOverlayUpload={uploadOverlayForCurrentFloor}
-              onOverlayOpacityChange={(opacity) => {
-                setOverlays((current) =>
-                  current.map((overlay) =>
-                    overlay.floorId === selectedFloorId
-                      ? { ...overlay, opacity, updatedAt: new Date().toISOString() }
-                      : overlay,
-                  ),
-                );
-              }}
-              onOverlayRecenter={() => {
-                applyToCurrentOverlay((overlay) => ({
-                  ...overlay,
-                  corners: cornersAroundView(mapView.center, mapView.zoom),
-                  updatedAt: new Date().toISOString(),
-                }));
-              }}
-              onOverlayNudge={(dx, dy) => {
-                applyToCurrentOverlay((overlay) => ({
-                  ...overlay,
-                  corners: shiftCorners(overlay.corners, dx, dy),
-                  updatedAt: new Date().toISOString(),
-                }));
-              }}
-              onOverlayScale={(factor) => {
-                applyToCurrentOverlay((overlay) => ({
-                  ...overlay,
-                  corners: scaleCorners(overlay.corners, factor),
-                  updatedAt: new Date().toISOString(),
-                }));
-              }}
-              onOverlayRotate={(degrees) => {
-                applyToCurrentOverlay((overlay) => ({
-                  ...overlay,
-                  corners: rotateCorners(overlay.corners, degrees),
-                  updatedAt: new Date().toISOString(),
-                }));
-              }}
-              onOverlayToggleLock={() => {
-                setOverlays((current) =>
-                  current.map((overlay) =>
-                    overlay.floorId === selectedFloorId
-                      ? { ...overlay, locked: !overlay.locked, updatedAt: new Date().toISOString() }
-                      : overlay,
-                  ),
-                );
-              }}
-            />
+                  setEditorState((current) =>
+                    replaceAllFeatures(
+                      selectFeature(current, undefined),
+                      current.features.filter(
+                        (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
+                      ),
+                    ),
+                  );
 
-            <section className="card bg-base-100 shadow">
-              <div className="card-body gap-3">
+                  const primaryBuilding = nextBuildings[0];
+                  const primaryFloor = nextFloors[0];
+                  if (!primaryBuilding || !primaryFloor) {
+                    return;
+                  }
+                  setSelectedBuildingId(primaryBuilding.id);
+                  setSelectedFloorId(primaryFloor.id);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                }}
+                onRenameBuilding={(buildingId, name) => {
+                  setBuildings((current) =>
+                    current.map((building) =>
+                      building.id === buildingId
+                        ? { ...building, name: name || "Untitled building" }
+                        : building,
+                    ),
+                  );
+                }}
+                onSelectFloor={(floorId) => {
+                  setSelectedFloorId(floorId);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                  setEditorState((current) => selectFeature(current, undefined));
+                }}
+                onAddFloor={() => {
+                  const floor: Floor = {
+                    id: createId(),
+                    buildingId: selectedBuildingId,
+                    name: `Floor ${floors.filter((current) => current.buildingId === selectedBuildingId).length + 1}`,
+                  };
+                  setFloors((current) => [...current, floor]);
+                  setSelectedFloorId(floor.id);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                  setEditorState((current) => selectFeature(current, undefined));
+                }}
+                onDeleteFloor={(floorId) => {
+                  const nextFloors = floors.filter((floor) => floor.id !== floorId);
+                  const siblingFloors = nextFloors.filter(
+                    (floor) => floor.buildingId === selectedBuildingId,
+                  );
+                  if (siblingFloors.length === 0) {
+                    return;
+                  }
+
+                  setFloors(nextFloors);
+                  setOverlays((current) =>
+                    current.filter((overlay) => overlay.floorId !== floorId),
+                  );
+                  setEditorState((current) =>
+                    replaceAllFeatures(
+                      selectFeature(current, undefined),
+                      current.features.filter((feature) => feature.properties.floorId !== floorId),
+                    ),
+                  );
+                  const primarySibling = siblingFloors[0];
+                  if (!primarySibling) {
+                    return;
+                  }
+                  setSelectedFloorId(primarySibling.id);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                }}
+                onRenameFloor={(floorId, name) => {
+                  setFloors((current) =>
+                    current.map((floor) =>
+                      floor.id === floorId ? { ...floor, name: name || "Untitled floor" } : floor,
+                    ),
+                  );
+                }}
+                features={visibleFeatures}
+                selectedFeatureId={editorState.selectedFeatureId}
+                drawMode={drawMode}
+                draftVertexCount={draftVertices.length}
+                selectedVertexIndex={selectedVertexIndex}
+                onSelectFeature={(featureId) => {
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                  setEditorState((current) => selectFeature(current, featureId));
+                }}
+                onStartDraw={(mode) => {
+                  setDrawMode(mode);
+                  setDraftVertices([]);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                  setEditorState((current) => selectFeature(current, undefined));
+                }}
+                onCompleteDraw={commitDraftShape}
+                onCancelDraw={() => {
+                  setDrawMode("select");
+                  setDraftVertices([]);
+                  setSelectedVertexIndex(undefined);
+                  setDragSnapshot(null);
+                }}
+                onRemoveLastVertex={() => setDraftVertices((current) => current.slice(0, -1))}
+                onDeleteSelectedFeature={() =>
+                  setEditorState((current) => deleteSelectedFeature(current))
+                }
+                onUpdateSelectedFeatureProperty={(key, value) => {
+                  if (!editorState.selectedFeatureId) {
+                    return;
+                  }
+
+                  setEditorState((current) =>
+                    updateFeature(current, editorState.selectedFeatureId ?? "", (feature) => ({
+                      ...feature,
+                      properties: {
+                        ...feature.properties,
+                        [key]: value || undefined,
+                      },
+                    })),
+                  );
+                }}
+                onUpdateSelectedFeatureMetadata={(metadata) => {
+                  if (!editorState.selectedFeatureId) {
+                    return;
+                  }
+
+                  setEditorState((current) =>
+                    updateFeature(current, editorState.selectedFeatureId ?? "", (feature) => ({
+                      ...feature,
+                      properties: {
+                        ...feature.properties,
+                        metadata,
+                      },
+                    })),
+                  );
+                }}
+                onSelectVertexIndex={(index) => setSelectedVertexIndex(index)}
+                onDeleteSelectedVertex={() => {
+                  if (!selectedFeature || selectedVertexIndex === undefined) {
+                    return;
+                  }
+
+                  const currentVertices = getFeatureVertices(selectedFeature);
+                  const nextVertices = currentVertices.filter(
+                    (_, index) => index !== selectedVertexIndex,
+                  );
+
+                  if (selectedFeature.geometry.type === "LineString" && nextVertices.length < 2) {
+                    return;
+                  }
+
+                  if (selectedFeature.geometry.type === "Polygon" && nextVertices.length < 3) {
+                    return;
+                  }
+
+                  setEditorState((current) =>
+                    updateFeature(current, selectedFeature.id, (feature) =>
+                      withUpdatedVertices(feature, nextVertices),
+                    ),
+                  );
+                  setSelectedVertexIndex((current) => {
+                    if (current === undefined) {
+                      return undefined;
+                    }
+
+                    if (current >= nextVertices.length) {
+                      return nextVertices.length - 1;
+                    }
+
+                    return current;
+                  });
+                }}
+                onUndo={() => setEditorState((current) => undo(current))}
+                onRedo={() => setEditorState((current) => redo(current))}
+                onImport={(importedFeatures) => {
+                  const normalized = importedFeatures.map((feature) => ({
+                    ...feature,
+                    id: feature.id || createId(),
+                    properties: {
+                      ...feature.properties,
+                      floorId: selectedFloorId,
+                    },
+                  }));
+
+                  setEditorState((current) => {
+                    const withoutCurrentFloor = current.features.filter(
+                      (feature) => feature.properties.floorId !== selectedFloorId,
+                    );
+                    return replaceAllFeatures(current, [...withoutCurrentFloor, ...normalized]);
+                  });
+                }}
+                overlay={selectedOverlay}
+                onOverlayUpload={uploadOverlayForCurrentFloor}
+                onOverlayOpacityChange={(opacity) => {
+                  setOverlays((current) =>
+                    current.map((overlay) =>
+                      overlay.floorId === selectedFloorId
+                        ? { ...overlay, opacity, updatedAt: new Date().toISOString() }
+                        : overlay,
+                    ),
+                  );
+                }}
+                onOverlayRecenter={() => {
+                  applyToCurrentOverlay((overlay) => ({
+                    ...overlay,
+                    corners: cornersAroundView(mapView.center, mapView.zoom),
+                    updatedAt: new Date().toISOString(),
+                  }));
+                }}
+                onOverlayNudge={(dx, dy) => {
+                  applyToCurrentOverlay((overlay) => ({
+                    ...overlay,
+                    corners: shiftCorners(overlay.corners, dx, dy),
+                    updatedAt: new Date().toISOString(),
+                  }));
+                }}
+                onOverlayScale={(factor) => {
+                  applyToCurrentOverlay((overlay) => ({
+                    ...overlay,
+                    corners: scaleCorners(overlay.corners, factor),
+                    updatedAt: new Date().toISOString(),
+                  }));
+                }}
+                onOverlayRotate={(degrees) => {
+                  applyToCurrentOverlay((overlay) => ({
+                    ...overlay,
+                    corners: rotateCorners(overlay.corners, degrees),
+                    updatedAt: new Date().toISOString(),
+                  }));
+                }}
+                onOverlayToggleLock={() => {
+                  setOverlays((current) =>
+                    current.map((overlay) =>
+                      overlay.floorId === selectedFloorId
+                        ? {
+                            ...overlay,
+                            locked: !overlay.locked,
+                            updatedAt: new Date().toISOString(),
+                          }
+                        : overlay,
+                    ),
+                  );
+                }}
+              />
+            </aside>
+
+            <section className="card bg-base-100 shadow xl:min-h-0">
+              <div className="card-body gap-3 xl:min-h-0">
                 <h2 className="card-title text-lg">Map View</h2>
-                <MapCanvas
-                  maptilerApiKey={runtimeConfig.config.maptilerApiKey}
-                  features={visibleFeatures}
-                  selectedFeature={selectedFeature}
-                  editableVertices={editableVertices}
-                  selectedVertexIndex={selectedVertexIndex}
-                  overlay={selectedOverlay}
-                  draftVertices={draftVertices}
-                  drawMode={drawMode}
-                  onMapClick={onMapClick}
-                  onGeometryDragStart={onGeometryDragStart}
-                  onGeometryDrag={onGeometryDrag}
-                  onGeometryDragEnd={onGeometryDragEnd}
-                  onViewStateChange={onViewStateChange}
-                />
+                <div className="h-[50vh] xl:min-h-0 xl:flex-1">
+                  <MapCanvas
+                    maptilerApiKey={runtimeConfig.config.maptilerApiKey}
+                    features={visibleFeatures}
+                    selectedFeature={selectedFeature}
+                    editableVertices={editableVertices}
+                    selectedVertexIndex={selectedVertexIndex}
+                    overlay={selectedOverlay}
+                    draftVertices={draftVertices}
+                    drawMode={drawMode}
+                    onMapClick={onMapClick}
+                    onGeometryDragStart={onGeometryDragStart}
+                    onGeometryDrag={onGeometryDrag}
+                    onGeometryDragEnd={onGeometryDragEnd}
+                    onViewStateChange={onViewStateChange}
+                  />
+                </div>
                 <div className="rounded-box bg-base-200 p-3 text-sm">
                   Center: {mapView.center[0].toFixed(6)}, {mapView.center[1].toFixed(6)} | Zoom:{" "}
                   {mapView.zoom.toFixed(2)}

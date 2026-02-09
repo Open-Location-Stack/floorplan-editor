@@ -1,17 +1,45 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const MockMapCanvas = ({
   onViewStateChange,
+  onMapClick,
 }: {
   onViewStateChange: (center: [number, number], zoom: number) => void;
+  onMapClick: (payload: {
+    coordinates: [number, number];
+    featureId: string | undefined;
+    vertexFeatureId: string | undefined;
+    vertexIndex: number | undefined;
+    midpointFeatureId: string | undefined;
+    midpointAfterIndex: number | undefined;
+  }) => void;
 }) => {
   useEffect(() => {
     onViewStateChange([5.1214, 52.0907], 17);
   }, [onViewStateChange]);
 
-  return <div data-testid="map-canvas" />;
+  return (
+    <div data-testid="map-canvas">
+      <button
+        type="button"
+        data-testid="mock-map-select-feature"
+        onClick={() =>
+          onMapClick({
+            coordinates: [5.1215, 52.0908],
+            featureId: "shape-1",
+            vertexFeatureId: undefined,
+            vertexIndex: undefined,
+            midpointFeatureId: undefined,
+            midpointAfterIndex: undefined,
+          })
+        }
+      >
+        select feature
+      </button>
+    </div>
+  );
 };
 
 vi.mock("./components/MapCanvas", () => ({
@@ -135,5 +163,51 @@ describe("App browser smoke", () => {
     expect(
       screen.queryByText(/something went wrong\. please reload the editor\./i),
     ).not.toBeInTheDocument();
+  });
+
+  it("selects clicked map feature even when draw mode is active", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 3,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /draw line/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /draw line/i }));
+    fireEvent.click(screen.getByTestId("mock-map-select-feature"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/selected:/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/test unit/i).length).toBeGreaterThan(0);
+    });
   });
 });
