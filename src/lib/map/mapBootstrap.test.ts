@@ -55,6 +55,7 @@ type MockDrawInstance = {
 
 let lastMockMap: MockMap | undefined;
 let lastMockDraw: MockDrawInstance | undefined;
+let mockMarkers: MockMarker[] = [];
 
 class MockMap {
   styleLoaded = false;
@@ -142,6 +143,10 @@ class MockMarker {
   lngLat = { lng: 0, lat: 0 };
   handlers = new Map<string, Array<() => void>>();
 
+  constructor(_options: unknown) {
+    mockMarkers.push(this);
+  }
+
   setLngLat = vi.fn((value: [number, number]) => {
     this.lngLat = { lng: value[0], lat: value[1] };
     return this;
@@ -156,6 +161,12 @@ class MockMarker {
     this.handlers.set(event, [...current, handler]);
     return this;
   });
+
+  emit = (event: string) => {
+    for (const handler of this.handlers.get(event) ?? []) {
+      handler();
+    }
+  };
 }
 
 vi.mock("maplibre-gl", () => ({
@@ -297,6 +308,7 @@ describe("createMapController", () => {
   beforeEach(() => {
     lastMockMap = undefined;
     lastMockDraw = undefined;
+    mockMarkers = [];
     vi.clearAllMocks();
   });
 
@@ -328,6 +340,117 @@ describe("createMapController", () => {
       expect.objectContaining({ id: "floor-overlay-layer" }),
       undefined,
     );
+  });
+
+  it("drags the overlay bitmap to translate all corners", async () => {
+    const onOverlayCornersChange = vi.fn();
+    const overlay = createOverlay();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange,
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setOverlay(overlay);
+    map.emit("load");
+    map.queryRenderedFeatures.mockReturnValue([
+      {
+        layer: {
+          id: "floor-overlay-layer",
+        },
+      },
+    ] as never);
+
+    map.emit("mousedown", {
+      point: { x: 100, y: 120 },
+      lngLat: { lng: 5.12, lat: 52.1 },
+    });
+    map.emit("mousemove", {
+      point: { x: 106, y: 124 },
+      lngLat: { lng: 5.121, lat: 52.099 },
+    });
+    map.emit("mouseup", {
+      point: { x: 106, y: 124 },
+      lngLat: { lng: 5.121, lat: 52.099 },
+    });
+
+    expect(onOverlayCornersChange).toHaveBeenCalled();
+    const latestCorners = onOverlayCornersChange.mock.lastCall?.[0];
+    expect(latestCorners).toBeDefined();
+    if (!latestCorners) {
+      throw new Error("Expected overlay corner update payload");
+    }
+
+    expect(latestCorners.topLeft[0]).toBeCloseTo(overlay.corners.topLeft[0] + 0.001);
+    expect(latestCorners.topLeft[1]).toBeCloseTo(overlay.corners.topLeft[1] - 0.001);
+    expect(latestCorners.bottomRight[0]).toBeCloseTo(overlay.corners.bottomRight[0] + 0.001);
+    expect(latestCorners.bottomRight[1]).toBeCloseTo(overlay.corners.bottomRight[1] - 0.001);
+  });
+
+  it("drags the center overlay handle to translate all corners", async () => {
+    const onOverlayCornersChange = vi.fn();
+    const overlay = createOverlay();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange,
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setOverlay(overlay);
+    map.emit("load");
+
+    expect(mockMarkers.length).toBeGreaterThanOrEqual(5);
+    const centerMarker = mockMarkers[4];
+    expect(centerMarker).toBeDefined();
+    if (!centerMarker) {
+      throw new Error("Expected center overlay marker");
+    }
+
+    const center = [
+      (overlay.corners.topLeft[0] +
+        overlay.corners.topRight[0] +
+        overlay.corners.bottomRight[0] +
+        overlay.corners.bottomLeft[0]) /
+        4,
+      (overlay.corners.topLeft[1] +
+        overlay.corners.topRight[1] +
+        overlay.corners.bottomRight[1] +
+        overlay.corners.bottomLeft[1]) /
+        4,
+    ] as const;
+
+    centerMarker.emit("dragstart");
+    centerMarker.setLngLat([center[0] + 0.002, center[1] - 0.0015]);
+    centerMarker.emit("drag");
+    centerMarker.emit("dragend");
+
+    expect(onOverlayCornersChange).toHaveBeenCalled();
+    const latestCorners = onOverlayCornersChange.mock.lastCall?.[0];
+    expect(latestCorners).toBeDefined();
+    if (!latestCorners) {
+      throw new Error("Expected overlay corner update payload");
+    }
+
+    expect(latestCorners.topLeft[0]).toBeCloseTo(overlay.corners.topLeft[0] + 0.002);
+    expect(latestCorners.topLeft[1]).toBeCloseTo(overlay.corners.topLeft[1] - 0.0015);
+    expect(latestCorners.bottomRight[0]).toBeCloseTo(overlay.corners.bottomRight[0] + 0.002);
+    expect(latestCorners.bottomRight[1]).toBeCloseTo(overlay.corners.bottomRight[1] - 0.0015);
   });
 
   it("applies buffered features into draw after style load", async () => {

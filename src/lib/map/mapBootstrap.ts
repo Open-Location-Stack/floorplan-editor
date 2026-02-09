@@ -28,7 +28,9 @@ type MapController = {
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
 const OVERLAY_HANDLE_SIZE = 12;
+const OVERLAY_CENTER_HANDLE_SIZE = 16;
 const OVERLAY_HANDLE_COLOR = "#f97316";
+const OVERLAY_CENTER_HANDLE_COLOR = "#0ea5e9";
 const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
@@ -56,6 +58,9 @@ type RenderedProperties = {
 type RenderedFeatureHit = {
   id?: unknown;
   properties?: RenderedProperties;
+  layer?: {
+    id?: unknown;
+  };
 };
 
 const isUpdateImageSource = (
@@ -281,6 +286,69 @@ const toHoverCursor = (meta: unknown, mode: DrawMode): string | undefined => {
   return undefined;
 };
 
+const getEventPoint = (event: unknown): { x: number; y: number } | undefined => {
+  if (!event || typeof event !== "object") {
+    return undefined;
+  }
+
+  const candidate = event as {
+    point?: {
+      x?: unknown;
+      y?: unknown;
+    };
+  };
+  if (!candidate.point) {
+    return undefined;
+  }
+
+  if (typeof candidate.point.x !== "number" || typeof candidate.point.y !== "number") {
+    return undefined;
+  }
+
+  return { x: candidate.point.x, y: candidate.point.y };
+};
+
+const getEventLngLat = (event: unknown): Coordinates | undefined => {
+  if (!event || typeof event !== "object") {
+    return undefined;
+  }
+
+  const candidate = event as {
+    lngLat?: {
+      lng?: unknown;
+      lat?: unknown;
+    };
+  };
+  if (!candidate.lngLat) {
+    return undefined;
+  }
+
+  if (typeof candidate.lngLat.lng !== "number" || typeof candidate.lngLat.lat !== "number") {
+    return undefined;
+  }
+
+  return [candidate.lngLat.lng, candidate.lngLat.lat];
+};
+
+const isOverlayLayerHit = (hit: RenderedFeatureHit | undefined): boolean =>
+  hit?.layer?.id === OVERLAY_LAYER_ID;
+
+const shiftOverlayCorners = (
+  corners: FloorOverlay["corners"],
+  dx: number,
+  dy: number,
+): FloorOverlay["corners"] => ({
+  topLeft: [corners.topLeft[0] + dx, corners.topLeft[1] + dy],
+  topRight: [corners.topRight[0] + dx, corners.topRight[1] + dy],
+  bottomRight: [corners.bottomRight[0] + dx, corners.bottomRight[1] + dy],
+  bottomLeft: [corners.bottomLeft[0] + dx, corners.bottomLeft[1] + dy],
+});
+
+const overlayCenter = (corners: FloorOverlay["corners"]): Coordinates => [
+  (corners.topLeft[0] + corners.topRight[0] + corners.bottomRight[0] + corners.bottomLeft[0]) / 4,
+  (corners.topLeft[1] + corners.topRight[1] + corners.bottomRight[1] + corners.bottomLeft[1]) / 4,
+];
+
 const isDrawInMode = (
   draw: {
     getMode?: () => string;
@@ -304,15 +372,17 @@ const firstDrawLayerId = (
 ): string | undefined =>
   styleLayers?.find((layer) => typeof layer.id === "string" && layer.id.startsWith("gl-draw-"))?.id;
 
-const createOverlayHandleElement = (): HTMLDivElement => {
+const createOverlayHandleElement = (kind: "corner" | "center"): HTMLDivElement => {
   const element = document.createElement("div");
-  element.style.width = `${OVERLAY_HANDLE_SIZE}px`;
-  element.style.height = `${OVERLAY_HANDLE_SIZE}px`;
+  const size = kind === "center" ? OVERLAY_CENTER_HANDLE_SIZE : OVERLAY_HANDLE_SIZE;
+  const backgroundColor = kind === "center" ? OVERLAY_CENTER_HANDLE_COLOR : OVERLAY_HANDLE_COLOR;
+  element.style.width = `${size}px`;
+  element.style.height = `${size}px`;
   element.style.borderRadius = "9999px";
-  element.style.backgroundColor = OVERLAY_HANDLE_COLOR;
+  element.style.backgroundColor = backgroundColor;
   element.style.border = `2px solid ${OVERLAY_HANDLE_STROKE_COLOR}`;
   element.style.boxShadow = "0 0 0 1px rgba(0, 0, 0, 0.2)";
-  element.style.cursor = "grab";
+  element.style.cursor = kind === "center" ? "move" : "grab";
   return element;
 };
 
@@ -350,6 +420,15 @@ export const createMapController = async (
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentSelectedFeatureId: string | undefined;
+  let overlayDragState:
+    | {
+        startLngLat: Coordinates;
+        startPoint: { x: number; y: number };
+        startCorners: FloorOverlay["corners"];
+        hasMoved: boolean;
+      }
+    | undefined;
+  let suppressNextClick = false;
   type DrawWithSelectedPoints = {
     getSelectedPoints?: () => {
       features?: unknown[];
@@ -357,6 +436,13 @@ export const createMapController = async (
   };
   type MarkerInstance = InstanceType<MapLibreModule["Marker"]>;
   const overlayHandleMarkers: Partial<Record<OverlayCornerKey, MarkerInstance>> = {};
+  let overlayCenterMarker: MarkerInstance | undefined;
+  let overlayCenterDragStart:
+    | {
+        startCenter: Coordinates;
+        startCorners: FloorOverlay["corners"];
+      }
+    | undefined;
 
   const hasSelectedVertex = () => {
     try {
@@ -431,6 +517,12 @@ export const createMapController = async (
     });
   };
 
+  const canDragOverlay = (): boolean =>
+    currentInteractionMode === "select" &&
+    Boolean(currentOverlay?.imageDataUrl) &&
+    currentOverlay?.visible !== false &&
+    !currentOverlay?.locked;
+
   const applyFeatures = () => {
     const nextById = new Map(currentFeatures.features.map((feature) => [feature.id, feature]));
 
@@ -474,6 +566,9 @@ export const createMapController = async (
       overlayHandleMarkers[key]?.remove();
       delete overlayHandleMarkers[key];
     }
+    overlayCenterMarker?.remove();
+    overlayCenterMarker = undefined;
+    overlayCenterDragStart = undefined;
   };
 
   const syncOverlayHandles = () => {
@@ -499,7 +594,7 @@ export const createMapController = async (
       }
 
       const marker = new maplibre.Marker({
-        element: createOverlayHandleElement(),
+        element: createOverlayHandleElement("corner"),
         draggable: true,
       })
         .setLngLat(lngLat)
@@ -537,6 +632,66 @@ export const createMapController = async (
 
       overlayHandleMarkers[key] = marker;
     }
+
+    const center = overlayCenter(currentOverlay.corners);
+    if (overlayCenterMarker) {
+      overlayCenterMarker.setLngLat(center);
+      return;
+    }
+
+    overlayCenterMarker = new maplibre.Marker({
+      element: createOverlayHandleElement("center"),
+      draggable: true,
+    })
+      .setLngLat(center)
+      .addTo(map);
+
+    overlayCenterMarker.on("dragstart", () => {
+      if (!currentOverlay || currentOverlay.locked) {
+        return;
+      }
+
+      overlayCenterDragStart = {
+        startCenter: overlayCenter(currentOverlay.corners),
+        startCorners: structuredClone(currentOverlay.corners),
+      };
+      map.dragPan.disable();
+    });
+
+    overlayCenterMarker.on("drag", () => {
+      if (
+        !currentOverlay ||
+        currentOverlay.locked ||
+        !overlayCenterDragStart ||
+        !overlayCenterMarker
+      ) {
+        return;
+      }
+
+      const handlePosition = overlayCenterMarker.getLngLat();
+      const deltaLng = handlePosition.lng - overlayCenterDragStart.startCenter[0];
+      const deltaLat = handlePosition.lat - overlayCenterDragStart.startCenter[1];
+      const nextCorners = shiftOverlayCorners(
+        overlayCenterDragStart.startCorners,
+        deltaLng,
+        deltaLat,
+      );
+      currentOverlay = {
+        ...currentOverlay,
+        corners: nextCorners,
+        updatedAt: new Date().toISOString(),
+      };
+      applyOverlay();
+      syncOverlayHandles();
+      handlers.onOverlayCornersChange(nextCorners);
+    });
+
+    overlayCenterMarker.on("dragend", () => {
+      overlayCenterDragStart = undefined;
+      if (currentInteractionMode === "select") {
+        map.dragPan.enable();
+      }
+    });
   };
 
   const applyOverlay = () => {
@@ -703,6 +858,11 @@ export const createMapController = async (
   });
 
   map.on("click", (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+
     const featureId = getRenderableFeatureIdAtPoint(
       map.queryRenderedFeatures(event.point) as RenderedFeatureHit[],
     );
@@ -746,14 +906,92 @@ export const createMapController = async (
   });
 
   map.on("mousemove", (event) => {
+    if (overlayDragState && currentOverlay && canDragOverlay()) {
+      const pointer = getEventLngLat(event);
+      const point = getEventPoint(event);
+      if (!pointer || !point) {
+        return;
+      }
+
+      const deltaLng = pointer[0] - overlayDragState.startLngLat[0];
+      const deltaLat = pointer[1] - overlayDragState.startLngLat[1];
+      const pixelDistance = Math.hypot(
+        point.x - overlayDragState.startPoint.x,
+        point.y - overlayDragState.startPoint.y,
+      );
+      if (pixelDistance > 1) {
+        overlayDragState.hasMoved = true;
+      }
+
+      const nextCorners = shiftOverlayCorners(overlayDragState.startCorners, deltaLng, deltaLat);
+      currentOverlay = {
+        ...currentOverlay,
+        corners: nextCorners,
+        updatedAt: new Date().toISOString(),
+      };
+      applyOverlay();
+      syncOverlayHandles();
+      handlers.onOverlayCornersChange(nextCorners);
+      map.getCanvas().style.cursor = "grabbing";
+      return;
+    }
+
     const hovered = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
+    if (canDragOverlay() && isOverlayLayerHit(hovered[0])) {
+      map.getCanvas().style.cursor = "grab";
+      return;
+    }
+
     const cursor = hovered
       .map((hit) => toHoverCursor(hit.properties?.meta, currentInteractionMode))
       .find((value) => typeof value === "string");
     map.getCanvas().style.cursor = cursor ?? "";
   });
 
+  map.on("mousedown", (event) => {
+    if (!canDragOverlay() || overlayDragState) {
+      return;
+    }
+
+    const point = getEventPoint(event);
+    const lngLat = getEventLngLat(event);
+    if (!point || !lngLat) {
+      return;
+    }
+
+    const hits = map.queryRenderedFeatures([point.x, point.y]) as RenderedFeatureHit[];
+    if (!isOverlayLayerHit(hits[0]) || !currentOverlay) {
+      return;
+    }
+
+    overlayDragState = {
+      startLngLat: lngLat,
+      startPoint: point,
+      startCorners: structuredClone(currentOverlay.corners),
+      hasMoved: false,
+    };
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "grabbing";
+  });
+
+  map.on("mouseup", () => {
+    if (!overlayDragState) {
+      return;
+    }
+
+    suppressNextClick = overlayDragState.hasMoved;
+    overlayDragState = undefined;
+    if (currentInteractionMode === "select") {
+      map.dragPan.enable();
+    }
+  });
+
   map.on("mouseout", () => {
+    if (!overlayDragState) {
+      map.getCanvas().style.cursor = "";
+      return;
+    }
+
     map.getCanvas().style.cursor = "";
   });
 
