@@ -26,10 +26,19 @@ Visit the dev server at `http://localhost:5173`.
 - `npm run build` – type-check then emit a production bundle to `dist/`.
 - `npm run preview` – serve the production build for smoke testing.
 - `npm run test` – execute Vitest unit tests in a jsdom environment.
+- `npm run test:browser` – run browser-smoke tests for app startup and runtime wiring.
+- `npm run test:e2e` – run Playwright end-to-end coverage.
 - `npm run lint` – run Biome for linting and formatting checks.
 - `npm run lint:fix` – apply Biome fixes.
 - `npm run format` – format the codebase with Biome.
 - `npm run typecheck` – run TypeScript in `--noEmit` mode for static analysis.
+- `npm run validate:all` – run completion gate checks (`typecheck`, `lint`, `test`, `test:browser`, `test:e2e`, `build`).
+- `npm run setup:hooks` – configure local git hooks path (`.githooks`) for pre-push validation.
+
+## Guardrails
+- Run `npm run setup:hooks` once after clone to enforce local pre-push checks.
+- CI publishes independent required checks (`typecheck`, `lint`, `unit-tests`, `browser-smoke`, `e2e`, `build`).
+- Configure default branch protection using `/Users/jillesvangurp/git/formation/floorplan-editor/.github/branch-protection.md`.
 
 ## Project Structure
 - `src/main.tsx` – entry point that mounts the React app.

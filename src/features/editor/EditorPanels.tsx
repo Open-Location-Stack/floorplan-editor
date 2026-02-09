@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DrawMode } from "../../components/MapCanvas";
 import {
   convertArea,
@@ -7,7 +7,7 @@ import {
   featureLengthMeters,
 } from "../../lib/geometry/measurements";
 import { exportGeoJson, parseGeoJsonImport } from "../../lib/importExport/geojson";
-import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay } from "../../lib/types";
+import type { Building, Floor, FloorFeature, FloorOverlay, JsonObject } from "../../lib/types";
 
 type EditorPanelsProps = {
   buildings: Building[];
@@ -27,22 +27,16 @@ type EditorPanelsProps = {
   drawMode: DrawMode;
   draftVertexCount: number;
   selectedVertexIndex: number | undefined;
-  selectedVertexCoordinates: Coordinates | undefined;
-  isVertexMoveMode: boolean;
-  isAppendVertexMode: boolean;
   onSelectFeature: (featureId: string | undefined) => void;
   onStartDraw: (mode: "point" | "line" | "polygon") => void;
   onCompleteDraw: () => void;
   onCancelDraw: () => void;
   onRemoveLastVertex: () => void;
   onDeleteSelectedFeature: () => void;
-  onRenameSelectedFeature: (name: string) => void;
-  onSetSelectedFeatureKind: (kind: string) => void;
+  onUpdateSelectedFeatureProperty: (key: string, value: string) => void;
   onSelectVertexIndex: (index: number | undefined) => void;
-  onUpdateSelectedVertex: (coordinates: Coordinates) => void;
   onDeleteSelectedVertex: () => void;
-  onToggleVertexMoveMode: () => void;
-  onToggleAppendVertexMode: () => void;
+  onUpdateSelectedFeatureMetadata: (metadata: JsonObject) => void;
   onUndo: () => void;
   onRedo: () => void;
   onImport: (features: FloorFeature[]) => void;
@@ -55,9 +49,6 @@ type EditorPanelsProps = {
   onOverlayRotate: (degrees: number) => void;
   onOverlayToggleLock: () => void;
 };
-
-const isVertexEditable = (feature: FloorFeature | undefined): boolean =>
-  feature?.geometry.type === "LineString" || feature?.geometry.type === "Polygon";
 
 const vertexCountForFeature = (feature: FloorFeature | undefined): number => {
   if (!feature) {
@@ -80,6 +71,24 @@ const vertexCountForFeature = (feature: FloorFeature | undefined): number => {
   return 0;
 };
 
+const IMDF_TYPE_OPTIONS = [
+  "venue",
+  "building",
+  "level",
+  "unit",
+  "opening",
+  "amenity",
+  "anchor",
+  "occupant",
+  "address",
+  "detail",
+  "fixture",
+  "kiosk",
+  "section",
+  "relationship",
+  "pathway",
+] as const;
+
 export const EditorPanels = ({
   buildings,
   floors,
@@ -98,22 +107,16 @@ export const EditorPanels = ({
   drawMode,
   draftVertexCount,
   selectedVertexIndex,
-  selectedVertexCoordinates,
-  isVertexMoveMode,
-  isAppendVertexMode,
   onSelectFeature,
   onStartDraw,
   onCompleteDraw,
   onCancelDraw,
   onRemoveLastVertex,
   onDeleteSelectedFeature,
-  onRenameSelectedFeature,
-  onSetSelectedFeatureKind,
+  onUpdateSelectedFeatureProperty,
   onSelectVertexIndex,
-  onUpdateSelectedVertex,
   onDeleteSelectedVertex,
-  onToggleVertexMoveMode,
-  onToggleAppendVertexMode,
+  onUpdateSelectedFeatureMetadata,
   onUndo,
   onRedo,
   onImport,
@@ -130,6 +133,8 @@ export const EditorPanels = ({
   const [importError, setImportError] = useState<string | undefined>();
   const [exportText, setExportText] = useState("");
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
+  const [metadataText, setMetadataText] = useState("{}");
+  const [metadataError, setMetadataError] = useState<string | undefined>();
 
   const selectedBuilding = useMemo(
     () => buildings.find((building) => building.id === selectedBuildingId),
@@ -144,10 +149,20 @@ export const EditorPanels = ({
     [features, selectedFeatureId],
   );
 
+  useEffect(() => {
+    const metadata = selectedFeature?.properties.metadata;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      setMetadataText("{}");
+      setMetadataError(undefined);
+      return;
+    }
+
+    setMetadataText(JSON.stringify(metadata, null, 2));
+    setMetadataError(undefined);
+  }, [selectedFeature?.properties.metadata]);
+
   const lengthMeters = selectedFeature ? featureLengthMeters(selectedFeature) : 0;
   const areaSquareMeters = selectedFeature ? featureAreaSquareMeters(selectedFeature) : 0;
-
-  const vertexEditable = isVertexEditable(selectedFeature);
   const vertexCount = vertexCountForFeature(selectedFeature);
 
   return (
@@ -211,7 +226,9 @@ export const EditorPanels = ({
               <button
                 className="btn btn-sm btn-error"
                 type="button"
-                disabled={floors.filter((floor) => floor.buildingId === selectedBuildingId).length <= 1}
+                disabled={
+                  floors.filter((floor) => floor.buildingId === selectedBuildingId).length <= 1
+                }
                 onClick={() => onDeleteFloor(selectedFloorId)}
               >
                 Delete
@@ -230,7 +247,7 @@ export const EditorPanels = ({
 
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
-          <h2 className="card-title text-lg">Drawing & Editing</h2>
+          <h2 className="card-title text-lg">WYSIWYG Geometry Editor</h2>
           <div className="grid grid-cols-2 gap-2">
             <button
               className={`btn btn-sm ${drawMode === "point" ? "btn-primary" : ""}`}
@@ -263,28 +280,36 @@ export const EditorPanels = ({
               Redo
             </button>
           </div>
-          {drawMode === "select" || drawMode === "point" ? (
-            <p className="text-sm text-base-content/70">
-              Select features by clicking on the map. For lines/polygons, click map to add vertices and press Enter or Finish to commit.
-            </p>
-          ) : (
+
+          {drawMode === "line" || drawMode === "polygon" ? (
             <div className="rounded-box bg-base-200 p-3 text-sm">
-              <div>Vertices in draft: {draftVertexCount}</div>
+              <div>Draft vertices: {draftVertexCount}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button className="btn btn-xs" type="button" onClick={onRemoveLastVertex}>
-                  Remove last vertex
+                  Remove last
                 </button>
                 <button className="btn btn-xs btn-primary" type="button" onClick={onCompleteDraw}>
-                  Finish shape
+                  Finish
                 </button>
                 <button className="btn btn-xs" type="button" onClick={onCancelDraw}>
                   Cancel
                 </button>
               </div>
             </div>
+          ) : (
+            <p className="text-sm text-base-content/70">
+              Select mode: click to select, drag a vertex to reshape, drag the selected feature to
+              move it, and click a blue midpoint to insert a vertex.
+            </p>
           )}
+        </div>
+      </section>
 
-          <ul className="menu max-h-48 rounded-box bg-base-200 p-2 text-sm">
+      <section className="card bg-base-100 shadow">
+        <div className="card-body gap-3">
+          <h2 className="card-title text-lg">Feature Properties</h2>
+
+          <ul className="menu max-h-44 rounded-box bg-base-200 p-2 text-sm">
             {features.map((feature) => (
               <li key={feature.id}>
                 <button
@@ -297,126 +322,174 @@ export const EditorPanels = ({
                 </button>
               </li>
             ))}
-            {features.length === 0 ? <li className="px-2 py-1 text-base-content/70">No floor features yet.</li> : null}
+            {features.length === 0 ? (
+              <li className="px-2 py-1 text-base-content/70">No floor features yet.</li>
+            ) : null}
           </ul>
 
           <input
             className="input input-bordered input-sm"
             type="text"
-            placeholder="Selected feature name"
+            placeholder="Name"
             value={selectedFeature?.properties.name ?? ""}
-            onChange={(event) => onRenameSelectedFeature(event.currentTarget.value)}
+            onChange={(event) => onUpdateSelectedFeatureProperty("name", event.currentTarget.value)}
             disabled={!selectedFeature}
           />
+
           <select
             className="select select-bordered select-sm"
-            value={selectedFeature?.properties.kind ?? "unit"}
+            value={
+              selectedFeature?.properties.imdfType ?? selectedFeature?.properties.kind ?? "unit"
+            }
             disabled={!selectedFeature}
-            onChange={(event) => onSetSelectedFeatureKind(event.currentTarget.value)}
+            onChange={(event) => {
+              onUpdateSelectedFeatureProperty("imdfType", event.currentTarget.value);
+              onUpdateSelectedFeatureProperty("kind", event.currentTarget.value);
+            }}
           >
-            {[
-              "unit",
-              "path",
-              "amenity",
-              "opening",
-              "section",
-              "detail",
-              "anchor",
-              "level",
-              "building",
-              "venue",
-            ].map((kind) => (
+            {IMDF_TYPE_OPTIONS.map((kind) => (
               <option key={kind} value={kind}>
                 {kind}
               </option>
             ))}
           </select>
 
-          {vertexEditable ? (
-            <div className="rounded-box bg-base-200 p-3 text-sm">
-              <div className="mb-2 font-medium">Vertices</div>
-              <div className="mb-2 flex items-center gap-2">
-                <select
-                  className="select select-bordered select-xs w-full"
-                  value={selectedVertexIndex ?? ""}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    onSelectVertexIndex(value === "" ? undefined : Number(value));
-                  }}
-                >
-                  <option value="">No vertex selected</option>
-                  {Array.from({ length: vertexCount }, (_, index) => (
-                    <option key={index} value={index}>
-                      Vertex {index + 1}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className={`btn btn-xs ${isVertexMoveMode ? "btn-primary" : ""}`}
-                  type="button"
-                  disabled={selectedVertexIndex === undefined}
-                  onClick={onToggleVertexMoveMode}
-                >
-                  Pick on map
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  className="input input-xs input-bordered"
-                  type="number"
-                  step="0.000001"
-                  value={selectedVertexCoordinates?.[0] ?? ""}
-                  placeholder="Longitude"
-                  disabled={selectedVertexCoordinates === undefined}
-                  onChange={(event) => {
-                    if (!selectedVertexCoordinates) {
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              placeholder="Category"
+              value={
+                typeof selectedFeature?.properties.category === "string"
+                  ? selectedFeature.properties.category
+                  : ""
+              }
+              onChange={(event) =>
+                onUpdateSelectedFeatureProperty("category", event.currentTarget.value)
+              }
+              disabled={!selectedFeature}
+            />
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              placeholder="External ID"
+              value={
+                typeof selectedFeature?.properties.externalId === "string"
+                  ? selectedFeature.properties.externalId
+                  : ""
+              }
+              onChange={(event) =>
+                onUpdateSelectedFeatureProperty("externalId", event.currentTarget.value)
+              }
+              disabled={!selectedFeature}
+            />
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              placeholder="IMDF Class"
+              value={
+                typeof selectedFeature?.properties.imdfClass === "string"
+                  ? selectedFeature.properties.imdfClass
+                  : ""
+              }
+              onChange={(event) =>
+                onUpdateSelectedFeatureProperty("imdfClass", event.currentTarget.value)
+              }
+              disabled={!selectedFeature}
+            />
+            <input
+              className="input input-bordered input-sm"
+              type="text"
+              placeholder="Feature Type"
+              value={
+                typeof selectedFeature?.properties.featureType === "string"
+                  ? selectedFeature.properties.featureType
+                  : ""
+              }
+              onChange={(event) =>
+                onUpdateSelectedFeatureProperty("featureType", event.currentTarget.value)
+              }
+              disabled={!selectedFeature}
+            />
+          </div>
+
+          <div className="rounded-box bg-base-200 p-3 text-sm">
+            <div className="mb-2 font-medium">Feature metadata (JSON object)</div>
+            <textarea
+              className="textarea textarea-bordered h-24 w-full font-mono text-xs"
+              value={metadataText}
+              disabled={!selectedFeature}
+              onChange={(event) => setMetadataText(event.currentTarget.value)}
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                className="btn btn-xs"
+                type="button"
+                disabled={!selectedFeature}
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(metadataText) as unknown;
+                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                      setMetadataError("Metadata must be a JSON object.");
                       return;
                     }
 
-                    onUpdateSelectedVertex([
-                      Number(event.currentTarget.value),
-                      selectedVertexCoordinates[1],
-                    ]);
-                  }}
-                />
-                <input
-                  className="input input-xs input-bordered"
-                  type="number"
-                  step="0.000001"
-                  value={selectedVertexCoordinates?.[1] ?? ""}
-                  placeholder="Latitude"
-                  disabled={selectedVertexCoordinates === undefined}
-                  onChange={(event) => {
-                    if (!selectedVertexCoordinates) {
-                      return;
-                    }
-
-                    onUpdateSelectedVertex([
-                      selectedVertexCoordinates[0],
-                      Number(event.currentTarget.value),
-                    ]);
-                  }}
-                />
-              </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  className={`btn btn-xs ${isAppendVertexMode ? "btn-primary" : ""}`}
-                  type="button"
-                  onClick={onToggleAppendVertexMode}
-                >
-                  Append by map click
-                </button>
-                <button
-                  className="btn btn-xs btn-error"
-                  type="button"
-                  disabled={selectedVertexIndex === undefined}
-                  onClick={onDeleteSelectedVertex}
-                >
-                  Delete vertex
-                </button>
-              </div>
+                    setMetadataError(undefined);
+                    onUpdateSelectedFeatureMetadata(parsed as JsonObject);
+                  } catch {
+                    setMetadataError("Invalid JSON object.");
+                  }
+                }}
+              >
+                Apply metadata
+              </button>
+              <button
+                className="btn btn-xs btn-ghost"
+                type="button"
+                disabled={!selectedFeature}
+                onClick={() => {
+                  setMetadataText("{}");
+                  setMetadataError(undefined);
+                  onUpdateSelectedFeatureMetadata({});
+                }}
+              >
+                Clear metadata
+              </button>
             </div>
-          ) : null}
+            {metadataError ? <div className="mt-2 text-xs text-error">{metadataError}</div> : null}
+          </div>
+
+          <div className="rounded-box bg-base-200 p-3 text-sm">
+            <div className="mb-2 font-medium">Vertices</div>
+            <div className="flex gap-2">
+              <select
+                className="select select-bordered select-xs w-full"
+                value={selectedVertexIndex ?? ""}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  onSelectVertexIndex(value === "" ? undefined : Number(value));
+                }}
+                disabled={!selectedFeature || selectedFeature.geometry.type === "Point"}
+              >
+                <option value="">No vertex selected</option>
+                {Array.from({ length: vertexCount }, (_, index) => index + 1).map(
+                  (vertexNumber) => (
+                    <option key={`vertex-${vertexNumber}`} value={vertexNumber - 1}>
+                      Vertex {vertexNumber}
+                    </option>
+                  ),
+                )}
+              </select>
+              <button
+                className="btn btn-xs btn-error"
+                type="button"
+                disabled={selectedVertexIndex === undefined}
+                onClick={onDeleteSelectedVertex}
+              >
+                Delete vertex
+              </button>
+            </div>
+          </div>
 
           <button
             className="btn btn-sm btn-error"
@@ -432,7 +505,8 @@ export const EditorPanels = ({
               Length: {convertLength(lengthMeters, "m")} m / {convertLength(lengthMeters, "ft")} ft
             </div>
             <div>
-              Area: {convertArea(areaSquareMeters, "m2")} m2 / {convertArea(areaSquareMeters, "ft2")} ft2
+              Area: {convertArea(areaSquareMeters, "m2")} m2 /{" "}
+              {convertArea(areaSquareMeters, "ft2")} ft2
             </div>
           </div>
         </div>
@@ -466,7 +540,12 @@ export const EditorPanels = ({
             >
               Upload image
             </button>
-            <button className="btn btn-sm" type="button" onClick={onOverlayRecenter} disabled={!overlay}>
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={onOverlayRecenter}
+              disabled={!overlay}
+            >
               Recenter at map view
             </button>
           </div>
@@ -488,31 +567,76 @@ export const EditorPanels = ({
           />
 
           <div className="grid grid-cols-3 gap-2">
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(-0.00002, 0)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayNudge(-0.00002, 0)}
+            >
               Left
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0, 0.00002)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayNudge(0, 0.00002)}
+            >
               Up
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0.00002, 0)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayNudge(0.00002, 0)}
+            >
               Right
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayScale(1.05)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayScale(1.05)}
+            >
               Scale +
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayNudge(0, -0.00002)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayNudge(0, -0.00002)}
+            >
               Down
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayScale(0.95)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayScale(0.95)}
+            >
               Scale -
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayRotate(-2)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayRotate(-2)}
+            >
               Rotate -2°
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={onOverlayToggleLock}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={onOverlayToggleLock}
+            >
               {overlay?.locked ? "Unlock" : "Lock"}
             </button>
-            <button className="btn btn-xs" type="button" disabled={!overlay} onClick={() => onOverlayRotate(2)}>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={() => onOverlayRotate(2)}
+            >
               Rotate +2°
             </button>
           </div>

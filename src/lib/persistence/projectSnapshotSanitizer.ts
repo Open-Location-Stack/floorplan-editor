@@ -5,6 +5,8 @@ import type {
   FloorFeature,
   FloorOverlay,
   Geometry,
+  JsonObject,
+  JsonValue,
   ProjectSnapshot,
 } from "../types";
 
@@ -14,8 +16,42 @@ const isNonEmptyString = (value: unknown): value is string =>
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
+const normalizeJsonValue = (value: unknown): JsonValue | undefined => {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeJsonValue(entry))
+      .filter((entry): entry is JsonValue => entry !== undefined);
+  }
+
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce<JsonObject>(
+      (accumulator, [key, nested]) => {
+        const normalized = normalizeJsonValue(nested);
+        if (normalized !== undefined) {
+          accumulator[key] = normalized;
+        }
+        return accumulator;
+      },
+      {},
+    );
+  }
+
+  return undefined;
+};
+
 const isCoordinates = (value: unknown): value is Coordinates =>
-  Array.isArray(value) && value.length === 2 && isFiniteNumber(value[0]) && isFiniteNumber(value[1]);
+  Array.isArray(value) &&
+  value.length === 2 &&
+  isFiniteNumber(value[0]) &&
+  isFiniteNumber(value[1]);
 
 const normalizePoint = (geometry: unknown): Geometry | undefined => {
   if (!geometry || typeof geometry !== "object") {
@@ -77,7 +113,9 @@ const normalizePolygon = (geometry: unknown): Geometry | undefined => {
   const first = ring[0];
   const last = ring[ring.length - 1];
   const closedRing =
-    first && last && first[0] === last[0] && first[1] === last[1] ? ring : [...ring, ring[0] as Coordinates];
+    first && last && first[0] === last[0] && first[1] === last[1]
+      ? ring
+      : [...ring, ring[0] as Coordinates];
 
   if (closedRing.length < 4) {
     return undefined;
@@ -119,7 +157,7 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
     id?: unknown;
     type?: unknown;
     geometry?: unknown;
-    properties?: { kind?: unknown; name?: unknown; floorId?: unknown };
+    properties?: unknown;
   };
 
   if (raw.type !== "Feature" || !isNonEmptyString(raw.id)) {
@@ -131,10 +169,31 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
     return undefined;
   }
 
-  const kind = isNonEmptyString(raw.properties?.kind) ? raw.properties.kind : "unit";
-  const name = isNonEmptyString(raw.properties?.name) ? raw.properties.name : undefined;
-  const floorId = isNonEmptyString(raw.properties?.floorId) ? raw.properties.floorId : undefined;
-  const properties: FloorFeature["properties"] = { kind };
+  const rawProperties =
+    raw.properties && typeof raw.properties === "object"
+      ? (raw.properties as {
+          kind?: unknown;
+          name?: unknown;
+          floorId?: unknown;
+          [key: string]: unknown;
+        })
+      : {};
+
+  const normalizedProperties = Object.entries(rawProperties).reduce<Record<string, JsonValue>>(
+    (accumulator, [key, propertyValue]) => {
+      const normalized = normalizeJsonValue(propertyValue);
+      if (normalized !== undefined) {
+        accumulator[key] = normalized;
+      }
+      return accumulator;
+    },
+    {},
+  );
+
+  const kind = isNonEmptyString(rawProperties.kind) ? rawProperties.kind : "unit";
+  const name = isNonEmptyString(rawProperties.name) ? rawProperties.name : undefined;
+  const floorId = isNonEmptyString(rawProperties.floorId) ? rawProperties.floorId : undefined;
+  const properties: FloorFeature["properties"] = { ...normalizedProperties, kind };
   if (name) {
     properties.name = name;
   }
@@ -171,7 +230,11 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
     };
   };
 
-  if (!isNonEmptyString(raw.id) || !isNonEmptyString(raw.floorId) || !isNonEmptyString(raw.imageDataUrl)) {
+  if (
+    !isNonEmptyString(raw.id) ||
+    !isNonEmptyString(raw.floorId) ||
+    !isNonEmptyString(raw.imageDataUrl)
+  ) {
     return undefined;
   }
 
@@ -180,7 +243,12 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
   const bottomRight = raw.corners?.bottomRight;
   const bottomLeft = raw.corners?.bottomLeft;
 
-  if (!isCoordinates(topLeft) || !isCoordinates(topRight) || !isCoordinates(bottomRight) || !isCoordinates(bottomLeft)) {
+  if (
+    !isCoordinates(topLeft) ||
+    !isCoordinates(topRight) ||
+    !isCoordinates(bottomRight) ||
+    !isCoordinates(bottomLeft)
+  ) {
     return undefined;
   }
 
@@ -205,7 +273,11 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
 };
 
 const defaultBuilding = (): Building => ({ id: "building-1", name: "Building 1" });
-const defaultFloor = (buildingId: string): Floor => ({ id: "floor-1", buildingId, name: "Ground Floor" });
+const defaultFloor = (buildingId: string): Floor => ({
+  id: "floor-1",
+  buildingId,
+  name: "Ground Floor",
+});
 
 const normalizeBuildings = (buildings: unknown): Building[] => {
   if (!Array.isArray(buildings)) {
@@ -250,7 +322,11 @@ const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
       }
 
       const raw = floor as { id?: unknown; buildingId?: unknown; name?: unknown };
-      if (!isNonEmptyString(raw.id) || !isNonEmptyString(raw.buildingId) || !validBuildingIds.has(raw.buildingId)) {
+      if (
+        !isNonEmptyString(raw.id) ||
+        !isNonEmptyString(raw.buildingId) ||
+        !validBuildingIds.has(raw.buildingId)
+      ) {
         return undefined;
       }
 
@@ -269,7 +345,11 @@ const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
   return normalized;
 };
 
-const normalizeFeatures = (features: unknown, defaultFloorId: string, floorIds: Set<string>): FloorFeature[] => {
+const normalizeFeatures = (
+  features: unknown,
+  defaultFloorId: string,
+  floorIds: Set<string>,
+): FloorFeature[] => {
   if (!Array.isArray(features)) {
     return [];
   }

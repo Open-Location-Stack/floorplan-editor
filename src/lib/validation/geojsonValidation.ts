@@ -24,15 +24,34 @@ const geometrySchema = z.discriminatedUnion("type", [
   polygonGeometrySchema,
 ]);
 
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
 const featureSchema = z.object({
   type: z.literal("Feature"),
   id: z.string().min(1),
   geometry: geometrySchema,
-  properties: z.object({
-    kind: z.string().min(1),
-    name: z.string().optional(),
-    floorId: z.string().optional(),
-  }),
+  properties: z
+    .object({
+      kind: z.string().min(1),
+      name: z.string().optional(),
+      floorId: z.string().optional(),
+      featureType: z.string().optional(),
+      category: z.string().optional(),
+      externalId: z.string().optional(),
+      imdfType: z.string().optional(),
+      imdfClass: z.string().optional(),
+      metadata: z.record(z.string(), jsonValueSchema).optional(),
+    })
+    .catchall(jsonValueSchema),
 });
 
 const collectionSchema = z.object({

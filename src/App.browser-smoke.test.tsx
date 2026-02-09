@@ -58,11 +58,32 @@ describe("App browser smoke", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: /formation floor plan editor/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /formation floor plan editor/i }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("map-canvas")).toBeInTheDocument();
     expect(
       screen.queryByText(/something went wrong\. please reload the editor\./i),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders when matchMedia is unavailable", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: undefined,
+    });
+
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /formation floor plan editor/i }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("sanitizes malformed persisted data instead of crashing", async () => {

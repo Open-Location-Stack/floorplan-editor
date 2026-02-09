@@ -21,4 +21,5 @@ See `skills/_template/SKILL.md` for a starting point.
 ## Included skills
 - `build-test-run`: run, build, test, lint, and preview the app.
 - `dependency-updates`: update npm dependencies and verify the project.
+- `done-gate-tests`: require full test validation before declaring a task done.
 - `project-setup`: install dependencies, reset node_modules when needed, and verify setup.

@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "[pre-push] Running full validation gate..."
+npm run typecheck
+npm run lint
+npm run test -- --run
+npm run test:browser
+npm run test:e2e
+npm run build
+
+echo "[pre-push] Validation passed."

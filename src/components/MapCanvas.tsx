@@ -1,16 +1,13 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
-import { createMapController } from "../lib/map/mapBootstrap";
+import {
+  createMapController,
+  type GeometryDragPayload,
+  type MapClickPayload,
+} from "../lib/map/mapBootstrap";
 import type { Coordinates, FloorFeature, FloorOverlay } from "../lib/types";
 
 export type DrawMode = "select" | "point" | "line" | "polygon";
-
-export type MapClickPayload = {
-  coordinates: Coordinates;
-  featureId: string | undefined;
-  vertexFeatureId: string | undefined;
-  vertexIndex: number | undefined;
-};
 
 type MapCanvasProps = {
   maptilerApiKey: string;
@@ -22,6 +19,9 @@ type MapCanvasProps = {
   draftVertices: Coordinates[];
   drawMode: DrawMode;
   onMapClick: (payload: MapClickPayload) => void;
+  onGeometryDragStart: (payload: GeometryDragPayload) => void;
+  onGeometryDrag: (payload: GeometryDragPayload) => void;
+  onGeometryDragEnd: () => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
 };
 
@@ -35,12 +35,25 @@ export const MapCanvas = ({
   draftVertices,
   drawMode,
   onMapClick,
+  onGeometryDragStart,
+  onGeometryDrag,
+  onGeometryDragEnd,
   onViewStateChange,
 }: MapCanvasProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<Awaited<ReturnType<typeof createMapController>> | null>(null);
   const clickHandlerRef = useRef(onMapClick);
+  const dragStartHandlerRef = useRef(onGeometryDragStart);
+  const dragHandlerRef = useRef(onGeometryDrag);
+  const dragEndHandlerRef = useRef(onGeometryDragEnd);
   const viewStateHandlerRef = useRef(onViewStateChange);
+  const featuresRef = useRef(features);
+  const selectedFeatureRef = useRef(selectedFeature);
+  const editableVerticesRef = useRef(editableVertices);
+  const selectedVertexIndexRef = useRef(selectedVertexIndex);
+  const overlayRef = useRef(overlay);
+  const draftVerticesRef = useRef(draftVertices);
+  const drawModeRef = useRef(drawMode);
 
   useEffect(() => {
     clickHandlerRef.current = onMapClick;
@@ -49,6 +62,36 @@ export const MapCanvas = ({
   useEffect(() => {
     viewStateHandlerRef.current = onViewStateChange;
   }, [onViewStateChange]);
+  useEffect(() => {
+    dragStartHandlerRef.current = onGeometryDragStart;
+  }, [onGeometryDragStart]);
+  useEffect(() => {
+    dragHandlerRef.current = onGeometryDrag;
+  }, [onGeometryDrag]);
+  useEffect(() => {
+    dragEndHandlerRef.current = onGeometryDragEnd;
+  }, [onGeometryDragEnd]);
+  useEffect(() => {
+    featuresRef.current = features;
+  }, [features]);
+  useEffect(() => {
+    selectedFeatureRef.current = selectedFeature;
+  }, [selectedFeature]);
+  useEffect(() => {
+    editableVerticesRef.current = editableVertices;
+  }, [editableVertices]);
+  useEffect(() => {
+    selectedVertexIndexRef.current = selectedVertexIndex;
+  }, [selectedVertexIndex]);
+  useEffect(() => {
+    overlayRef.current = overlay;
+  }, [overlay]);
+  useEffect(() => {
+    draftVerticesRef.current = draftVertices;
+  }, [draftVertices]);
+  useEffect(() => {
+    drawModeRef.current = drawMode;
+  }, [drawMode]);
 
   useEffect(() => {
     const element = rootRef.current;
@@ -65,6 +108,15 @@ export const MapCanvas = ({
       onViewStateChange: (center, zoom) => {
         viewStateHandlerRef.current(center, zoom);
       },
+      onGeometryDragStart: (payload) => {
+        dragStartHandlerRef.current(payload);
+      },
+      onGeometryDrag: (payload) => {
+        dragHandlerRef.current(payload);
+      },
+      onGeometryDragEnd: () => {
+        dragEndHandlerRef.current();
+      },
     }).then((controller) => {
       if (cancelled) {
         controller.destroy();
@@ -72,6 +124,20 @@ export const MapCanvas = ({
       }
 
       controllerRef.current = controller;
+      controller.setFeatures({
+        type: "FeatureCollection",
+        features: featuresRef.current,
+      });
+      controller.setSelection(selectedFeatureRef.current);
+      controller.setEditableVertices(
+        selectedFeatureRef.current?.id,
+        selectedFeatureRef.current?.geometry.type,
+        editableVerticesRef.current,
+        selectedVertexIndexRef.current,
+      );
+      controller.setOverlay(overlayRef.current);
+      controller.setDrawDraft(drawModeRef.current, draftVerticesRef.current);
+      controller.setInteractionMode(drawModeRef.current);
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -101,10 +167,11 @@ export const MapCanvas = ({
   useEffect(() => {
     controllerRef.current?.setEditableVertices(
       selectedFeature?.id,
+      selectedFeature?.geometry.type,
       editableVertices,
       selectedVertexIndex,
     );
-  }, [editableVertices, selectedFeature?.id, selectedVertexIndex]);
+  }, [editableVertices, selectedFeature?.geometry.type, selectedFeature?.id, selectedVertexIndex]);
 
   useEffect(() => {
     controllerRef.current?.setOverlay(overlay);
@@ -114,7 +181,15 @@ export const MapCanvas = ({
     controllerRef.current?.setDrawDraft(drawMode, draftVertices);
   }, [drawMode, draftVertices]);
 
+  useEffect(() => {
+    controllerRef.current?.setInteractionMode(drawMode);
+  }, [drawMode]);
+
   return (
-    <div ref={rootRef} className="h-full min-h-[500px] w-full rounded-box border border-base-300" />
+    <div
+      ref={rootRef}
+      data-testid="map-canvas"
+      className="h-full min-h-[500px] w-full rounded-box border border-base-300"
+    />
   );
 };

@@ -21,10 +21,23 @@ export type PolygonGeometry = {
 
 export type Geometry = PointGeometry | LineStringGeometry | PolygonGeometry;
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export type JsonObject = {
+  [key: string]: JsonValue;
+};
+
 export type FeatureProperties = {
   kind: string;
   name?: string;
   floorId?: string;
+  featureType?: string;
+  category?: string;
+  externalId?: string;
+  imdfType?: string;
+  imdfClass?: string;
+  metadata?: JsonObject;
+  [key: string]: JsonValue | undefined;
 };
 
 export type FloorFeature = {

@@ -6,20 +6,77 @@ type LogEntry = {
   payload?: unknown;
 };
 
+type StructuredPayload = {
+  appVersion: string;
+  timestamp: string;
+  message?: string;
+  stack?: string;
+  [key: string]: unknown;
+};
+
+const toStructuredPayload = (payload: unknown): StructuredPayload => {
+  const env = import.meta.env as { PACKAGE_VERSION?: unknown };
+  const packageVersion = env.PACKAGE_VERSION;
+  const appVersion = typeof packageVersion === "string" ? packageVersion : "dev";
+  const base: StructuredPayload = {
+    appVersion,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (payload instanceof Error) {
+    const errorPayload: StructuredPayload = {
+      ...base,
+      message: payload.message,
+      name: payload.name,
+    };
+    if (payload.stack) {
+      errorPayload.stack = payload.stack;
+    }
+
+    return {
+      ...errorPayload,
+    };
+  }
+
+  if (payload && typeof payload === "object") {
+    return {
+      ...base,
+      ...(payload as Record<string, unknown>),
+    };
+  }
+
+  if (typeof payload === "string") {
+    return {
+      ...base,
+      message: payload,
+    };
+  }
+
+  if (payload !== undefined) {
+    return {
+      ...base,
+      value: payload,
+    };
+  }
+
+  return base;
+};
+
 const log = (entry: LogEntry): void => {
   const message = `[floorplan-editor] ${entry.event}`;
+  const structuredPayload = toStructuredPayload(entry.payload);
 
   if (entry.level === "error") {
-    console.error(message, entry.payload);
+    console.error(message, structuredPayload);
     return;
   }
 
   if (entry.level === "warn") {
-    console.warn(message, entry.payload);
+    console.warn(message, structuredPayload);
     return;
   }
 
-  console.info(message, entry.payload);
+  console.info(message, structuredPayload);
 };
 
 export const clientLogger = {
