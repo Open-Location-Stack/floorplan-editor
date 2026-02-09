@@ -60,6 +60,7 @@ describe("sanitizeProjectSnapshot", () => {
     expect(sanitized.features[0]?.properties.floorId).toBe("f1");
     expect(sanitized.overlays).toHaveLength(1);
     expect(sanitized.overlays[0]?.opacity).toBe(100);
+    expect(sanitized.overlays[0]?.visible).toBe(true);
   });
 
   it("creates defaults when building/floor data is missing", () => {

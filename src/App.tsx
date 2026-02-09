@@ -411,6 +411,7 @@ function App() {
             imageName: file.name,
             imageDataUrl: dataUrl,
             opacity: selectedOverlay?.opacity ?? 70,
+            visible: selectedOverlay?.visible ?? true,
             locked: false,
             corners: cornersAroundView(mapView.center, mapView.zoom),
             updatedAt: new Date().toISOString(),
@@ -676,6 +677,19 @@ function App() {
                     updatedAt: new Date().toISOString(),
                   }));
                 }}
+                onOverlayToggleVisibility={() => {
+                  setOverlays((current) =>
+                    current.map((overlay) =>
+                      overlay.floorId === selectedFloorId
+                        ? {
+                            ...overlay,
+                            visible: overlay.visible === false,
+                            updatedAt: new Date().toISOString(),
+                          }
+                        : overlay,
+                    ),
+                  );
+                }}
                 onOverlayToggleLock={() => {
                   setOverlays((current) =>
                     current.map((overlay) =>
@@ -835,6 +849,13 @@ function App() {
                     onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}
                     onInteractionModeChange={onInteractionModeChange}
+                    onOverlayCornersChange={(corners) => {
+                      applyToCurrentOverlay((overlay) => ({
+                        ...overlay,
+                        corners,
+                        updatedAt: new Date().toISOString(),
+                      }));
+                    }}
                   />
                 </div>
                 <div className="rounded-box bg-base-200 p-3 text-sm">

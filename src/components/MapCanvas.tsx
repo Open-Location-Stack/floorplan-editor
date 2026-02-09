@@ -2,7 +2,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import { useEffect, useRef } from "react";
 import { createMapController, type DrawMode } from "../lib/map/mapBootstrap";
-import type { Coordinates, FloorFeature, FloorOverlay } from "../lib/types";
+import type { Coordinates, FloorFeature, FloorOverlay, OverlayCorners } from "../lib/types";
 
 export type { DrawMode } from "../lib/map/mapBootstrap";
 
@@ -17,6 +17,7 @@ type MapCanvasProps = {
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
   onInteractionModeChange: (mode: DrawMode) => void;
+  onOverlayCornersChange: (corners: OverlayCorners) => void;
 };
 
 export const MapCanvas = ({
@@ -30,6 +31,7 @@ export const MapCanvas = ({
   onFeatureSelectionChange,
   onViewStateChange,
   onInteractionModeChange,
+  onOverlayCornersChange,
 }: MapCanvasProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<Awaited<ReturnType<typeof createMapController>> | null>(null);
@@ -38,6 +40,7 @@ export const MapCanvas = ({
   const selectionHandlerRef = useRef(onFeatureSelectionChange);
   const viewStateHandlerRef = useRef(onViewStateChange);
   const modeHandlerRef = useRef(onInteractionModeChange);
+  const overlayChangeHandlerRef = useRef(onOverlayCornersChange);
 
   const featuresRef = useRef(features);
   const selectedFeatureRef = useRef(selectedFeature);
@@ -59,6 +62,10 @@ export const MapCanvas = ({
   useEffect(() => {
     modeHandlerRef.current = onInteractionModeChange;
   }, [onInteractionModeChange]);
+
+  useEffect(() => {
+    overlayChangeHandlerRef.current = onOverlayCornersChange;
+  }, [onOverlayCornersChange]);
 
   useEffect(() => {
     featuresRef.current = features;
@@ -96,6 +103,9 @@ export const MapCanvas = ({
       },
       onInteractionModeChange: (mode) => {
         modeHandlerRef.current(mode);
+      },
+      onOverlayCornersChange: (corners) => {
+        overlayChangeHandlerRef.current(corners);
       },
     }).then((controller) => {
       if (cancelled) {

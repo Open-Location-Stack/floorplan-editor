@@ -34,6 +34,7 @@ type EditorPanelsProps = {
   onOverlayNudge: (dx: number, dy: number) => void;
   onOverlayScale: (factor: number) => void;
   onOverlayRotate: (degrees: number) => void;
+  onOverlayToggleVisibility: () => void;
   onOverlayToggleLock: () => void;
 };
 
@@ -81,6 +82,7 @@ export const EditorPanels = ({
   onOverlayNudge,
   onOverlayScale,
   onOverlayRotate,
+  onOverlayToggleVisibility,
   onOverlayToggleLock,
 }: EditorPanelsProps) => {
   const [importText, setImportText] = useState("");
@@ -467,6 +469,14 @@ export const EditorPanels = ({
               onClick={() => onOverlayRotate(-2)}
             >
               Rotate -2°
+            </button>
+            <button
+              className="btn btn-xs"
+              type="button"
+              disabled={!overlay}
+              onClick={onOverlayToggleVisibility}
+            >
+              {overlay?.visible === false ? "Show image" : "Hide image"}
             </button>
             <button
               className="btn btn-xs"

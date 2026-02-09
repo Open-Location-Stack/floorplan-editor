@@ -220,6 +220,7 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
     imageName?: unknown;
     imageDataUrl?: unknown;
     opacity?: unknown;
+    visible?: unknown;
     locked?: unknown;
     updatedAt?: unknown;
     corners?: {
@@ -261,6 +262,7 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
     imageName: isNonEmptyString(raw.imageName) ? raw.imageName : "overlay-image",
     imageDataUrl: raw.imageDataUrl,
     opacity,
+    visible: raw.visible === undefined ? true : Boolean(raw.visible),
     locked: Boolean(raw.locked),
     updatedAt: isNonEmptyString(raw.updatedAt) ? raw.updatedAt : new Date().toISOString(),
     corners: {

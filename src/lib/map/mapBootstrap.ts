@@ -1,5 +1,6 @@
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
+import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
 import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 
 type MapLibreModule = typeof import("maplibre-gl");
@@ -10,6 +11,7 @@ type FeaturesChangeHandler = (features: FloorFeature[]) => void;
 type FeatureSelectionChangeHandler = (featureId: string | undefined) => void;
 type ViewStateHandler = (center: Coordinates, zoom: number) => void;
 type InteractionModeChangeHandler = (mode: DrawMode) => void;
+type OverlayCornersChangeHandler = (corners: FloorOverlay["corners"]) => void;
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
@@ -23,7 +25,11 @@ type MapController = {
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
-const DRAW_OVERLAY_BEFORE_LAYER_ID = "gl-draw-polygon-fill-inactive.cold";
+const OVERLAY_HANDLE_SIZE = 12;
+const OVERLAY_HANDLE_COLOR = "#f97316";
+const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
+const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
+type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 
 const emptyFeatureCollection = (): FeatureCollection => ({
   type: "FeatureCollection",
@@ -258,6 +264,27 @@ const getRenderableFeatureIdAtPoint = (
   return undefined;
 };
 
+const firstDrawLayerId = (
+  styleLayers:
+    | Array<{
+        id?: string;
+      }>
+    | undefined,
+): string | undefined =>
+  styleLayers?.find((layer) => typeof layer.id === "string" && layer.id.startsWith("gl-draw-"))?.id;
+
+const createOverlayHandleElement = (): HTMLDivElement => {
+  const element = document.createElement("div");
+  element.style.width = `${OVERLAY_HANDLE_SIZE}px`;
+  element.style.height = `${OVERLAY_HANDLE_SIZE}px`;
+  element.style.borderRadius = "9999px";
+  element.style.backgroundColor = OVERLAY_HANDLE_COLOR;
+  element.style.border = `2px solid ${OVERLAY_HANDLE_STROKE_COLOR}`;
+  element.style.boxShadow = "0 0 0 1px rgba(0, 0, 0, 0.2)";
+  element.style.cursor = "grab";
+  return element;
+};
+
 export const createMapController = async (
   container: HTMLElement,
   maptilerApiKey: string,
@@ -266,6 +293,7 @@ export const createMapController = async (
     onFeatureSelectionChange: FeatureSelectionChangeHandler;
     onViewStateChange: ViewStateHandler;
     onInteractionModeChange: InteractionModeChangeHandler;
+    onOverlayCornersChange: OverlayCornersChangeHandler;
   },
 ): Promise<MapController> => {
   const maplibre = (await import("maplibre-gl")) as MapLibreModule;
@@ -290,6 +318,8 @@ export const createMapController = async (
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentSelectedFeatureId: string | undefined;
+  type MarkerInstance = InstanceType<MapLibreModule["Marker"]>;
+  const overlayHandleMarkers: Partial<Record<OverlayCornerKey, MarkerInstance>> = {};
 
   const withExternalSyncGuard = (action: () => void) => {
     isSyncingExternalState = true;
@@ -374,6 +404,76 @@ export const createMapController = async (
     }
   };
 
+  const removeOverlayHandles = () => {
+    for (const key of OVERLAY_HANDLE_KEYS) {
+      overlayHandleMarkers[key]?.remove();
+      delete overlayHandleMarkers[key];
+    }
+  };
+
+  const syncOverlayHandles = () => {
+    if (!isStyleReady) {
+      return;
+    }
+
+    const showHandles =
+      Boolean(currentOverlay?.imageDataUrl) &&
+      !currentOverlay?.locked &&
+      currentOverlay?.visible !== false;
+    if (!showHandles || !currentOverlay) {
+      removeOverlayHandles();
+      return;
+    }
+
+    for (const key of OVERLAY_HANDLE_KEYS) {
+      const lngLat = currentOverlay.corners[key];
+      const existing = overlayHandleMarkers[key];
+      if (existing) {
+        existing.setLngLat(lngLat);
+        continue;
+      }
+
+      const marker = new maplibre.Marker({
+        element: createOverlayHandleElement(),
+        draggable: true,
+      })
+        .setLngLat(lngLat)
+        .addTo(map);
+
+      marker.on("dragstart", () => {
+        map.dragPan.disable();
+      });
+
+      marker.on("drag", () => {
+        if (!currentOverlay || currentOverlay.locked) {
+          return;
+        }
+
+        const handlePosition = marker.getLngLat();
+        const nextCorners = transformOverlayFromDraggedCorner(currentOverlay.corners, key, [
+          handlePosition.lng,
+          handlePosition.lat,
+        ]);
+        currentOverlay = {
+          ...currentOverlay,
+          corners: nextCorners,
+          updatedAt: new Date().toISOString(),
+        };
+        applyOverlay();
+        syncOverlayHandles();
+        handlers.onOverlayCornersChange(nextCorners);
+      });
+
+      marker.on("dragend", () => {
+        if (currentInteractionMode === "select") {
+          map.dragPan.enable();
+        }
+      });
+
+      overlayHandleMarkers[key] = marker;
+    }
+  };
+
   const applyOverlay = () => {
     if (!currentOverlay?.imageDataUrl) {
       if (map.getLayer(OVERLAY_LAYER_ID)) {
@@ -382,6 +482,7 @@ export const createMapController = async (
       if (map.getSource(OVERLAY_SOURCE_ID)) {
         map.removeSource(OVERLAY_SOURCE_ID);
       }
+      removeOverlayHandles();
       return;
     }
 
@@ -406,37 +507,37 @@ export const createMapController = async (
       });
     }
 
-    if (!map.getLayer(OVERLAY_LAYER_ID)) {
-      const beforeLayer = map.getLayer(DRAW_OVERLAY_BEFORE_LAYER_ID)
-        ? DRAW_OVERLAY_BEFORE_LAYER_ID
-        : undefined;
+    const beforeLayerId = firstDrawLayerId(map.getStyle().layers);
 
-      if (beforeLayer) {
-        map.addLayer(
-          {
-            id: OVERLAY_LAYER_ID,
-            type: "raster",
-            source: OVERLAY_SOURCE_ID,
-            paint: {
-              "raster-opacity": currentOverlay.opacity / 100,
-            },
-          },
-          beforeLayer,
-        );
-      } else {
-        map.addLayer({
+    if (!map.getLayer(OVERLAY_LAYER_ID)) {
+      map.addLayer(
+        {
           id: OVERLAY_LAYER_ID,
           type: "raster",
           source: OVERLAY_SOURCE_ID,
           paint: {
             "raster-opacity": currentOverlay.opacity / 100,
           },
-        });
-      }
+          layout: {
+            visibility: currentOverlay.visible === false ? "none" : "visible",
+          },
+        },
+        beforeLayerId,
+      );
+      syncOverlayHandles();
       return;
     }
 
     map.setPaintProperty(OVERLAY_LAYER_ID, "raster-opacity", currentOverlay.opacity / 100);
+    map.setLayoutProperty(
+      OVERLAY_LAYER_ID,
+      "visibility",
+      currentOverlay.visible === false ? "none" : "visible",
+    );
+    if (beforeLayerId) {
+      map.moveLayer(OVERLAY_LAYER_ID, beforeLayerId);
+    }
+    syncOverlayHandles();
   };
 
   const applyPendingState = () => {
@@ -583,6 +684,9 @@ export const createMapController = async (
       draw.trash();
     },
     resize: () => map.resize(),
-    destroy: () => map.remove(),
+    destroy: () => {
+      removeOverlayHandles();
+      map.remove();
+    },
   };
 };

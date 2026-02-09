@@ -36,6 +36,7 @@ class MockMap {
   handlers = new Map<string, EventHandler[]>();
   sources = new Map<string, unknown>();
   layers = new Set<string>();
+  styleLayers: Array<{ id: string }> = [];
   canvas = { style: { cursor: "" } };
 
   dragPan = {
@@ -85,12 +86,14 @@ class MockMap {
     }
 
     this.layers.add(layer.id);
+    this.styleLayers.push({ id: layer.id });
   });
 
   getLayer = vi.fn((id: string) => (this.layers.has(id) ? { id } : undefined));
 
   removeLayer = vi.fn((id: string) => {
     this.layers.delete(id);
+    this.styleLayers = this.styleLayers.filter((layer) => layer.id !== id);
   });
 
   removeSource = vi.fn((id: string) => {
@@ -98,8 +101,11 @@ class MockMap {
   });
 
   setPaintProperty = vi.fn();
+  setLayoutProperty = vi.fn();
+  moveLayer = vi.fn();
   addControl = vi.fn((control: { onAdd: (map: MockMap) => HTMLElement }) => control.onAdd(this));
   queryRenderedFeatures = vi.fn(() => []);
+  getStyle = vi.fn(() => ({ layers: this.styleLayers }));
   getCenter = vi.fn(() => ({ lng: 5.1214, lat: 52.0907 }));
   getZoom = vi.fn(() => 17);
   getCanvas = vi.fn(() => this.canvas);
@@ -107,8 +113,29 @@ class MockMap {
   remove = vi.fn();
 }
 
+class MockMarker {
+  lngLat = { lng: 0, lat: 0 };
+  handlers = new Map<string, Array<() => void>>();
+
+  setLngLat = vi.fn((value: [number, number]) => {
+    this.lngLat = { lng: value[0], lat: value[1] };
+    return this;
+  });
+
+  getLngLat = vi.fn(() => this.lngLat);
+  addTo = vi.fn(() => this);
+  remove = vi.fn(() => this);
+
+  on = vi.fn((event: string, handler: () => void) => {
+    const current = this.handlers.get(event) ?? [];
+    this.handlers.set(event, [...current, handler]);
+    return this;
+  });
+}
+
 vi.mock("maplibre-gl", () => ({
   Map: MockMap,
+  Marker: MockMarker,
 }));
 
 vi.mock("@mapbox/mapbox-gl-draw", () => ({
@@ -209,6 +236,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -228,6 +256,7 @@ describe("createMapController", () => {
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({ id: "floor-overlay-layer" }),
+      undefined,
     );
   });
 
@@ -237,6 +266,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
     });
 
     controller.setFeatures(pointFeatureCollection());
@@ -267,6 +297,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -320,6 +351,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange,
       onViewStateChange: vi.fn(),
       onInteractionModeChange,
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -353,6 +385,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -395,6 +428,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange: vi.fn(),
       onViewStateChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;
@@ -422,6 +456,7 @@ describe("createMapController", () => {
       onFeatureSelectionChange,
       onViewStateChange: vi.fn(),
       onInteractionModeChange,
+      onOverlayCornersChange: vi.fn(),
     });
 
     const map = lastMockMap;

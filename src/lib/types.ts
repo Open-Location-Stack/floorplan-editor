@@ -65,6 +65,7 @@ export type FloorOverlay = {
   imageName: string;
   imageDataUrl: string;
   opacity: number;
+  visible?: boolean;
   locked?: boolean;
   corners: OverlayCorners;
   updatedAt: string;
