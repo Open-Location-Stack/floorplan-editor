@@ -157,7 +157,11 @@ test("critical journey: edit building details and survive reload", async ({ page
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
 
-  const buildingName = page.getByPlaceholder(/building name/i);
+  await page.getByRole("button", { name: "Building 1" }).click();
+  const buildingPanel = page.locator("section").filter({
+    has: page.getByRole("heading", { name: /^building$/i }),
+  });
+  const buildingName = buildingPanel.getByRole("textbox");
   await buildingName.fill("Journey Building");
   await expect(buildingName).toHaveValue("Journey Building");
 
@@ -166,7 +170,8 @@ test("critical journey: edit building details and survive reload", async ({ page
 
   await page.reload();
 
-  await expect(page.getByPlaceholder(/building name/i)).toHaveValue("Journey Building");
+  await page.getByRole("button", { name: "Journey Building" }).click();
+  await expect(buildingPanel.getByRole("textbox")).toHaveValue("Journey Building");
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });

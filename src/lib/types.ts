@@ -31,6 +31,12 @@ export type FeatureProperties = {
   kind: string;
   name?: string;
   floorId?: string;
+  buildingId?: string;
+  id?: string;
+  imdf_id?: string;
+  floor_id?: string;
+  level_id?: string;
+  building_id?: string;
   featureType?: string;
   category?: string;
   externalId?: string;
