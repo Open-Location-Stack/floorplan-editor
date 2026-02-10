@@ -922,6 +922,335 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("snaps created line features even while draw mode remains draw_line_string", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.mode = "draw_line_string";
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "new-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.120001, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.create", {
+      features: [{ id: "new-path" }],
+    });
+
+    expect(onFeaturesChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "new-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+        }),
+      ]),
+    );
+
+    controller.destroy();
+  });
+
+  it("snaps vertex drags live in direct_select mode", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "path-1",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.120001, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    draw.changeMode("direct_select", { featureId: "path-1" });
+    map.emit("draw.update", {
+      features: [{ id: "path-1" }],
+    });
+
+    expect(draw.mode).toBe("direct_select");
+    expect(onFeaturesChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "path-1",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+        }),
+      ]),
+    );
+
+    controller.destroy();
+  });
+
+  it("snaps active polygon updates when draw.update has no feature ids", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.mode = "draw_polygon";
+    draw.selectedIds = [];
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "poly-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.120001, 52.09],
+                [5.121, 52.091],
+                [5.122, 52.09],
+                [5.120001, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+            active: "true",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {});
+
+    expect(onFeaturesChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "poly-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.091],
+                [5.122, 52.09],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+        }),
+      ]),
+    );
+
+    controller.destroy();
+  });
+
+  it("snaps in-progress polygon pointer before closing", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.mode = "draw_polygon";
+    draw.selectedIds = [];
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "poly-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.09],
+                [5.120001, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+            active: "true",
+          },
+        },
+      ],
+    });
+
+    map.emit("mousemove", {
+      point: { x: 100, y: 120 },
+    });
+
+    const updated = draw.get("poly-1");
+    expect(updated).toBeDefined();
+    if (!updated || updated.geometry.type !== "Polygon") {
+      throw new Error("Expected updated polygon");
+    }
+
+    const updatedCoordinates = updated.geometry.coordinates as number[][][];
+    const updatedRing = updatedCoordinates[0];
+    expect(updatedRing?.[2]).toEqual([5.12, 52.09]);
+
+    controller.destroy();
+  });
+
   it("normalizes unclosed polygons during draw updates", async () => {
     const onFeaturesChange = vi.fn();
     const controller = await createMapController(

@@ -75,6 +75,28 @@ const DEFAULT_MAP_VIEW = {
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LocationSearchStatus = "idle" | "loading" | "error";
 
+type ProjectSnapshot = {
+  editorState: EditorState;
+  overlays: FloorOverlay[];
+  buildings: Building[];
+  floors: Floor[];
+  selection: Selection | undefined;
+  drawMode: DrawMode;
+};
+
+type PendingConfirmation = {
+  title: string;
+  message: string;
+  undoLabel: string;
+  confirmLabel: string;
+  apply: () => void;
+};
+
+type PendingUndo = {
+  label: string;
+  apply: () => void;
+};
+
 type MapRelocationRequest = {
   center: Coordinates;
   zoom?: number;
@@ -248,6 +270,8 @@ function App() {
   const [locationSearchStatus, setLocationSearchStatus] = useState<LocationSearchStatus>("idle");
   const [locationSearchNoResults, setLocationSearchNoResults] = useState(false);
   const [locationSearchFocused, setLocationSearchFocused] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
+  const [pendingUndo, setPendingUndo] = useState<PendingUndo>();
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
@@ -399,6 +423,46 @@ function App() {
     selectedFeature && activeFloor && selectedFeature.properties.floorId === activeFloor.id
       ? selectedFeature
       : undefined;
+
+  const snapshotProjectState = useCallback(
+    (): ProjectSnapshot => ({
+      editorState: structuredClone(editorState),
+      overlays: structuredClone(overlays),
+      buildings: structuredClone(buildings),
+      floors: structuredClone(floors),
+      selection: selection ? structuredClone(selection) : undefined,
+      drawMode,
+    }),
+    [editorState, overlays, buildings, floors, selection, drawMode],
+  );
+
+  const restoreProjectState = useCallback((snapshot: ProjectSnapshot) => {
+    setEditorState(snapshot.editorState);
+    setOverlays(snapshot.overlays);
+    setBuildings(snapshot.buildings);
+    setFloors(snapshot.floors);
+    setSelection(snapshot.selection);
+    setDrawMode(snapshot.drawMode);
+  }, []);
+
+  const applyUndoableProjectMutation = useCallback(
+    (undoLabel: string, apply: () => void) => {
+      const snapshot = snapshotProjectState();
+      apply();
+      setPendingUndo({
+        label: undoLabel,
+        apply: () => {
+          restoreProjectState(snapshot);
+          setPendingUndo(undefined);
+        },
+      });
+    },
+    [snapshotProjectState, restoreProjectState],
+  );
+
+  const requestProjectConfirmation = useCallback((confirmation: PendingConfirmation) => {
+    setPendingConfirmation(confirmation);
+  }, []);
 
   const startDrawMode = useCallback(
     (mode: DrawMode) => {
@@ -858,33 +922,47 @@ function App() {
       const floorsToDelete = floors
         .filter((floor) => floor.buildingId === buildingId)
         .map((floor) => floor.id);
-      const nextBuildings = buildings.filter((building) => building.id !== buildingId);
-      const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
+      const buildingName =
+        buildings.find((building) => building.id === buildingId)?.name ?? "building";
 
-      setBuildings(nextBuildings);
-      setFloors(nextFloors);
-      setOverlays((current) =>
-        current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
-      );
-      setEditorState((current) =>
-        replaceAllFeatures(
-          selectFeature(current, undefined),
-          current.features.filter(
-            (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
-          ),
-        ),
-      );
+      requestProjectConfirmation({
+        title: "Delete building?",
+        message: `Delete "${buildingName}" and all its floors and features?`,
+        undoLabel: "Building deleted",
+        confirmLabel: "Yes",
+        apply: () =>
+          applyUndoableProjectMutation("Building deleted", () => {
+            const nextBuildings = buildings.filter((building) => building.id !== buildingId);
+            const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
+            const nextFeatures = editorState.features.filter(
+              (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
+            );
 
-      const nextSelection = firstValidSelection({
-        buildings: nextBuildings,
-        floors: nextFloors,
-        features: editorState.features.filter(
-          (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
-        ),
+            setBuildings(nextBuildings);
+            setFloors(nextFloors);
+            setOverlays((current) =>
+              current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
+            );
+            setEditorState((current) =>
+              replaceAllFeatures(selectFeature(current, undefined), nextFeatures),
+            );
+
+            const nextSelection = firstValidSelection({
+              buildings: nextBuildings,
+              floors: nextFloors,
+              features: nextFeatures,
+            });
+            setSelection(nextSelection);
+          }),
       });
-      setSelection(nextSelection);
     },
-    [buildings, floors, editorState.features],
+    [
+      buildings,
+      floors,
+      editorState.features,
+      applyUndoableProjectMutation,
+      requestProjectConfirmation,
+    ],
   );
 
   const onAddFloor = useCallback(
@@ -909,25 +987,35 @@ function App() {
         return;
       }
 
-      const nextFloors = floors.filter((current) => current.id !== floorId);
-      setFloors(nextFloors);
-      setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
-      setEditorState((current) =>
-        replaceAllFeatures(
-          selectFeature(current, undefined),
-          current.features.filter((feature) => feature.properties.floorId !== floorId),
-        ),
-      );
+      requestProjectConfirmation({
+        title: "Delete floor?",
+        message: `Delete "${floor.name}" and all features on this floor?`,
+        undoLabel: "Floor deleted",
+        confirmLabel: "Yes",
+        apply: () =>
+          applyUndoableProjectMutation("Floor deleted", () => {
+            const nextFloors = floors.filter((current) => current.id !== floorId);
+            setFloors(nextFloors);
+            setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
+            setEditorState((current) =>
+              replaceAllFeatures(
+                selectFeature(current, undefined),
+                current.features.filter((feature) => feature.properties.floorId !== floorId),
+              ),
+            );
 
-      const nextFloor =
-        nextFloors.find((current) => current.buildingId === floor.buildingId) ?? nextFloors[0];
-      if (nextFloor) {
-        setSelection({ kind: "floor", id: nextFloor.id });
-      } else {
-        setSelection({ kind: "building", id: floor.buildingId });
-      }
+            const nextFloor =
+              nextFloors.find((current) => current.buildingId === floor.buildingId) ??
+              nextFloors[0];
+            if (nextFloor) {
+              setSelection({ kind: "floor", id: nextFloor.id });
+            } else {
+              setSelection({ kind: "building", id: floor.buildingId });
+            }
+          }),
+      });
     },
-    [floors],
+    [floors, applyUndoableProjectMutation, requestProjectConfirmation],
   );
 
   const onCloneFloor = useCallback(
@@ -937,28 +1025,43 @@ function App() {
         return;
       }
 
-      const clone = cloneFloorWithReferences({
-        floor: sourceFloor,
-        floors,
-        features: editorState.features,
-        overlays,
-      });
+      requestProjectConfirmation({
+        title: "Clone floor?",
+        message: `Clone "${sourceFloor.name}" including features and overlay?`,
+        undoLabel: "Floor cloned",
+        confirmLabel: "Yes",
+        apply: () =>
+          applyUndoableProjectMutation("Floor cloned", () => {
+            const clone = cloneFloorWithReferences({
+              floor: sourceFloor,
+              floors,
+              features: editorState.features,
+              overlays,
+            });
 
-      setFloors((current) => [...current, clone.floor]);
-      setEditorState((current) =>
-        replaceAllFeatures(selectFeature(current, undefined), [
-          ...current.features,
-          ...clone.features,
-        ]),
-      );
-      const cloneOverlay = clone.overlay;
-      if (cloneOverlay) {
-        setOverlays((current) => [...current, cloneOverlay]);
-      }
-      setSelection({ kind: "floor", id: clone.floor.id });
-      setDrawMode("select");
+            setFloors((current) => [...current, clone.floor]);
+            setEditorState((current) =>
+              replaceAllFeatures(selectFeature(current, undefined), [
+                ...current.features,
+                ...clone.features,
+              ]),
+            );
+            const cloneOverlay = clone.overlay;
+            if (cloneOverlay) {
+              setOverlays((current) => [...current, cloneOverlay]);
+            }
+            setSelection({ kind: "floor", id: clone.floor.id });
+            setDrawMode("select");
+          }),
+      });
     },
-    [editorState.features, floors, overlays],
+    [
+      editorState.features,
+      floors,
+      overlays,
+      applyUndoableProjectMutation,
+      requestProjectConfirmation,
+    ],
   );
 
   const onCreateFeature = useCallback(
@@ -1009,30 +1112,7 @@ function App() {
               <h1 className="text-xl font-semibold">FORMATION Floor Plan Editor</h1>
             </div>
             <div className="flex items-center gap-2">
-              <span className="badge badge-outline">{saveStatus}</span>
-              <label className="swap swap-rotate rounded-box bg-base-200 p-2">
-                <input
-                  type="checkbox"
-                  aria-label="Toggle theme"
-                  checked={theme === "qr-dark"}
-                  onChange={(event) =>
-                    setTheme(event.currentTarget.checked ? "qr-dark" : "qr-light")
-                  }
-                />
-                <span className="swap-on">Dark</span>
-                <span className="swap-off">Light</span>
-              </label>
-            </div>
-          </header>
-
-          <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
-            <aside className="xl:min-h-0 xl:overflow-y-auto xl:pr-1">
-              <div className="mb-3 flex gap-2">
-                <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
-                  Add building
-                </button>
-              </div>
-              <div className="relative mb-3">
+              <div className="relative w-72">
                 <label className="input input-bordered input-sm flex items-center gap-2">
                   <svg viewBox="0 0 24 24" className="size-4 opacity-70" aria-hidden="true">
                     <path
@@ -1092,6 +1172,29 @@ function App() {
                   </div>
                 ) : null}
               </div>
+              <span className="badge badge-outline">{saveStatus}</span>
+              <label className="swap swap-rotate rounded-box bg-base-200 p-2">
+                <input
+                  type="checkbox"
+                  aria-label="Toggle theme"
+                  checked={theme === "qr-dark"}
+                  onChange={(event) =>
+                    setTheme(event.currentTarget.checked ? "qr-dark" : "qr-light")
+                  }
+                />
+                <span className="swap-on">Dark</span>
+                <span className="swap-off">Light</span>
+              </label>
+            </div>
+          </header>
+
+          <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
+            <aside className="flex flex-col xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+              <div className="mb-3 flex gap-2">
+                <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
+                  Add building
+                </button>
+              </div>
               <BuildingsTree
                 buildings={buildings}
                 floors={floors}
@@ -1118,11 +1221,14 @@ function App() {
                   </select>
                 </label>
               </div>
+              <div className="mt-auto rounded-box bg-base-200 p-3 text-sm">
+                Center: {mapView.center[0].toFixed(6)}, {mapView.center[1].toFixed(6)} | Zoom:{" "}
+                {mapView.zoom.toFixed(2)}
+              </div>
             </aside>
 
             <section className="card bg-base-100 shadow xl:min-h-0">
-              <div className="card-body gap-3 xl:min-h-0">
-                <h2 className="card-title text-lg">Map View</h2>
+              <div className="card-body gap-0 p-0 xl:min-h-0">
                 <div className="relative h-[50vh] xl:min-h-0 xl:flex-1">
                   <div className="absolute left-3 top-3 z-10 flex flex-col gap-2">
                     <div
@@ -1351,22 +1457,6 @@ function App() {
                     }}
                   />
                 </div>
-                <div className="rounded-box bg-base-200 p-3 text-sm">
-                  Center: {mapView.center[0].toFixed(6)}, {mapView.center[1].toFixed(6)} | Zoom:{" "}
-                  {mapView.zoom.toFixed(2)}
-                </div>
-                {selectedFeature ? (
-                  <div className="rounded-box bg-base-200 p-3 text-sm">
-                    Selected:{" "}
-                    <span className="font-semibold">
-                      {selectedFeature.properties.name ?? selectedFeature.id}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="rounded-box bg-base-200 p-3 text-sm text-base-content/70">
-                    No feature selected.
-                  </div>
-                )}
               </div>
             </section>
 
@@ -1447,16 +1537,28 @@ function App() {
                   const deletedFeature = editorState.features.find(
                     (feature) => feature.id === featureId,
                   );
-                  setEditorState((current) =>
-                    replaceAllFeatures(
-                      selectFeature(current, undefined),
-                      current.features.filter((feature) => feature.id !== featureId),
-                    ),
-                  );
+                  const featureName =
+                    deletedFeature?.properties.name ?? deletedFeature?.id ?? "feature";
 
-                  if (deletedFeature?.properties.floorId) {
-                    setSelection({ kind: "floor", id: deletedFeature.properties.floorId });
-                  }
+                  requestProjectConfirmation({
+                    title: "Delete feature?",
+                    message: `Delete "${featureName}"?`,
+                    undoLabel: "Feature deleted",
+                    confirmLabel: "Yes",
+                    apply: () =>
+                      applyUndoableProjectMutation("Feature deleted", () => {
+                        setEditorState((current) =>
+                          replaceAllFeatures(
+                            selectFeature(current, undefined),
+                            current.features.filter((feature) => feature.id !== featureId),
+                          ),
+                        );
+
+                        if (deletedFeature?.properties.floorId) {
+                          setSelection({ kind: "floor", id: deletedFeature.properties.floorId });
+                        }
+                      }),
+                  });
                 }}
                 onCloneFeature={(featureId) => {
                   const source = editorState.features.find((feature) => feature.id === featureId);
@@ -1473,14 +1575,23 @@ function App() {
                     return;
                   }
 
-                  const clone = cloneImdfFeature(source, {
-                    floorId: floor.id,
-                    buildingId: building.id,
-                  });
+                  requestProjectConfirmation({
+                    title: "Clone feature?",
+                    message: `Clone "${source.properties.name ?? source.id}"?`,
+                    undoLabel: "Feature cloned",
+                    confirmLabel: "Yes",
+                    apply: () =>
+                      applyUndoableProjectMutation("Feature cloned", () => {
+                        const clone = cloneImdfFeature(source, {
+                          floorId: floor.id,
+                          buildingId: building.id,
+                        });
 
-                  setEditorState((current) => addFeature(current, clone));
-                  setSelection({ kind: "feature", id: clone.id });
-                  setDrawMode("select");
+                        setEditorState((current) => addFeature(current, clone));
+                        setSelection({ kind: "feature", id: clone.id });
+                        setDrawMode("select");
+                      }),
+                  });
                 }}
                 onOverlayUpload={uploadOverlayForCurrentFloor}
                 onOverlayOpacityChange={(opacity) => {
@@ -1550,6 +1661,62 @@ function App() {
             </aside>
           </div>
         </div>
+        {pendingUndo ? (
+          <div className="pointer-events-none fixed bottom-4 right-4 z-40">
+            <div className="pointer-events-auto alert shadow-lg">
+              <span>{pendingUndo.label}. Undo?</span>
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-xs"
+                  type="button"
+                  aria-label="Undo last project action"
+                  onClick={pendingUndo.apply}
+                >
+                  Undo
+                </button>
+                <button
+                  className="btn btn-xs btn-ghost"
+                  type="button"
+                  onClick={() => setPendingUndo(undefined)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {pendingConfirmation ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral/40 p-4">
+            <div
+              className="w-full max-w-md rounded-box bg-base-100 p-5 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label={pendingConfirmation.title}
+            >
+              <h2 className="text-lg font-semibold">{pendingConfirmation.title}</h2>
+              <p className="mt-2 text-sm text-base-content/80">{pendingConfirmation.message}</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  className="btn btn-sm"
+                  type="button"
+                  onClick={() => setPendingConfirmation(undefined)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-sm btn-error"
+                  type="button"
+                  onClick={() => {
+                    pendingConfirmation.apply();
+                    setPendingConfirmation(undefined);
+                  }}
+                >
+                  {pendingConfirmation.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </ErrorBoundary>
   );

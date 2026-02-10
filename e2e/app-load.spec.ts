@@ -61,7 +61,7 @@ test("app loads without triggering error boundary", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /map view/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /draw line/i })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

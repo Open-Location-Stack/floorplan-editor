@@ -571,6 +571,20 @@ const getRenderableFeatureIdAtPoint = (rendered: RenderedFeatureHit[]): string |
   return undefined;
 };
 
+const getActiveDrawFeatureIds = (drawFeatures: GeoJsonFeature[]): string[] =>
+  drawFeatures
+    .map((feature) => {
+      const activeValue =
+        feature.properties && typeof feature.properties === "object"
+          ? (feature.properties as { active?: unknown }).active
+          : undefined;
+      if (activeValue !== true && activeValue !== "true") {
+        return undefined;
+      }
+      return parseFeatureId(feature.id);
+    })
+    .filter((featureId): featureId is string => Boolean(featureId));
+
 const hasVertexOrMidpointHit = (rendered: RenderedFeatureHit[]): boolean =>
   rendered.some((hit) => {
     const meta = hit.properties?.meta;
@@ -687,6 +701,18 @@ type SnapCandidate = {
   coordinate: Coordinates;
   distanceMeters: number;
 };
+
+type ActiveDrawPointerTarget =
+  | {
+      geometryType: "LineString";
+      coordinates: Coordinates[];
+      activeCoordinateIndex: number;
+    }
+  | {
+      geometryType: "Polygon";
+      ring: Coordinates[];
+      activeCoordinateIndex: number;
+    };
 
 const effectiveSnapDistanceMeters = (baseDistanceMeters: number, zoom: number): number =>
   baseDistanceMeters * 2 ** Math.max(0, SNAP_REFERENCE_ZOOM - zoom);
@@ -859,6 +885,51 @@ const snapCoordinates = (
   });
 
   return { coordinates: snapped, changed };
+};
+
+const activeDrawPointerTargetForFeature = (
+  feature: GeoJsonFeature,
+): ActiveDrawPointerTarget | undefined => {
+  if (!feature.geometry) {
+    return undefined;
+  }
+
+  if (feature.geometry.type === "LineString") {
+    const coordinates = normalizeLine(feature.geometry.coordinates);
+    if (!coordinates || coordinates.length === 0) {
+      return undefined;
+    }
+
+    return {
+      geometryType: "LineString",
+      coordinates,
+      activeCoordinateIndex: coordinates.length - 1,
+    };
+  }
+
+  if (feature.geometry.type === "Polygon") {
+    const ring = normalizePolygon(feature.geometry.coordinates)?.[0];
+    if (!ring || ring.length === 0) {
+      return undefined;
+    }
+
+    const lastIndex = ring.length - 1;
+    const firstCoordinate = ring[0];
+    const lastCoordinate = ring[lastIndex];
+    if (!firstCoordinate || !lastCoordinate) {
+      return undefined;
+    }
+    const likelyClosed = lastIndex >= 1 && coordinateEquals(lastCoordinate, firstCoordinate);
+    const activeCoordinateIndex = likelyClosed ? Math.max(0, lastIndex - 1) : lastIndex;
+
+    return {
+      geometryType: "Polygon",
+      ring,
+      activeCoordinateIndex,
+    };
+  }
+
+  return undefined;
 };
 
 const angleFromCenter = (center: Coordinates, point: Coordinates): number => {
@@ -1707,8 +1778,12 @@ export const createMapController = async (
       .filter((featureId): featureId is string => Boolean(featureId));
   };
 
-  const applySnappingToFeatureIds = (featureIds: string[]): void => {
-    if (!currentSnapEnabled || featureIds.length === 0 || isDrawInMode(draw, "draw_line_string")) {
+  const applySnappingToFeatureIds = (featureIds: string[], phase: "create" | "update"): void => {
+    if (!currentSnapEnabled || featureIds.length === 0) {
+      return;
+    }
+
+    if (phase === "update" && isDrawInMode(draw, "draw_line_string")) {
       return;
     }
 
@@ -1816,7 +1891,6 @@ export const createMapController = async (
     const selectedFeatureIds = draw.getSelectedIds();
     withExternalSyncGuard(() => {
       for (const update of updates) {
-        draw.delete(update.featureId);
         draw.add(update.feature);
       }
 
@@ -1827,6 +1901,123 @@ export const createMapController = async (
         }
       } else if (drawModeBefore === "simple_select") {
         draw.changeMode("simple_select", { featureIds: selectedFeatureIds });
+      }
+    });
+  };
+
+  const applyLivePointerSnapping = (): void => {
+    if (!currentSnapEnabled) {
+      return;
+    }
+
+    const drawMode = draw.getMode();
+    if (drawMode !== "draw_line_string" && drawMode !== "draw_polygon") {
+      return;
+    }
+
+    const allDrawFeatures = draw.getAll().features;
+    const activeFeatureIds = getActiveDrawFeatureIds(allDrawFeatures);
+    if (activeFeatureIds.length === 0) {
+      return;
+    }
+
+    const zoomLevel = map.getZoom();
+    const maxDistanceMeters = effectiveSnapDistanceMeters(snapBaseDistanceMeters, zoomLevel);
+    if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
+      return;
+    }
+
+    const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
+    const updates: Array<{
+      featureId: string;
+      feature: GeoJsonFeature;
+    }> = [];
+
+    for (const featureId of activeFeatureIds) {
+      const sourceFeature = draw.get(featureId);
+      if (!sourceFeature) {
+        continue;
+      }
+
+      const pointerTarget = activeDrawPointerTargetForFeature(sourceFeature);
+      if (!pointerTarget) {
+        continue;
+      }
+
+      const targets = collectSnapTargets(allDrawFeatures, featureId);
+      if (targets.vertices.length === 0 && targets.edges.length === 0) {
+        continue;
+      }
+
+      if (pointerTarget.geometryType === "LineString") {
+        const activeCoordinate = pointerTarget.coordinates[pointerTarget.activeCoordinateIndex];
+        if (!activeCoordinate) {
+          continue;
+        }
+
+        const candidate = findBestSnapCandidate(
+          activeCoordinate,
+          targets,
+          maxDistanceMeters,
+          center,
+        );
+        if (!candidate || coordinateEquals(activeCoordinate, candidate.coordinate)) {
+          continue;
+        }
+
+        const nextCoordinates = [...pointerTarget.coordinates];
+        nextCoordinates[pointerTarget.activeCoordinateIndex] = candidate.coordinate;
+        updates.push({
+          featureId,
+          feature: {
+            ...sourceFeature,
+            geometry: {
+              type: "LineString",
+              coordinates: nextCoordinates,
+            },
+          },
+        });
+        continue;
+      }
+
+      const activeCoordinate = pointerTarget.ring[pointerTarget.activeCoordinateIndex];
+      if (!activeCoordinate) {
+        continue;
+      }
+
+      const candidate = findBestSnapCandidate(activeCoordinate, targets, maxDistanceMeters, center);
+      if (!candidate || coordinateEquals(activeCoordinate, candidate.coordinate)) {
+        continue;
+      }
+
+      const nextRing = [...pointerTarget.ring];
+      nextRing[pointerTarget.activeCoordinateIndex] = candidate.coordinate;
+      const lastIndex = nextRing.length - 1;
+      const firstCoordinate = nextRing[0];
+      const lastCoordinate = nextRing[lastIndex];
+      if (firstCoordinate && lastCoordinate && coordinateEquals(lastCoordinate, firstCoordinate)) {
+        nextRing[lastIndex] = firstCoordinate;
+      }
+
+      updates.push({
+        featureId,
+        feature: {
+          ...sourceFeature,
+          geometry: {
+            type: "Polygon",
+            coordinates: [nextRing],
+          },
+        },
+      });
+    }
+
+    if (updates.length === 0) {
+      return;
+    }
+
+    withExternalSyncGuard(() => {
+      for (const update of updates) {
+        draw.add(update.feature);
       }
     });
   };
@@ -1854,7 +2045,7 @@ export const createMapController = async (
       return;
     }
 
-    applySnappingToFeatureIds(getFeatureIdsFromDrawEvent(event));
+    applySnappingToFeatureIds(getFeatureIdsFromDrawEvent(event), "create");
     emitFeaturesChange();
     emitVertexSelectionChange();
   });
@@ -1866,9 +2057,14 @@ export const createMapController = async (
 
     const featureIdsFromEvent = getFeatureIdsFromDrawEvent(event);
     if (featureIdsFromEvent.length > 0) {
-      applySnappingToFeatureIds(featureIdsFromEvent);
+      applySnappingToFeatureIds(featureIdsFromEvent, "update");
     } else {
-      applySnappingToFeatureIds(draw.getSelectedIds());
+      const activeDrawFeatureIds = getActiveDrawFeatureIds(draw.getAll().features);
+      if (activeDrawFeatureIds.length > 0) {
+        applySnappingToFeatureIds(activeDrawFeatureIds, "update");
+      } else {
+        applySnappingToFeatureIds(draw.getSelectedIds(), "update");
+      }
     }
     emitFeaturesChange();
     emitVertexSelectionChange();
@@ -1990,6 +2186,8 @@ export const createMapController = async (
       map.getCanvas().style.cursor = "grabbing";
       return;
     }
+
+    applyLivePointerSnapping();
 
     const hovered = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
     if (canDragOverlay() && isOverlayLayerHit(hovered[0])) {
