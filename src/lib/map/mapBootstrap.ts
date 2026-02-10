@@ -686,6 +686,10 @@ export const createMapController = async (
     onOverlayCornersChange: OverlayCornersChangeHandler;
     onVertexSelectionChange?: VertexSelectionChangeHandler;
   },
+  initialView?: {
+    center: Coordinates;
+    zoom: number;
+  },
 ): Promise<MapController> => {
   const maplibre = (await import("maplibre-gl")) as MapLibreModule;
   configureDrawClassesForMapLibre(MapboxDraw);
@@ -693,8 +697,8 @@ export const createMapController = async (
   const map = new maplibre.Map({
     container,
     style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${maptilerApiKey}`,
-    center: [5.1214, 52.0907],
-    zoom: 17,
+    center: initialView?.center ?? [5.1214, 52.0907],
+    zoom: initialView?.zoom ?? 17,
   });
 
   const draw = new MapboxDraw({
@@ -1516,18 +1520,12 @@ export const createMapController = async (
       applyPendingState();
     },
     setView: (center, zoom) => {
-      if (typeof zoom === "number") {
-        map.easeTo({
-          center,
-          zoom,
-          duration: 500,
-        });
-        return;
-      }
-
-      map.easeTo({
+      map.flyTo({
         center,
-        duration: 500,
+        ...(typeof zoom === "number" ? { zoom } : {}),
+        speed: 1,
+        curve: 1.5,
+        essential: true,
       });
     },
     deleteSelection: () => {

@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const MockMapCanvas = ({
+  initialView,
+  relocationRequest,
   onViewStateChange,
   onFeatureSelectionChange,
   onInteractionModeChange,
@@ -10,6 +12,15 @@ const MockMapCanvas = ({
   drawMode,
   deleteRequestVersion,
 }: {
+  initialView: {
+    center: [number, number];
+    zoom: number;
+  };
+  relocationRequest?: {
+    center: [number, number];
+    zoom?: number;
+    requestVersion: number;
+  };
   onViewStateChange: (center: [number, number], zoom: number) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onInteractionModeChange: (mode: "select" | "point" | "line" | "polygon") => void;
@@ -30,9 +41,24 @@ const MockMapCanvas = ({
   splitPathRequestVersion: number;
   forkPathRequestVersion: number;
 }) => {
+  const lastRelocationVersionRef = useRef<number | undefined>(undefined);
+
   useEffect(() => {
-    onViewStateChange([5.1214, 52.0907], 17);
-  }, [onViewStateChange]);
+    onViewStateChange(initialView.center, initialView.zoom);
+  }, [initialView, onViewStateChange]);
+
+  useEffect(() => {
+    if (!relocationRequest) {
+      return;
+    }
+
+    if (lastRelocationVersionRef.current === relocationRequest.requestVersion) {
+      return;
+    }
+
+    lastRelocationVersionRef.current = relocationRequest.requestVersion;
+    onViewStateChange(relocationRequest.center, relocationRequest.zoom ?? initialView.zoom);
+  }, [initialView.zoom, onViewStateChange, relocationRequest]);
 
   useEffect(() => {
     if (deleteRequestVersion < 1) {
@@ -138,8 +164,11 @@ const mockMatchMedia = () => ({
 });
 
 describe("App browser smoke", () => {
+  const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.removeItem(MAP_VIEW_STORAGE_KEY);
   });
 
   beforeEach(() => {
@@ -168,6 +197,25 @@ describe("App browser smoke", () => {
     expect(
       screen.queryByText(/something went wrong\. please reload the editor\./i),
     ).not.toBeInTheDocument();
+  });
+
+  it("restores map view from local storage on startup", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+    window.localStorage.setItem(
+      MAP_VIEW_STORAGE_KEY,
+      JSON.stringify({
+        center: [-73.9855, 40.758],
+        zoom: 15.5,
+      }),
+    );
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Center: -73\.985500, 40\.758000/i)).toBeInTheDocument();
+      expect(screen.getByText(/Zoom: 15\.50/i)).toBeInTheDocument();
+    });
   });
 
   it("starts with no default building until add building is clicked", async () => {
@@ -242,6 +290,59 @@ describe("App browser smoke", () => {
     fireEvent.click(screen.getByRole("option", { name: /times square/i }));
 
     expect(screen.getByText(/Center: -73\.985500, 40\.758000/i)).toBeInTheDocument();
+  });
+
+  it("recenters the map when selecting building, floor, or feature in the tree", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "tree recenter",
+      version: 3,
+      updatedAt: "2026-02-10T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building", location: [1, 2] }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.13, 52.09],
+                [5.13, 52.1],
+                [5.12, 52.1],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Room A" },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "HQ Building" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "HQ Building" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Center: 1\.000000, 2\.000000/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ground Floor" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Center: 5\.125000, 52\.095000/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Room A" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Center: 5\.125000, 52\.095000/i)).toBeInTheDocument();
+    });
   });
 
   it("renders when matchMedia is unavailable", async () => {

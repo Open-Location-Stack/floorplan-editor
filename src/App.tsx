@@ -37,6 +37,7 @@ import type {
 } from "./lib/types";
 
 const THEME_STORAGE_KEY = "floorplan-editor-theme";
+const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
 const PROJECT_ID = "default-project";
 
 const isThemeId = (value: string | null): value is ThemeId =>
@@ -57,6 +58,10 @@ const getInitialTheme = (): ThemeId => {
 
 const INITIAL_MAP_CENTER: Coordinates = [5.1214, 52.0907];
 const INITIAL_MAP_ZOOM = 17;
+const DEFAULT_MAP_VIEW = {
+  center: INITIAL_MAP_CENTER,
+  zoom: INITIAL_MAP_ZOOM,
+} as const;
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LocationSearchStatus = "idle" | "loading" | "error";
@@ -67,6 +72,59 @@ type MapRelocationRequest = {
   requestVersion: number;
 };
 
+const isCoordinateTuple = (value: unknown): value is Coordinates =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  typeof value[0] === "number" &&
+  Number.isFinite(value[0]) &&
+  typeof value[1] === "number" &&
+  Number.isFinite(value[1]);
+
+const getInitialMapView = (): { center: Coordinates; zoom: number } => {
+  if (typeof window === "undefined") {
+    return {
+      center: [...DEFAULT_MAP_VIEW.center],
+      zoom: DEFAULT_MAP_VIEW.zoom,
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(MAP_VIEW_STORAGE_KEY);
+    if (!raw) {
+      return {
+        center: [...DEFAULT_MAP_VIEW.center],
+        zoom: DEFAULT_MAP_VIEW.zoom,
+      };
+    }
+
+    const parsed = JSON.parse(raw) as {
+      center?: unknown;
+      zoom?: unknown;
+    };
+    if (!isCoordinateTuple(parsed.center)) {
+      return {
+        center: [...DEFAULT_MAP_VIEW.center],
+        zoom: DEFAULT_MAP_VIEW.zoom,
+      };
+    }
+
+    const parsedZoom =
+      typeof parsed.zoom === "number" && Number.isFinite(parsed.zoom)
+        ? parsed.zoom
+        : DEFAULT_MAP_VIEW.zoom;
+
+    return {
+      center: [parsed.center[0], parsed.center[1]],
+      zoom: parsedZoom,
+    };
+  } catch {
+    return {
+      center: [...DEFAULT_MAP_VIEW.center],
+      zoom: DEFAULT_MAP_VIEW.zoom,
+    };
+  }
+};
+
 const cornersAroundView = (center: Coordinates, zoom: number): OverlayCorners => {
   const span = Math.max(0.00005, 0.02 / 2 ** Math.max(0, zoom - 14));
   return {
@@ -75,6 +133,38 @@ const cornersAroundView = (center: Coordinates, zoom: number): OverlayCorners =>
     bottomRight: [center[0] + span, center[1] - span],
     bottomLeft: [center[0] - span, center[1] - span],
   };
+};
+
+const overlayCenter = (corners: OverlayCorners): Coordinates => [
+  (corners.topLeft[0] + corners.topRight[0] + corners.bottomRight[0] + corners.bottomLeft[0]) / 4,
+  (corners.topLeft[1] + corners.topRight[1] + corners.bottomRight[1] + corners.bottomLeft[1]) / 4,
+];
+
+const geometryCenter = (geometry: FloorFeature["geometry"]): Coordinates | undefined => {
+  if (geometry.type === "Point") {
+    return geometry.coordinates;
+  }
+
+  const points =
+    geometry.type === "LineString" ? geometry.coordinates : (geometry.coordinates[0] ?? []);
+
+  if (points.length === 0) {
+    return undefined;
+  }
+
+  let minLng = Number.POSITIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+
+  for (const point of points) {
+    minLng = Math.min(minLng, point[0]);
+    maxLng = Math.max(maxLng, point[0]);
+    minLat = Math.min(minLat, point[1]);
+    maxLat = Math.max(maxLat, point[1]);
+  }
+
+  return [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
 };
 
 const kindForGeometry = (geometryType: GeometryType): string => {
@@ -126,6 +216,7 @@ const saveEditorSnapshot = async (
 };
 
 function App() {
+  const [initialMapView] = useState(() => getInitialMapView());
   const [theme, setTheme] = useState<ThemeId>(() => getInitialTheme());
   const [editorState, setEditorState] = useState<EditorState>(() => createInitialEditorState());
   const [overlays, setOverlays] = useState<FloorOverlay[]>([]);
@@ -139,17 +230,18 @@ function App() {
   const [forkPathRequestVersion, setForkPathRequestVersion] = useState(0);
   const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
   const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
-  const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>({
-    center: INITIAL_MAP_CENTER,
-    zoom: INITIAL_MAP_ZOOM,
-  });
+  const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>(initialMapView);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSearchResults, setLocationSearchResults] = useState<OpenCageSearchResult[]>([]);
   const [locationSearchStatus, setLocationSearchStatus] = useState<LocationSearchStatus>("idle");
   const [locationSearchNoResults, setLocationSearchNoResults] = useState(false);
   const [locationSearchFocused, setLocationSearchFocused] = useState(false);
-  const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>();
+  const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
+    center: initialMapView.center,
+    zoom: initialMapView.zoom,
+    requestVersion: 1,
+  });
 
   const runtimeConfig = getRuntimeConfig();
   const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
@@ -170,6 +262,10 @@ function App() {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(MAP_VIEW_STORAGE_KEY, JSON.stringify(mapView));
+  }, [mapView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -586,6 +682,83 @@ function App() {
     setMapView({ center, zoom });
   }, []);
 
+  const relocateMap = useCallback((center: Coordinates, zoom?: number) => {
+    setMapView((current) => ({
+      center,
+      zoom: typeof zoom === "number" ? zoom : current.zoom,
+    }));
+    setRelocationRequest((current) => ({
+      center,
+      ...(typeof zoom === "number" ? { zoom } : {}),
+      requestVersion: (current?.requestVersion ?? 0) + 1,
+    }));
+  }, []);
+
+  const floorCenter = useCallback(
+    (floorId: string): Coordinates | undefined => {
+      const floorOverlay = overlays.find((overlay) => overlay.floorId === floorId);
+      if (floorOverlay) {
+        return overlayCenter(floorOverlay.corners);
+      }
+
+      const floorFeatures = editorState.features.filter(
+        (feature) => feature.properties.floorId === floorId,
+      );
+      if (floorFeatures.length === 0) {
+        return undefined;
+      }
+
+      let minLng = Number.POSITIVE_INFINITY;
+      let maxLng = Number.NEGATIVE_INFINITY;
+      let minLat = Number.POSITIVE_INFINITY;
+      let maxLat = Number.NEGATIVE_INFINITY;
+
+      let hasPoint = false;
+      for (const feature of floorFeatures) {
+        const center = geometryCenter(feature.geometry);
+        if (!center) {
+          continue;
+        }
+        hasPoint = true;
+        minLng = Math.min(minLng, center[0]);
+        maxLng = Math.max(maxLng, center[0]);
+        minLat = Math.min(minLat, center[1]);
+        maxLat = Math.max(maxLat, center[1]);
+      }
+
+      if (!hasPoint) {
+        return undefined;
+      }
+
+      return [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
+    },
+    [editorState.features, overlays],
+  );
+
+  const buildingCenter = useCallback(
+    (buildingId: string): Coordinates | undefined => {
+      const directBuildingLocation = buildings.find(
+        (building) => building.id === buildingId,
+      )?.location;
+      if (directBuildingLocation) {
+        return directBuildingLocation;
+      }
+
+      const floorIds = floors
+        .filter((floor) => floor.buildingId === buildingId)
+        .map((floor) => floor.id);
+      for (const floorId of floorIds) {
+        const center = floorCenter(floorId);
+        if (center) {
+          return center;
+        }
+      }
+
+      return undefined;
+    },
+    [buildings, floors, floorCenter],
+  );
+
   const uploadOverlayForCurrentFloor = useCallback(
     (file: File) => {
       if (!activeFloor) {
@@ -621,16 +794,33 @@ function App() {
     [mapView.center, mapView.zoom, activeFloor, selectedOverlay],
   );
 
-  const selectNode = useCallback((nextSelection: Selection) => {
-    setSelection(nextSelection);
-    if (nextSelection.kind === "feature") {
-      setEditorState((current) => selectFeature(current, nextSelection.id));
-      setDrawMode("select");
-      return;
-    }
+  const selectNode = useCallback(
+    (nextSelection: Selection) => {
+      let targetCenter: Coordinates | undefined;
+      if (nextSelection.kind === "building") {
+        targetCenter = buildingCenter(nextSelection.id);
+      } else if (nextSelection.kind === "floor") {
+        targetCenter = floorCenter(nextSelection.id);
+      } else {
+        const feature = editorState.features.find((current) => current.id === nextSelection.id);
+        targetCenter = feature ? geometryCenter(feature.geometry) : undefined;
+      }
 
-    setEditorState((current) => selectFeature(current, undefined));
-  }, []);
+      if (targetCenter) {
+        relocateMap(targetCenter);
+      }
+
+      setSelection(nextSelection);
+      if (nextSelection.kind === "feature") {
+        setEditorState((current) => selectFeature(current, nextSelection.id));
+        setDrawMode("select");
+        return;
+      }
+
+      setEditorState((current) => selectFeature(current, undefined));
+    },
+    [buildingCenter, editorState.features, floorCenter, relocateMap],
+  );
 
   const onAddBuilding = useCallback(() => {
     const buildingId = createId();
@@ -1086,6 +1276,7 @@ function App() {
                   </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
+                    initialView={initialMapView}
                     features={visibleFeatures}
                     selectedFeature={selectedFeatureForMap}
                     overlay={selectedOverlay}

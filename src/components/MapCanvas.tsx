@@ -14,6 +14,10 @@ type MapRelocationRequest = {
 
 type MapCanvasProps = {
   maptilerApiKey: string;
+  initialView: {
+    center: Coordinates;
+    zoom: number;
+  };
   features: FloorFeature[];
   selectedFeature: FloorFeature | undefined;
   overlay: FloorOverlay | undefined;
@@ -33,6 +37,7 @@ type MapCanvasProps = {
 
 export const MapCanvas = ({
   maptilerApiKey,
+  initialView,
   features,
   selectedFeature,
   overlay,
@@ -117,26 +122,31 @@ export const MapCanvas = ({
 
     let cancelled = false;
 
-    void createMapController(element, maptilerApiKey, {
-      onFeaturesChange: (nextFeatures) => {
-        featuresHandlerRef.current(nextFeatures);
+    void createMapController(
+      element,
+      maptilerApiKey,
+      {
+        onFeaturesChange: (nextFeatures) => {
+          featuresHandlerRef.current(nextFeatures);
+        },
+        onFeatureSelectionChange: (featureId) => {
+          selectionHandlerRef.current(featureId);
+        },
+        onViewStateChange: (center, zoom) => {
+          viewStateHandlerRef.current(center, zoom);
+        },
+        onInteractionModeChange: (mode) => {
+          modeHandlerRef.current(mode);
+        },
+        onOverlayCornersChange: (corners) => {
+          overlayChangeHandlerRef.current(corners);
+        },
+        onVertexSelectionChange: (hasSelectedVertex) => {
+          vertexSelectionHandlerRef.current(hasSelectedVertex);
+        },
       },
-      onFeatureSelectionChange: (featureId) => {
-        selectionHandlerRef.current(featureId);
-      },
-      onViewStateChange: (center, zoom) => {
-        viewStateHandlerRef.current(center, zoom);
-      },
-      onInteractionModeChange: (mode) => {
-        modeHandlerRef.current(mode);
-      },
-      onOverlayCornersChange: (corners) => {
-        overlayChangeHandlerRef.current(corners);
-      },
-      onVertexSelectionChange: (hasSelectedVertex) => {
-        vertexSelectionHandlerRef.current(hasSelectedVertex);
-      },
-    }).then((controller) => {
+      initialView,
+    ).then((controller) => {
       if (cancelled) {
         controller.destroy();
         return;
@@ -167,7 +177,7 @@ export const MapCanvas = ({
       controllerRef.current?.destroy();
       controllerRef.current = null;
     };
-  }, [maptilerApiKey]);
+  }, [maptilerApiKey, initialView]);
 
   useEffect(() => {
     controllerRef.current?.setFeatures({

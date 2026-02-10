@@ -136,6 +136,7 @@ class MockMap {
   getCenter = vi.fn(() => ({ lng: 5.1214, lat: 52.0907 }));
   getZoom = vi.fn(() => 17);
   easeTo = vi.fn();
+  flyTo = vi.fn();
   getCanvas = vi.fn(() => this.canvas);
   resize = vi.fn();
   remove = vi.fn();
@@ -1549,9 +1550,11 @@ describe("createMapController", () => {
 
     controller.setView([4.892222, 52.373056], 16);
 
-    expect(map.easeTo).toHaveBeenCalledWith({
+    expect(map.flyTo).toHaveBeenCalledWith({
       center: [4.892222, 52.373056],
-      duration: 500,
+      curve: 1.5,
+      essential: true,
+      speed: 1,
       zoom: 16,
     });
   });
