@@ -58,6 +58,14 @@ const getInitialTheme = (): ThemeId => {
 
 const INITIAL_MAP_CENTER: Coordinates = [5.1214, 52.0907];
 const INITIAL_MAP_ZOOM = 17;
+const DEFAULT_MAP_STYLE_ID = "basic-v2";
+const MAP_STYLE_OPTIONS = [
+  { id: "basic-v2", label: "Basic (no buildings)" },
+  { id: "streets-v2", label: "Streets (with buildings)" },
+  { id: "topo-v2", label: "Topographic" },
+  { id: "satellite", label: "Satellite" },
+  { id: "hybrid", label: "Hybrid (satellite + labels)" },
+] as const;
 const DEFAULT_MAP_VIEW = {
   center: INITIAL_MAP_CENTER,
   zoom: INITIAL_MAP_ZOOM,
@@ -230,6 +238,7 @@ function App() {
   const [forkPathRequestVersion, setForkPathRequestVersion] = useState(0);
   const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
   const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
+  const [mapStyleId, setMapStyleId] = useState<string>(DEFAULT_MAP_STYLE_ID);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>(initialMapView);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("");
@@ -1088,6 +1097,25 @@ function App() {
                 selection={selection}
                 onSelect={selectNode}
               />
+              <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
+                <label className="form-control">
+                  <div className="label px-0 pb-1">
+                    <span className="label-text text-sm font-semibold">Basemap style</span>
+                  </div>
+                  <select
+                    className="select select-bordered select-sm w-full"
+                    value={mapStyleId}
+                    onChange={(event) => setMapStyleId(event.currentTarget.value)}
+                    aria-label="Basemap style"
+                  >
+                    {MAP_STYLE_OPTIONS.map((style) => (
+                      <option key={style.id} value={style.id}>
+                        {style.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </aside>
 
             <section className="card bg-base-100 shadow xl:min-h-0">
@@ -1276,6 +1304,7 @@ function App() {
                   </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
+                    mapStyleId={mapStyleId}
                     initialView={initialMapView}
                     features={visibleFeatures}
                     selectedFeature={selectedFeatureForMap}

@@ -678,6 +678,7 @@ const createOverlayHandleElement = (kind: "corner" | "center"): HTMLDivElement =
 export const createMapController = async (
   container: HTMLElement,
   maptilerApiKey: string,
+  mapStyleId: string,
   handlers: {
     onFeaturesChange: FeaturesChangeHandler;
     onFeatureSelectionChange: FeatureSelectionChangeHandler;
@@ -696,7 +697,7 @@ export const createMapController = async (
 
   const map = new maplibre.Map({
     container,
-    style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${maptilerApiKey}`,
+    style: `https://api.maptiler.com/maps/${mapStyleId}/style.json?key=${maptilerApiKey}`,
     center: initialView?.center ?? [5.1214, 52.0907],
     zoom: initialView?.zoom ?? 17,
   });

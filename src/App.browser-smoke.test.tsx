@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const MockMapCanvas = ({
+  mapStyleId,
   initialView,
   relocationRequest,
   onViewStateChange,
@@ -12,6 +13,7 @@ const MockMapCanvas = ({
   drawMode,
   deleteRequestVersion,
 }: {
+  mapStyleId: string;
   initialView: {
     center: [number, number];
     zoom: number;
@@ -71,6 +73,7 @@ const MockMapCanvas = ({
   return (
     <div data-testid="map-canvas">
       <div data-testid="mock-map-mode">{drawMode}</div>
+      <div data-testid="mock-map-style">{mapStyleId}</div>
       <button
         type="button"
         data-testid="mock-map-select-feature"
@@ -194,9 +197,24 @@ describe("App browser smoke", () => {
       screen.getByRole("heading", { name: /formation floor plan editor/i }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("map-canvas")).toBeInTheDocument();
+    expect(screen.getByLabelText(/basemap style/i)).toBeInTheDocument();
     expect(
       screen.queryByText(/something went wrong\. please reload the editor\./i),
     ).not.toBeInTheDocument();
+  });
+
+  it("uses a non-building basemap by default and allows switching styles", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const styleSelect = screen.getByLabelText(/basemap style/i);
+    expect(styleSelect).toHaveValue("basic-v2");
+    expect(screen.getByTestId("mock-map-style")).toHaveTextContent("basic-v2");
+
+    fireEvent.change(styleSelect, { target: { value: "hybrid" } });
+    expect(screen.getByTestId("mock-map-style")).toHaveTextContent("hybrid");
   });
 
   it("restores map view from local storage on startup", async () => {

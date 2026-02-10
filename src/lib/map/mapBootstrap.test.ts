@@ -343,13 +343,18 @@ describe("createMapController", () => {
   });
 
   it("defers overlay updates until style load", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -375,13 +380,18 @@ describe("createMapController", () => {
   it("drags the overlay bitmap to translate all corners", async () => {
     const onOverlayCornersChange = vi.fn();
     const overlay = createOverlay();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange,
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange,
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -428,13 +438,18 @@ describe("createMapController", () => {
   it("drags the center overlay handle to translate all corners", async () => {
     const onOverlayCornersChange = vi.fn();
     const overlay = createOverlay();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange,
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange,
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -484,13 +499,18 @@ describe("createMapController", () => {
   });
 
   it("applies buffered features into draw after style load", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     controller.setFeatures(pointFeatureCollection());
 
@@ -515,13 +535,18 @@ describe("createMapController", () => {
 
   it("emits draw feature mutations", async () => {
     const onFeaturesChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange,
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -567,13 +592,18 @@ describe("createMapController", () => {
 
   it("normalizes unclosed polygons during draw updates", async () => {
     const onFeaturesChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange,
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -632,7 +662,7 @@ describe("createMapController", () => {
   it("does not replace active polygons during draw-driven state sync", async () => {
     let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
 
-    controller = await createMapController(document.createElement("div"), "fake-key", {
+    controller = await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
       onFeaturesChange: (features) => {
         controller?.setFeatures({
           type: "FeatureCollection",
@@ -695,13 +725,18 @@ describe("createMapController", () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
 
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange,
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange,
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -729,13 +764,18 @@ describe("createMapController", () => {
   });
 
   it("syncs external selection and interaction mode to draw", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -772,13 +812,18 @@ describe("createMapController", () => {
   });
 
   it("uses draw trash for delete selection", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -797,13 +842,18 @@ describe("createMapController", () => {
   });
 
   it("deletes only selected vertices when requested", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -839,14 +889,19 @@ describe("createMapController", () => {
   it("splits a selected path segment by inserting a midpoint node", async () => {
     const onFeaturesChange = vi.fn();
     const onFeatureSelectionChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange,
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -911,14 +966,19 @@ describe("createMapController", () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
     const onVertexSelectionChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange,
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange,
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange,
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange,
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange,
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1046,14 +1106,19 @@ describe("createMapController", () => {
   });
 
   it("does not reset fork continuation when external line mode sync runs", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1099,7 +1164,7 @@ describe("createMapController", () => {
   it("does not replace in-progress fork line when external state enriches properties", async () => {
     let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
 
-    controller = await createMapController(document.createElement("div"), "fake-key", {
+    controller = await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
       onFeaturesChange: (features) => {
         controller?.setFeatures({
           type: "FeatureCollection",
@@ -1203,14 +1268,19 @@ describe("createMapController", () => {
   });
 
   it("forks from last selected line node when vertex selection blurs", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1260,14 +1330,19 @@ describe("createMapController", () => {
 
   it("does not crash when selected vertex probing fails during draw.update", async () => {
     const onVertexSelectionChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange,
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange,
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1292,13 +1367,18 @@ describe("createMapController", () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
 
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange,
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange,
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -1333,13 +1413,18 @@ describe("createMapController", () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
 
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange,
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange,
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -1373,14 +1458,19 @@ describe("createMapController", () => {
   it("does not reset direct_select when clicking a vertex handle", async () => {
     const onFeatureSelectionChange = vi.fn();
     const onVertexSelectionChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-      onVertexSelectionChange,
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange,
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1447,13 +1537,18 @@ describe("createMapController", () => {
 
   it("enters direct_select on first click for non-point features in select mode", async () => {
     const onFeatureSelectionChange = vi.fn();
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange,
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     const draw = lastMockDraw;
@@ -1495,7 +1590,7 @@ describe("createMapController", () => {
       throw new Error("Expected polygon feature");
     }
 
-    controller = await createMapController(document.createElement("div"), "fake-key", {
+    controller = await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
       onFeaturesChange: (features) => {
         controller?.setFeatures({
           type: "FeatureCollection",
@@ -1534,13 +1629,18 @@ describe("createMapController", () => {
   });
 
   it("recenters map when setView is called", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();
@@ -1560,13 +1660,18 @@ describe("createMapController", () => {
   });
 
   it("updates cursor when hovering controllable draw elements", async () => {
-    const controller = await createMapController(document.createElement("div"), "fake-key", {
-      onFeaturesChange: vi.fn(),
-      onFeatureSelectionChange: vi.fn(),
-      onViewStateChange: vi.fn(),
-      onInteractionModeChange: vi.fn(),
-      onOverlayCornersChange: vi.fn(),
-    });
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
 
     const map = lastMockMap;
     expect(map).toBeDefined();

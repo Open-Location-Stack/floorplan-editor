@@ -14,6 +14,7 @@ type MapRelocationRequest = {
 
 type MapCanvasProps = {
   maptilerApiKey: string;
+  mapStyleId: string;
   initialView: {
     center: Coordinates;
     zoom: number;
@@ -37,6 +38,7 @@ type MapCanvasProps = {
 
 export const MapCanvas = ({
   maptilerApiKey,
+  mapStyleId,
   initialView,
   features,
   selectedFeature,
@@ -125,6 +127,7 @@ export const MapCanvas = ({
     void createMapController(
       element,
       maptilerApiKey,
+      mapStyleId,
       {
         onFeaturesChange: (nextFeatures) => {
           featuresHandlerRef.current(nextFeatures);
@@ -177,7 +180,7 @@ export const MapCanvas = ({
       controllerRef.current?.destroy();
       controllerRef.current = null;
     };
-  }, [maptilerApiKey, initialView]);
+  }, [maptilerApiKey, mapStyleId, initialView]);
 
   useEffect(() => {
     controllerRef.current?.setFeatures({
