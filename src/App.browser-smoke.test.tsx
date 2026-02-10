@@ -7,6 +7,7 @@ const MockMapCanvas = ({
   onFeatureSelectionChange,
   onInteractionModeChange,
   onFeaturesChange,
+  drawMode,
   deleteRequestVersion,
 }: {
   onViewStateChange: (center: [number, number], zoom: number) => void;
@@ -23,7 +24,11 @@ const MockMapCanvas = ({
       properties: Record<string, unknown>;
     }>,
   ) => void;
+  drawMode: "select" | "point" | "line" | "polygon";
   deleteRequestVersion: number;
+  deleteVertexRequestVersion: number;
+  splitPathRequestVersion: number;
+  forkPathRequestVersion: number;
 }) => {
   useEffect(() => {
     onViewStateChange([5.1214, 52.0907], 17);
@@ -39,6 +44,7 @@ const MockMapCanvas = ({
 
   return (
     <div data-testid="map-canvas">
+      <div data-testid="mock-map-mode">{drawMode}</div>
       <button
         type="button"
         data-testid="mock-map-select-feature"
@@ -48,6 +54,59 @@ const MockMapCanvas = ({
         }}
       >
         select feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-create-line-feature"
+        onClick={() => {
+          onFeaturesChange([
+            {
+              type: "Feature",
+              id: "path-draft-1",
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [5.2, 52.2],
+                  [5.201, 52.201],
+                  [5.202, 52.202],
+                ],
+              },
+              properties: {},
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("path-draft-1");
+        }}
+      >
+        create line feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-create-polygon-feature"
+        onClick={() => {
+          onFeaturesChange([
+            {
+              type: "Feature",
+              id: "polygon-draft-1",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [5.3, 52.3],
+                    [5.301, 52.302],
+                    [5.302, 52.3],
+                    [5.3, 52.3],
+                  ],
+                ],
+              },
+              properties: {},
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("polygon-draft-1");
+        }}
+      >
+        create polygon feature
       </button>
     </div>
   );
@@ -272,6 +331,101 @@ describe("App browser smoke", () => {
       };
 
       expect(latestSnapshot.features).toHaveLength(0);
+    });
+  });
+
+  it("starts path creation in line sketch mode and keeps sketch coordinates", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /draw path/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /draw path/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-create-line-feature"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          geometry: {
+            type: "LineString";
+            coordinates: number[][];
+          };
+          properties: {
+            kind?: string;
+            name?: string;
+          };
+        }>;
+      };
+      expect(latestSnapshot.features).toHaveLength(1);
+      expect(latestSnapshot.features[0]?.id).toBe("path-draft-1");
+      expect(latestSnapshot.features[0]?.geometry.coordinates).toEqual([
+        [5.2, 52.2],
+        [5.201, 52.201],
+        [5.202, 52.202],
+      ]);
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("path");
+      expect(latestSnapshot.features[0]?.properties.name).toBe("Path");
+    });
+  });
+
+  it("starts polygon creation in polygon sketch mode and preserves selected polygon type", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /draw zone/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /draw zone/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("polygon");
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-create-polygon-feature"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          geometry: {
+            type: "Polygon";
+            coordinates: number[][][];
+          };
+          properties: {
+            kind?: string;
+            name?: string;
+          };
+        }>;
+      };
+      expect(latestSnapshot.features).toHaveLength(1);
+      expect(latestSnapshot.features[0]?.id).toBe("polygon-draft-1");
+      expect(latestSnapshot.features[0]?.geometry.coordinates).toEqual([
+        [
+          [5.3, 52.3],
+          [5.301, 52.302],
+          [5.302, 52.3],
+          [5.3, 52.3],
+        ],
+      ]);
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("zone");
+      expect(latestSnapshot.features[0]?.properties.name).toBe("Zone");
     });
   });
 });

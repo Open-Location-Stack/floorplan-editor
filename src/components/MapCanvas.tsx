@@ -14,6 +14,8 @@ type MapCanvasProps = {
   drawMode: DrawMode;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
+  splitPathRequestVersion: number;
+  forkPathRequestVersion: number;
   onFeaturesChange: (features: FloorFeature[]) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
@@ -30,6 +32,8 @@ export const MapCanvas = ({
   drawMode,
   deleteRequestVersion,
   deleteVertexRequestVersion,
+  splitPathRequestVersion,
+  forkPathRequestVersion,
   onFeaturesChange,
   onFeatureSelectionChange,
   onViewStateChange,
@@ -182,6 +186,22 @@ export const MapCanvas = ({
 
     controllerRef.current?.deleteVertex();
   }, [deleteVertexRequestVersion]);
+
+  useEffect(() => {
+    if (!splitPathRequestVersion) {
+      return;
+    }
+
+    controllerRef.current?.splitPathSegment();
+  }, [splitPathRequestVersion]);
+
+  useEffect(() => {
+    if (!forkPathRequestVersion) {
+      return;
+    }
+
+    controllerRef.current?.forkPathAtNode();
+  }, [forkPathRequestVersion]);
 
   return (
     <div

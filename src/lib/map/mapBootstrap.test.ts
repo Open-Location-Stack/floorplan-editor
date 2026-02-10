@@ -48,6 +48,7 @@ type MockDrawInstance = {
       featureIds?: string[];
       featureId?: string;
       coordPath?: string;
+      from?: number[];
     },
   ) => void;
   trash: () => MockDrawInstance;
@@ -223,7 +224,12 @@ vi.mock("@mapbox/mapbox-gl-draw", () => ({
     changeMode = vi.fn(
       (
         mode: string,
-        options?: { featureIds?: string[]; featureId?: string; coordPath?: string },
+        options?: {
+          featureIds?: string[];
+          featureId?: string;
+          coordPath?: string;
+          from?: number[];
+        },
       ) => {
         this.mode = mode;
         if (mode === "direct_select") {
@@ -298,6 +304,28 @@ const polygonFeatureCollection = (): FeatureCollection => ({
       },
       properties: {
         kind: "unit",
+        floorId: "f1",
+      },
+    },
+  ],
+});
+
+const lineFeatureCollection = (): FeatureCollection => ({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      id: "path-1",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [5.12, 52.09],
+          [5.121, 52.091],
+          [5.122, 52.092],
+        ],
+      },
+      properties: {
+        kind: "path",
         floorId: "f1",
       },
     },
@@ -806,6 +834,428 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("splits a selected path segment by inserting a midpoint node", async () => {
+    const onFeaturesChange = vi.fn();
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange,
+      onFeatureSelectionChange,
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.selectedIds = ["path-1"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {},
+      },
+    ];
+
+    controller.splitPathSegment();
+
+    const updatedFeature = draw.get("path-1");
+    expect(updatedFeature?.geometry.type).toBe("LineString");
+    const coordinates = updatedFeature?.geometry.coordinates as number[][] | undefined;
+    expect(coordinates).toBeDefined();
+    expect(coordinates).toHaveLength(4);
+    expect(coordinates?.[0]).toEqual([5.12, 52.09]);
+    expect(coordinates?.[1]).toEqual([5.121, 52.091]);
+    expect(coordinates?.[2]?.[0]).toBeCloseTo(5.1215);
+    expect(coordinates?.[2]?.[1]).toBeCloseTo(52.0915);
+    expect(coordinates?.[3]).toEqual([5.122, 52.092]);
+    expect(draw.changeMode).toHaveBeenCalledWith(
+      "direct_select",
+      expect.objectContaining({
+        featureId: "path-1",
+      }),
+    );
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith("path-1");
+    expect(onFeaturesChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "path-1",
+      }),
+    ]);
+
+    controller.destroy();
+  });
+
+  it("forks a path from a selected node and enters line draw mode", async () => {
+    const onFeaturesChange = vi.fn();
+    const onFeatureSelectionChange = vi.fn();
+    const onInteractionModeChange = vi.fn();
+    const onVertexSelectionChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange,
+      onFeatureSelectionChange,
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange,
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange,
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.selectedIds = ["path-1"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {},
+      },
+    ];
+    (draw.add as unknown as { mockClear: () => void }).mockClear();
+
+    controller.forkPathAtNode();
+
+    const addCalls = (
+      draw.add as unknown as {
+        mock: {
+          calls: Array<[DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] }]>;
+        };
+      }
+    ).mock.calls;
+    const latestAdd = addCalls.at(-1)?.[0];
+    expect(latestAdd).toBeDefined();
+    if (!latestAdd) {
+      throw new Error("Expected seed line feature to be added");
+    }
+    if (latestAdd.type !== "Feature") {
+      throw new Error("Expected seeded feature input");
+    }
+    expect(latestAdd.geometry.type).toBe("LineString");
+    expect(latestAdd.geometry.coordinates).toEqual([
+      [5.121, 52.091],
+      [5.121, 52.091],
+    ]);
+
+    const forkFeatureId = String(latestAdd.id);
+
+    expect(draw.changeMode).toHaveBeenCalledWith(
+      "draw_line_string",
+      expect.objectContaining({
+        featureId: forkFeatureId,
+        from: [5.121, 52.091],
+      }),
+    );
+    expect(onInteractionModeChange).toHaveBeenCalledWith("line");
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith(undefined);
+    expect(onVertexSelectionChange).toHaveBeenCalledWith(false);
+
+    const forkFeature = draw.get(forkFeatureId);
+    expect(forkFeature).toBeDefined();
+    if (!forkFeature || forkFeature.geometry.type !== "LineString") {
+      throw new Error("Expected fork feature");
+    }
+    forkFeature.geometry.coordinates = [
+      [5.121, 52.091],
+      [5.121, 52.091],
+      [5.125, 52.095],
+    ];
+    draw.features.set(forkFeatureId, forkFeature);
+
+    map.emit("draw.update", {});
+
+    expect(onFeaturesChange).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "path-1",
+        }),
+        expect.objectContaining({
+          id: forkFeatureId,
+          geometry: expect.objectContaining({
+            type: "LineString",
+          }),
+        }),
+      ]),
+    );
+
+    draw.mode = "simple_select";
+    map.emit("draw.create", {});
+
+    expect(onFeaturesChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "path-1",
+          properties: expect.objectContaining({
+            connects_to: expect.arrayContaining([forkFeatureId]),
+          }),
+        }),
+        expect.objectContaining({
+          id: forkFeatureId,
+          geometry: expect.objectContaining({
+            type: "LineString",
+            coordinates: [
+              [5.121, 52.091],
+              [5.125, 52.095],
+            ],
+          }),
+          properties: expect.objectContaining({
+            connects_to: expect.arrayContaining(["path-1"]),
+          }),
+        }),
+      ]),
+    );
+
+    controller.destroy();
+  });
+
+  it("does not reset fork continuation when external line mode sync runs", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.selectedIds = ["path-1"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {},
+      },
+    ];
+
+    controller.forkPathAtNode();
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+
+    controller.setInteractionMode("line");
+
+    expect(draw.changeMode).not.toHaveBeenCalled();
+    expect(draw.mode).toBe("draw_line_string");
+
+    controller.destroy();
+  });
+
+  it("does not replace in-progress fork line when external state enriches properties", async () => {
+    let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
+
+    controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: (features) => {
+        controller?.setFeatures({
+          type: "FeatureCollection",
+          features: features.map((feature) => ({
+            ...feature,
+            properties: {
+              ...feature.properties,
+              name:
+                typeof feature.properties.name === "string" && feature.properties.name.length > 0
+                  ? feature.properties.name
+                  : "Path",
+            },
+          })),
+        });
+      },
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.selectedIds = ["path-1"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {},
+      },
+    ];
+
+    controller.forkPathAtNode();
+
+    const addCalls = (
+      draw.add as unknown as {
+        mock: {
+          calls: Array<[DrawFeature | { type: "FeatureCollection"; features: DrawFeature[] }]>;
+        };
+      }
+    ).mock.calls;
+    const latestAdd = addCalls.at(-1)?.[0];
+    if (!latestAdd || latestAdd.type !== "Feature") {
+      throw new Error("Expected seeded feature input");
+    }
+    const forkFeatureId = String(latestAdd.id);
+
+    draw.add.mockClear();
+    draw.delete.mockClear();
+
+    const forkFeature = draw.get(forkFeatureId);
+    expect(forkFeature).toBeDefined();
+    if (!forkFeature || forkFeature.geometry.type !== "LineString") {
+      throw new Error("Expected fork feature");
+    }
+    forkFeature.geometry.coordinates = [
+      [5.121, 52.091],
+      [5.121, 52.091],
+      [5.125, 52.095],
+    ];
+    draw.features.set(forkFeatureId, forkFeature);
+
+    map.emit("draw.update", {});
+
+    expect(draw.mode).toBe("draw_line_string");
+    expect(draw.delete).not.toHaveBeenCalled();
+    expect(draw.add).not.toHaveBeenCalled();
+
+    const persistedForkFeature = draw.get(forkFeatureId);
+    expect(persistedForkFeature).toBeDefined();
+    if (!persistedForkFeature || persistedForkFeature.geometry.type !== "LineString") {
+      throw new Error("Expected persisted fork feature");
+    }
+    expect(persistedForkFeature.geometry.coordinates).toEqual([
+      [5.121, 52.091],
+      [5.121, 52.091],
+      [5.125, 52.095],
+    ]);
+
+    controller.destroy();
+  });
+
+  it("forks from last selected line node when vertex selection blurs", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setSelection(selectedFeature);
+    draw.selectedIds = ["path-1"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {},
+      },
+    ];
+    map.emit("draw.update", {});
+    draw.selectedPoints = [];
+    (draw.add as unknown as { mockClear: () => void }).mockClear();
+
+    controller.forkPathAtNode();
+
+    expect(draw.add).toHaveBeenCalled();
+    expect(draw.changeMode).toHaveBeenCalledWith(
+      "draw_line_string",
+      expect.objectContaining({
+        from: [5.121, 52.091],
+      }),
+    );
+
+    controller.destroy();
+  });
+
   it("does not crash when selected vertex probing fails during draw.update", async () => {
     const onVertexSelectionChange = vi.fn();
     const controller = await createMapController(document.createElement("div"), "fake-key", {
@@ -836,7 +1286,7 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
-  it("selects clicked feature and exits draw mode when a feature is clicked", async () => {
+  it("keeps draw mode when clicking a persisted feature", async () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();
 
@@ -871,8 +1321,8 @@ describe("createMapController", () => {
       point: { x: 4, y: 5 },
     });
 
-    expect(onInteractionModeChange).toHaveBeenCalledWith("select");
-    expect(onFeatureSelectionChange).toHaveBeenCalledWith("f1");
+    expect(onInteractionModeChange).not.toHaveBeenCalledWith("select");
+    expect(onFeatureSelectionChange).not.toHaveBeenCalledWith("f1");
 
     controller.destroy();
   });
@@ -914,6 +1364,81 @@ describe("createMapController", () => {
 
     expect(onInteractionModeChange).not.toHaveBeenCalledWith("select");
     expect(onFeatureSelectionChange).not.toHaveBeenCalledWith("draft-shape");
+
+    controller.destroy();
+  });
+
+  it("does not reset direct_select when clicking a vertex handle", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const onVertexSelectionChange = vi.fn();
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange,
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+      onVertexSelectionChange,
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const collection = lineFeatureCollection();
+    const selectedFeature = collection.features[0];
+    if (!selectedFeature) {
+      throw new Error("Expected line feature");
+    }
+
+    controller.setFeatures(collection);
+    map.emit("load");
+    controller.setInteractionMode("select");
+    controller.setSelection(selectedFeature);
+    draw.changeMode("direct_select", { featureId: "path-1" });
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.091],
+        },
+        properties: {
+          parent: "path-1",
+          coord_path: "1",
+          meta: "vertex",
+        },
+      },
+    ];
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+    onFeatureSelectionChange.mockClear();
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "vertex-1",
+        properties: {
+          meta: "vertex",
+        },
+      },
+      {
+        id: "path-1",
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 10, y: 12 },
+    });
+
+    expect(draw.changeMode).not.toHaveBeenCalled();
+    expect(onFeatureSelectionChange).not.toHaveBeenCalled();
+    expect(onVertexSelectionChange).toHaveBeenCalledWith(true);
 
     controller.destroy();
   });

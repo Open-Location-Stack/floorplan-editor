@@ -17,9 +17,9 @@ import {
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
 import { createId } from "./lib/id";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
-import { cloneImdfFeature, createImdfFeature } from "./lib/imdf/factories";
+import { cloneImdfFeature } from "./lib/imdf/factories";
 import { normalizeFeature } from "./lib/imdf/normalize";
-import type { SupportedImdfType } from "./lib/imdf/schema";
+import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { projectRepository } from "./lib/persistence/projectRepository";
 import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSanitizer";
@@ -90,7 +90,7 @@ const nameForGeometry = (geometryType: GeometryType): string => {
   }
 
   if (geometryType === "LineString") {
-    return "New line";
+    return "New path";
   }
 
   return "New polygon";
@@ -133,6 +133,9 @@ function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
   const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
+  const [splitPathRequestVersion, setSplitPathRequestVersion] = useState(0);
+  const [forkPathRequestVersion, setForkPathRequestVersion] = useState(0);
+  const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
   const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>({
     center: [5.1214, 52.0907],
@@ -277,6 +280,7 @@ function App() {
   const startDrawMode = useCallback(
     (mode: DrawMode) => {
       setDrawMode(mode);
+      setPendingDrawFeatureType(undefined);
       setHasSelectedVertex(false);
       if (mode !== "select") {
         setEditorState((current) => selectFeature(current, undefined));
@@ -290,6 +294,7 @@ function App() {
 
   const cancelDrawMode = useCallback(() => {
     setDrawMode("select");
+    setPendingDrawFeatureType(undefined);
     setHasSelectedVertex(false);
   }, []);
 
@@ -301,11 +306,24 @@ function App() {
     setDeleteVertexRequestVersion((current) => current + 1);
   }, []);
 
+  const splitPathSegment = useCallback(() => {
+    setSplitPathRequestVersion((current) => current + 1);
+  }, []);
+
+  const forkPathAtNode = useCallback(() => {
+    setForkPathRequestVersion((current) => current + 1);
+  }, []);
+
   const onDrawFeaturesChange = useCallback(
     (featuresFromMap: FloorFeature[]) => {
       if (!activeFloor || !activeBuilding) {
         return;
       }
+
+      const pendingSchema = pendingDrawFeatureType
+        ? getImdfSchemaRule(pendingDrawFeatureType)
+        : undefined;
+      let consumedPendingTemplate = false;
 
       setEditorState((current) => {
         const currentVisible = current.features.filter((feature) =>
@@ -315,9 +333,21 @@ function App() {
 
         const nextVisible = featuresFromMap.map((feature) => {
           const existing = currentVisibleById.get(feature.id);
+          const shouldApplyPendingTemplate =
+            !existing && pendingSchema && pendingSchema.geometryType === feature.geometry.type;
+          if (shouldApplyPendingTemplate) {
+            consumedPendingTemplate = true;
+          }
           const mergedProperties = {
             ...(existing?.properties ?? {}),
             ...feature.properties,
+            ...(shouldApplyPendingTemplate
+              ? {
+                  kind: pendingSchema.type,
+                  imdfType: pendingSchema.type,
+                  name: pendingSchema.defaultName,
+                }
+              : {}),
           };
 
           return normalizeFeature(
@@ -359,8 +389,12 @@ function App() {
 
         return selectFeature(replaceAllFeatures(current, nextFeatures), nextSelectedFeatureId);
       });
+
+      if (consumedPendingTemplate) {
+        setPendingDrawFeatureType(undefined);
+      }
     },
-    [activeFloor, activeBuilding],
+    [activeFloor, activeBuilding, pendingDrawFeatureType],
   );
 
   const onDrawSelectionChange = useCallback(
@@ -623,26 +657,20 @@ function App() {
 
   const onCreateFeature = useCallback(
     (type: SupportedImdfType) => {
-      if (!activeFloor || !activeBuilding) {
+      const schema = getImdfSchemaRule(type);
+      if (schema.geometryType === "LineString") {
+        startDrawMode("line");
+        setPendingDrawFeatureType(type);
         return;
       }
 
-      const feature = createImdfFeature({
-        type,
-        center: mapView.center,
-        context: {
-          floorId: activeFloor.id,
-          buildingId: activeBuilding.id,
-        },
-      });
-
-      setEditorState((current) => addFeature(current, feature));
-      setSelection({ kind: "feature", id: feature.id });
-      setDrawMode("select");
-      setHasSelectedVertex(false);
+      startDrawMode("polygon");
+      setPendingDrawFeatureType(type);
     },
-    [activeFloor, activeBuilding, mapView.center],
+    [startDrawMode],
   );
+
+  const canEditPathNode = drawMode === "select" && hasSelectedVertex;
 
   if (!runtimeConfig.ok) {
     return (
@@ -827,6 +855,44 @@ function App() {
                         </svg>
                       </button>
                       <button
+                        className="btn btn-sm join-item"
+                        type="button"
+                        aria-label="Split selected path segment"
+                        title="Split selected path segment"
+                        onClick={splitPathSegment}
+                        disabled={!canEditPathNode}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M4 12h16M12 8v8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        className="btn btn-sm join-item"
+                        type="button"
+                        aria-label="Fork path from selected node"
+                        title="Fork path from selected node"
+                        onClick={forkPathAtNode}
+                        disabled={!canEditPathNode}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M7 4v7m0 0 5 5m-5-5 5-5m0 10h7"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
                         className="btn btn-sm btn-error join-item"
                         type="button"
                         aria-label="Delete selection"
@@ -845,11 +911,6 @@ function App() {
                         </svg>
                       </button>
                     </div>
-                    <div className="rounded-box bg-base-100/95 px-3 py-2 text-xs shadow">
-                      {drawMode === "select"
-                        ? "Select mode: click features, drag features, or select a vertex and use Delete vertex."
-                        : "Draw mode: click to add geometry. Press Escape to cancel."}
-                    </div>
                   </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
@@ -859,6 +920,8 @@ function App() {
                     drawMode={drawMode}
                     deleteRequestVersion={deleteRequestVersion}
                     deleteVertexRequestVersion={deleteVertexRequestVersion}
+                    splitPathRequestVersion={splitPathRequestVersion}
+                    forkPathRequestVersion={forkPathRequestVersion}
                     onFeaturesChange={onDrawFeaturesChange}
                     onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}

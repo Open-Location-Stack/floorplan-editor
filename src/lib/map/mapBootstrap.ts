@@ -1,6 +1,7 @@
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
 import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
+import { createId } from "../id";
 import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 
 type MapLibreModule = typeof import("maplibre-gl");
@@ -21,8 +22,16 @@ type MapController = {
   setInteractionMode: (mode: DrawMode) => void;
   deleteSelection: () => void;
   deleteVertex: () => void;
+  splitPathSegment: () => void;
+  forkPathAtNode: () => void;
   resize: () => void;
   destroy: () => void;
+};
+
+type PendingForkState = {
+  sourceFeatureId: string;
+  forkFeatureId: string;
+  startCoordinate: Coordinates;
 };
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
@@ -36,12 +45,7 @@ const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"]
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 const featureTypeExpression: unknown[] = ["coalesce", ["get", "imdfType"], ["get", "kind"], ""];
 
-const drawLineColorExpression: unknown[] = [
-  "case",
-  ["==", featureTypeExpression, "path"],
-  "#dc2626",
-  "#111827",
-];
+const drawLineColor = "#dc2626";
 
 const drawPolygonFillColorExpression: unknown[] = [
   "case",
@@ -143,7 +147,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       "line-join": "round",
     },
     paint: {
-      "line-color": drawLineColorExpression,
+      "line-color": drawLineColor,
       "line-width": 3,
     },
   },
@@ -156,7 +160,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       "line-join": "round",
     },
     paint: {
-      "line-color": drawLineColorExpression,
+      "line-color": drawLineColor,
       "line-width": 4,
     },
   },
@@ -189,7 +193,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     type: "circle",
     filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
     paint: {
-      "circle-radius": 7,
+      "circle-radius": 10,
       "circle-color": "#ffffff",
     },
   },
@@ -198,8 +202,8 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     type: "circle",
     filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
     paint: {
-      "circle-radius": 4,
-      "circle-color": "#2563eb",
+      "circle-radius": 6,
+      "circle-color": "#dc2626",
     },
   },
   {
@@ -207,8 +211,8 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     type: "circle",
     filter: ["all", ["==", "meta", "midpoint"], ["==", "$type", "Point"]],
     paint: {
-      "circle-radius": 3,
-      "circle-color": "#2563eb",
+      "circle-radius": 6,
+      "circle-color": "#dc2626",
     },
   },
 ];
@@ -260,6 +264,106 @@ const parseFeatureId = (value: unknown): string | undefined => {
   }
 
   return undefined;
+};
+
+const parseLineVertexIndex = (coordPath: string): number | undefined => {
+  const segments = coordPath
+    .split(".")
+    .map((segment) => Number.parseInt(segment, 10))
+    .filter((segment) => Number.isInteger(segment) && segment >= 0);
+  const index = segments.at(-1);
+  return typeof index === "number" ? index : undefined;
+};
+
+const midpointBetween = (from: Coordinates, to: Coordinates): Coordinates => [
+  (from[0] + to[0]) / 2,
+  (from[1] + to[1]) / 2,
+];
+
+const findNearestVertexIndex = (
+  coordinates: Coordinates[],
+  target: Coordinates,
+): number | undefined => {
+  if (coordinates.length === 0) {
+    return undefined;
+  }
+
+  const exactIndex = coordinates.findIndex(
+    (coordinate) => coordinate[0] === target[0] && coordinate[1] === target[1],
+  );
+  if (exactIndex >= 0) {
+    return exactIndex;
+  }
+
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < coordinates.length; index += 1) {
+    const coordinate = coordinates[index];
+    if (!coordinate) {
+      continue;
+    }
+
+    const distance =
+      (coordinate[0] - target[0]) * (coordinate[0] - target[0]) +
+      (coordinate[1] - target[1]) * (coordinate[1] - target[1]);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+
+  return Number.isFinite(nearestDistance) ? nearestIndex : undefined;
+};
+
+const coordinateEquals = (left: Coordinates, right: Coordinates): boolean =>
+  left[0] === right[0] && left[1] === right[1];
+
+const coordinateKey = (coordinate: Coordinates): string => `${coordinate[0]},${coordinate[1]}`;
+
+const withConnectsTo = (
+  properties: FloorFeature["properties"],
+  targetId: string,
+): FloorFeature["properties"] => {
+  const propertyBag = properties as FloorFeature["properties"] & { connects_to?: unknown };
+  const currentValue = propertyBag.connects_to;
+  const normalized = Array.isArray(currentValue)
+    ? currentValue
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .map((value) => value)
+    : typeof currentValue === "string" && currentValue.length > 0
+      ? [currentValue]
+      : [];
+  if (!normalized.includes(targetId)) {
+    normalized.push(targetId);
+  }
+
+  return {
+    ...properties,
+    connects_to: normalized,
+  };
+};
+
+const normalizeForkCoordinates = (
+  coordinates: Coordinates[],
+  startCoordinate: Coordinates,
+): Coordinates[] => {
+  const withStart = coordinateEquals(coordinates[0] ?? startCoordinate, startCoordinate)
+    ? coordinates
+    : [startCoordinate, ...coordinates];
+  const deduped: Coordinates[] = [];
+  for (const coordinate of withStart) {
+    const previous = deduped.at(-1);
+    if (previous && coordinateEquals(previous, coordinate)) {
+      continue;
+    }
+    deduped.push(coordinate);
+  }
+
+  if (deduped.length >= 2) {
+    return deduped;
+  }
+
+  return [startCoordinate, startCoordinate];
 };
 
 const isValidCoordinate = (value: unknown): value is Coordinates =>
@@ -452,6 +556,12 @@ const getRenderableFeatureIdAtPoint = (rendered: RenderedFeatureHit[]): string |
   return undefined;
 };
 
+const hasVertexOrMidpointHit = (rendered: RenderedFeatureHit[]): boolean =>
+  rendered.some((hit) => {
+    const meta = hit.properties?.meta;
+    return meta === "vertex" || meta === "midpoint";
+  });
+
 const toHoverCursor = (meta: unknown, mode: DrawMode): string | undefined => {
   if (meta === "vertex" || meta === "midpoint") {
     return "pointer";
@@ -599,6 +709,7 @@ export const createMapController = async (
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentSelectedFeatureId: string | undefined;
+  let pendingForkState: PendingForkState | undefined;
   let overlayDragState:
     | {
         startLngLat: Coordinates;
@@ -613,6 +724,12 @@ export const createMapController = async (
       features?: unknown[];
     };
   };
+  type SelectedLineVertex = {
+    featureId: string;
+    coordinate: Coordinates;
+    vertexIndex: number;
+  };
+  let lastSelectedLineVertex: SelectedLineVertex | undefined;
   type MarkerInstance = InstanceType<MapLibreModule["Marker"]>;
   const overlayHandleMarkers: Partial<Record<OverlayCornerKey, MarkerInstance>> = {};
   let overlayCenterMarker: MarkerInstance | undefined;
@@ -634,7 +751,141 @@ export const createMapController = async (
     }
   };
 
+  const getSelectedLineVertex = (): SelectedLineVertex | undefined => {
+    try {
+      const selectedPoints = (draw as unknown as DrawWithSelectedPoints).getSelectedPoints?.();
+      if (!Array.isArray(selectedPoints?.features)) {
+        return undefined;
+      }
+
+      const findParentLineFeatureId = (coordinate: Coordinates): string | undefined => {
+        const drawFeatures = draw.getAll().features;
+        let nearestFeatureId: string | undefined;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+
+        for (const feature of drawFeatures) {
+          if (feature.geometry.type !== "LineString") {
+            continue;
+          }
+
+          const featureId = parseFeatureId(feature.id);
+          if (!featureId) {
+            continue;
+          }
+
+          const lineCoordinates = feature.geometry.coordinates
+            .map((entry) => normalizePoint(entry))
+            .filter((entry): entry is Coordinates => Boolean(entry));
+          if (lineCoordinates.length < 2) {
+            continue;
+          }
+
+          const nearestVertexIndex = findNearestVertexIndex(lineCoordinates, coordinate);
+          if (nearestVertexIndex === undefined) {
+            continue;
+          }
+
+          const nearestVertex = lineCoordinates[nearestVertexIndex];
+          if (!nearestVertex) {
+            continue;
+          }
+
+          const distance =
+            (nearestVertex[0] - coordinate[0]) * (nearestVertex[0] - coordinate[0]) +
+            (nearestVertex[1] - coordinate[1]) * (nearestVertex[1] - coordinate[1]);
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestFeatureId = featureId;
+          }
+        }
+
+        return nearestFeatureId;
+      };
+
+      for (const selectedPoint of selectedPoints.features) {
+        if (!selectedPoint || typeof selectedPoint !== "object") {
+          continue;
+        }
+
+        const candidate = selectedPoint as {
+          geometry?: {
+            type?: unknown;
+            coordinates?: unknown;
+          };
+          properties?: {
+            parent?: unknown;
+            coord_path?: unknown;
+            coordPath?: unknown;
+          };
+        };
+
+        if (candidate.geometry?.type !== "Point") {
+          continue;
+        }
+
+        const coordinate = normalizePoint(candidate.geometry.coordinates);
+        if (!coordinate) {
+          continue;
+        }
+
+        const explicitParentFeatureId =
+          parseFeatureId(candidate.properties?.parent) ??
+          draw.getSelectedIds?.()[0] ??
+          currentSelectedFeatureId;
+        const parentFeatureId = explicitParentFeatureId ?? findParentLineFeatureId(coordinate);
+        if (!parentFeatureId) {
+          continue;
+        }
+
+        const coordPath =
+          typeof candidate.properties?.coord_path === "string"
+            ? candidate.properties.coord_path
+            : typeof candidate.properties?.coordPath === "string"
+              ? candidate.properties.coordPath
+              : undefined;
+
+        const parentFeature =
+          draw.get(parentFeatureId) ??
+          (() => {
+            const fallbackFeatureId = findParentLineFeatureId(coordinate);
+            return fallbackFeatureId ? draw.get(fallbackFeatureId) : undefined;
+          })();
+        if (!parentFeature || parentFeature.geometry.type !== "LineString") {
+          continue;
+        }
+
+        const lineCoordinates = parentFeature.geometry.coordinates
+          .map((entry) => normalizePoint(entry))
+          .filter((entry): entry is Coordinates => Boolean(entry));
+        if (lineCoordinates.length < 2) {
+          continue;
+        }
+
+        const vertexIndex =
+          (coordPath ? parseLineVertexIndex(coordPath) : undefined) ??
+          findNearestVertexIndex(lineCoordinates, coordinate);
+        if (vertexIndex === undefined || vertexIndex < 0 || vertexIndex >= lineCoordinates.length) {
+          continue;
+        }
+
+        return {
+          featureId: parentFeatureId,
+          coordinate,
+          vertexIndex,
+        };
+      }
+    } catch {
+      return undefined;
+    }
+
+    return undefined;
+  };
+
   const emitVertexSelectionChange = () => {
+    const selectedVertex = getSelectedLineVertex();
+    if (selectedVertex) {
+      lastSelectedLineVertex = selectedVertex;
+    }
     handlers.onVertexSelectionChange?.(hasSelectedVertex());
   };
 
@@ -649,11 +900,17 @@ export const createMapController = async (
 
   const applyInteractionMode = () => {
     if (currentInteractionMode === "point") {
-      draw.changeMode("draw_point");
+      if (!isDrawInMode(draw, "draw_point")) {
+        draw.changeMode("draw_point");
+      }
     } else if (currentInteractionMode === "line") {
-      draw.changeMode("draw_line_string");
+      if (!isDrawInMode(draw, "draw_line_string")) {
+        draw.changeMode("draw_line_string");
+      }
     } else if (currentInteractionMode === "polygon") {
-      draw.changeMode("draw_polygon");
+      if (!isDrawInMode(draw, "draw_polygon")) {
+        draw.changeMode("draw_polygon");
+      }
     } else {
       if (!isDrawInMode(draw, "direct_select")) {
         draw.changeMode("simple_select");
@@ -703,6 +960,11 @@ export const createMapController = async (
     !currentOverlay?.locked;
 
   const applyFeatures = () => {
+    if (isDrawInMode(draw, "draw_line_string")) {
+      // Keep in-progress line edits (including fork branches) under Draw's control until drawing ends.
+      return;
+    }
+
     const nextById = new Map(currentFeatures.features.map((feature) => [feature.id, feature]));
 
     const currentDrawFeatures = draw
@@ -959,6 +1221,64 @@ export const createMapController = async (
       .features.map((feature) => normalizeDrawFeature(feature))
       .filter((feature): feature is FloorFeature => Boolean(feature));
 
+    if (pendingForkState) {
+      const isForkDrawInProgress = isDrawInMode(draw, "draw_line_string");
+      const forkIndex = nextFeatures.findIndex(
+        (feature) => feature.id === pendingForkState?.forkFeatureId,
+      );
+      const sourceIndex = nextFeatures.findIndex(
+        (feature) => feature.id === pendingForkState?.sourceFeatureId,
+      );
+      const forkFeature = forkIndex >= 0 ? nextFeatures[forkIndex] : undefined;
+
+      if (!isForkDrawInProgress && forkFeature?.geometry.type === "LineString") {
+        const normalizedForkCoordinates = normalizeForkCoordinates(
+          forkFeature.geometry.coordinates,
+          pendingForkState.startCoordinate,
+        );
+        nextFeatures[forkIndex] = {
+          ...forkFeature,
+          geometry: {
+            ...forkFeature.geometry,
+            coordinates: normalizedForkCoordinates,
+          },
+        };
+
+        const distinctCoordinateCount = new Set(
+          normalizedForkCoordinates.map((coordinate) => coordinateKey(coordinate)),
+        ).size;
+        if (distinctCoordinateCount >= 2) {
+          const normalizedForkFeature = nextFeatures[forkIndex];
+          if (!normalizedForkFeature) {
+            pendingForkState = undefined;
+          } else {
+            nextFeatures[forkIndex] = {
+              ...normalizedForkFeature,
+              properties: withConnectsTo(
+                normalizedForkFeature.properties,
+                pendingForkState.sourceFeatureId,
+              ),
+            };
+            if (sourceIndex >= 0) {
+              const sourceFeature = nextFeatures[sourceIndex];
+              if (sourceFeature) {
+                nextFeatures[sourceIndex] = {
+                  ...sourceFeature,
+                  properties: withConnectsTo(
+                    sourceFeature.properties,
+                    pendingForkState.forkFeatureId,
+                  ),
+                };
+              }
+            }
+          }
+          pendingForkState = undefined;
+        }
+      } else if (!isForkDrawInProgress) {
+        pendingForkState = undefined;
+      }
+    }
+
     handlers.onFeaturesChange(nextFeatures);
   };
 
@@ -1013,6 +1333,13 @@ export const createMapController = async (
     }
 
     const selectedFeatureId = parseFeatureId(event.features?.[0]?.id);
+    if (
+      lastSelectedLineVertex &&
+      selectedFeatureId &&
+      selectedFeatureId !== lastSelectedLineVertex.featureId
+    ) {
+      lastSelectedLineVertex = undefined;
+    }
     handlers.onFeatureSelectionChange(selectedFeatureId);
     emitVertexSelectionChange();
   });
@@ -1032,6 +1359,9 @@ export const createMapController = async (
     }
 
     currentInteractionMode = nextMode;
+    if (nextMode !== "select") {
+      lastSelectedLineVertex = undefined;
+    }
     handlers.onInteractionModeChange(nextMode);
     emitVertexSelectionChange();
   });
@@ -1042,46 +1372,36 @@ export const createMapController = async (
       return;
     }
 
-    const featureId = getRenderableFeatureIdAtPoint(
-      map.queryRenderedFeatures(event.point) as RenderedFeatureHit[],
-    );
+    const renderedHits = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
+
+    if (hasVertexOrMidpointHit(renderedHits)) {
+      emitVertexSelectionChange();
+      return;
+    }
+
+    const featureId = getRenderableFeatureIdAtPoint(renderedHits);
     if (!featureId) {
       return;
     }
 
-    if (currentInteractionMode === "select") {
-      const clickedFeature = draw.get(featureId);
-      if (!clickedFeature || clickedFeature.geometry.type === "Point") {
-        return;
-      }
-
-      withExternalSyncGuard(() => {
-        currentSelectedFeatureId = featureId;
-        draw.changeMode("direct_select", {
-          featureId,
-        });
-      });
-
-      handlers.onFeatureSelectionChange(featureId);
-      handlers.onVertexSelectionChange?.(hasSelectedVertex());
+    if (currentInteractionMode !== "select") {
       return;
     }
 
-    const isPersistedFeature = currentFeatures.features.some((feature) => feature.id === featureId);
-    if (!isPersistedFeature) {
+    const clickedFeature = draw.get(featureId);
+    if (!clickedFeature || clickedFeature.geometry.type === "Point") {
       return;
     }
 
     withExternalSyncGuard(() => {
-      currentInteractionMode = "select";
       currentSelectedFeatureId = featureId;
-      applyInteractionMode();
-      applySelection();
+      draw.changeMode("direct_select", {
+        featureId,
+      });
     });
 
-    handlers.onInteractionModeChange("select");
     handlers.onFeatureSelectionChange(featureId);
-    handlers.onVertexSelectionChange?.(false);
+    handlers.onVertexSelectionChange?.(hasSelectedVertex());
   });
 
   map.on("mousemove", (event) => {
@@ -1211,6 +1531,129 @@ export const createMapController = async (
       }
 
       draw.trash();
+    },
+    splitPathSegment: () => {
+      if (!isStyleReady) {
+        return;
+      }
+
+      const selectedVertex =
+        getSelectedLineVertex() ?? (!hasSelectedVertex() ? lastSelectedLineVertex : undefined);
+      if (!selectedVertex) {
+        return;
+      }
+
+      const sourceFeature = draw.get(selectedVertex.featureId);
+      if (!sourceFeature || sourceFeature.geometry.type !== "LineString") {
+        return;
+      }
+
+      const coordinates = sourceFeature.geometry.coordinates
+        .map((coordinate) => normalizePoint(coordinate))
+        .filter((coordinate): coordinate is Coordinates => Boolean(coordinate));
+      if (coordinates.length < 2) {
+        return;
+      }
+
+      let startIndex = selectedVertex.vertexIndex;
+      let endIndex = selectedVertex.vertexIndex + 1;
+      if (endIndex >= coordinates.length) {
+        startIndex = selectedVertex.vertexIndex - 1;
+        endIndex = selectedVertex.vertexIndex;
+      }
+
+      if (startIndex < 0 || endIndex >= coordinates.length) {
+        return;
+      }
+
+      const startCoordinate = coordinates[startIndex];
+      const endCoordinate = coordinates[endIndex];
+      if (!startCoordinate || !endCoordinate) {
+        return;
+      }
+
+      const nextCoordinates = [...coordinates];
+      const insertIndex = endIndex;
+      nextCoordinates.splice(insertIndex, 0, midpointBetween(startCoordinate, endCoordinate));
+
+      withExternalSyncGuard(() => {
+        draw.delete(selectedVertex.featureId);
+        draw.add({
+          ...sourceFeature,
+          id: selectedVertex.featureId,
+          geometry: {
+            type: "LineString",
+            coordinates: nextCoordinates,
+          },
+        } as GeoJsonFeature);
+        draw.changeMode("direct_select", {
+          featureId: selectedVertex.featureId,
+          coordPath: String(insertIndex),
+        } as never);
+      });
+
+      currentSelectedFeatureId = selectedVertex.featureId;
+      lastSelectedLineVertex = {
+        ...selectedVertex,
+        vertexIndex: insertIndex,
+      };
+      emitFeaturesChange();
+      handlers.onFeatureSelectionChange(selectedVertex.featureId);
+      emitVertexSelectionChange();
+    },
+    forkPathAtNode: () => {
+      if (!isStyleReady) {
+        return;
+      }
+
+      const selectedVertex =
+        getSelectedLineVertex() ?? (!hasSelectedVertex() ? lastSelectedLineVertex : undefined);
+      if (!selectedVertex) {
+        return;
+      }
+
+      const sourceFeature = draw.get(selectedVertex.featureId);
+      if (!sourceFeature || sourceFeature.geometry.type !== "LineString") {
+        return;
+      }
+
+      const sourceProperties =
+        sourceFeature?.properties && typeof sourceFeature.properties === "object"
+          ? structuredClone(sourceFeature.properties)
+          : {};
+      const forkFeatureId = createId();
+      const seedFeature: GeoJsonFeature = {
+        type: "Feature",
+        id: forkFeatureId,
+        geometry: {
+          type: "LineString",
+          coordinates: [selectedVertex.coordinate, selectedVertex.coordinate],
+        },
+        properties: sourceProperties as Record<string, unknown>,
+      };
+
+      withExternalSyncGuard(() => {
+        currentInteractionMode = "line";
+        currentSelectedFeatureId = undefined;
+        pendingForkState = {
+          sourceFeatureId: selectedVertex.featureId,
+          forkFeatureId,
+          startCoordinate: selectedVertex.coordinate,
+        };
+        lastSelectedLineVertex = undefined;
+        draw.add(seedFeature);
+        draw.changeMode(
+          "draw_line_string" as never,
+          {
+            featureId: forkFeatureId,
+            from: selectedVertex.coordinate,
+          } as never,
+        );
+      });
+
+      handlers.onInteractionModeChange("line");
+      handlers.onFeatureSelectionChange(undefined);
+      handlers.onVertexSelectionChange?.(false);
     },
     resize: () => map.resize(),
     destroy: () => {

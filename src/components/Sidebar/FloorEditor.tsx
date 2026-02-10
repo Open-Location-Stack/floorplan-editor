@@ -23,10 +23,10 @@ type FloorEditorProps = {
 };
 
 const featureButtons: Array<{ type: SupportedImdfType; label: string; icon: string }> = [
-  { type: "level", label: "Level", icon: "L" },
-  { type: "unit", label: "Unit/Room", icon: "U" },
-  { type: "zone", label: "Zone", icon: "Z" },
-  { type: "path", label: "Path", icon: "P" },
+  { type: "level", label: "Draw level", icon: "L" },
+  { type: "unit", label: "Draw unit/room", icon: "U" },
+  { type: "zone", label: "Draw zone", icon: "Z" },
+  { type: "path", label: "Draw path", icon: "P" },
 ];
 
 export const FloorEditor = ({
@@ -78,6 +78,9 @@ export const FloorEditor = ({
             </button>
           ))}
         </div>
+        <p className="text-xs text-base-content/70">
+          Sketch by clicking vertices on the map and double-clicking to finish.
+        </p>
 
         <button
           className="btn btn-sm btn-error"
