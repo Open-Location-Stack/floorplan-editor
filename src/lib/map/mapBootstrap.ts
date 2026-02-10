@@ -34,6 +34,184 @@ const OVERLAY_CENTER_HANDLE_COLOR = "#0ea5e9";
 const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
+const featureTypeExpression: unknown[] = ["coalesce", ["get", "imdfType"], ["get", "kind"], ""];
+
+const drawLineColorExpression: unknown[] = [
+  "case",
+  ["==", featureTypeExpression, "path"],
+  "#dc2626",
+  "#111827",
+];
+
+const drawPolygonFillColorExpression: unknown[] = [
+  "case",
+  ["==", featureTypeExpression, "level"],
+  "#ffffff",
+  ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
+  "#e5e7eb",
+  ["==", featureTypeExpression, "zone"],
+  "#2563eb",
+  "#9ca3af",
+];
+
+const drawPolygonFillOpacityExpression: unknown[] = [
+  "case",
+  ["==", featureTypeExpression, "zone"],
+  0.4,
+  ["==", featureTypeExpression, "level"],
+  1,
+  ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
+  1,
+  0.3,
+];
+
+const drawPolygonStrokeWidthExpression: unknown[] = [
+  "case",
+  ["==", featureTypeExpression, "level"],
+  4,
+  ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
+  1,
+  2,
+];
+
+const buildDrawStyles = (): Array<Record<string, unknown>> => [
+  {
+    id: "gl-draw-polygon-fill-inactive",
+    type: "fill",
+    filter: [
+      "all",
+      ["==", "$type", "Polygon"],
+      ["==", "active", "false"],
+      ["!=", "mode", "static"],
+    ],
+    paint: {
+      "fill-color": drawPolygonFillColorExpression,
+      "fill-opacity": drawPolygonFillOpacityExpression,
+    },
+  },
+  {
+    id: "gl-draw-polygon-fill-active",
+    type: "fill",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
+    paint: {
+      "fill-color": drawPolygonFillColorExpression,
+      "fill-opacity": drawPolygonFillOpacityExpression,
+    },
+  },
+  {
+    id: "gl-draw-polygon-stroke-inactive",
+    type: "line",
+    filter: [
+      "all",
+      ["==", "$type", "Polygon"],
+      ["==", "active", "false"],
+      ["!=", "mode", "static"],
+    ],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": "#111827",
+      "line-width": drawPolygonStrokeWidthExpression,
+    },
+  },
+  {
+    id: "gl-draw-polygon-stroke-active",
+    type: "line",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": "#111827",
+      "line-width": drawPolygonStrokeWidthExpression,
+    },
+  },
+  {
+    id: "gl-draw-line-inactive",
+    type: "line",
+    filter: [
+      "all",
+      ["==", "$type", "LineString"],
+      ["==", "active", "false"],
+      ["!=", "mode", "static"],
+    ],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": drawLineColorExpression,
+      "line-width": 3,
+    },
+  },
+  {
+    id: "gl-draw-line-active",
+    type: "line",
+    filter: ["all", ["==", "$type", "LineString"], ["==", "active", "true"]],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": drawLineColorExpression,
+      "line-width": 4,
+    },
+  },
+  {
+    id: "gl-draw-point-inactive",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "$type", "Point"],
+      ["!=", "meta", "midpoint"],
+      ["==", "active", "false"],
+      ["!=", "mode", "static"],
+    ],
+    paint: {
+      "circle-radius": 5,
+      "circle-color": "#111827",
+    },
+  },
+  {
+    id: "gl-draw-point-active",
+    type: "circle",
+    filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
+    paint: {
+      "circle-radius": 6,
+      "circle-color": "#111827",
+    },
+  },
+  {
+    id: "gl-draw-polygon-and-line-vertex-halo-active",
+    type: "circle",
+    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
+    paint: {
+      "circle-radius": 7,
+      "circle-color": "#ffffff",
+    },
+  },
+  {
+    id: "gl-draw-polygon-and-line-vertex-active",
+    type: "circle",
+    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
+    paint: {
+      "circle-radius": 4,
+      "circle-color": "#2563eb",
+    },
+  },
+  {
+    id: "gl-draw-polygon-midpoint",
+    type: "circle",
+    filter: ["all", ["==", "meta", "midpoint"], ["==", "$type", "Point"]],
+    paint: {
+      "circle-radius": 3,
+      "circle-color": "#2563eb",
+    },
+  },
+];
 
 const emptyFeatureCollection = (): FeatureCollection => ({
   type: "FeatureCollection",
@@ -412,6 +590,7 @@ export const createMapController = async (
     displayControlsDefault: false,
     defaultMode: "simple_select",
     userProperties: true,
+    styles: buildDrawStyles(),
   });
 
   let isStyleReady = false;
