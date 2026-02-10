@@ -33,7 +33,7 @@ describe("transformOverlayFromDraggedCorner", () => {
     expect(nextRatio).toBeCloseTo(originalRatio, 2);
   });
 
-  it("scales and rotates around the center implied by dragged/fixed corners", () => {
+  it("scales while keeping the current rotation fixed", () => {
     const corners: OverlayCorners = {
       topLeft: [5.1209, 52.09095],
       topRight: [5.1219, 52.09095],
@@ -43,6 +43,16 @@ describe("transformOverlayFromDraggedCorner", () => {
     const next = transformOverlayFromDraggedCorner(corners, "topRight", [5.12235, 52.0914]);
 
     expect(widthMeters(next)).toBeGreaterThan(widthMeters(corners));
+    const originalTopEdgeBearing = Math.atan2(
+      corners.topRight[1] - corners.topLeft[1],
+      corners.topRight[0] - corners.topLeft[0],
+    );
+    const nextTopEdgeBearing = Math.atan2(
+      next.topRight[1] - next.topLeft[1],
+      next.topRight[0] - next.topLeft[0],
+    );
+    expect(nextTopEdgeBearing).toBeCloseTo(originalTopEdgeBearing, 6);
+
     const [originalCenterLng, originalCenterLat] = centerPoint(corners);
     const [nextCenterLng, nextCenterLat] = centerPoint(next);
     expect(nextCenterLng).not.toBeCloseTo(originalCenterLng, 6);

@@ -1,6 +1,7 @@
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
 import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
+import { rotateAroundPoint } from "../geometry/overlayTransforms";
 import { createId } from "../id";
 import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 
@@ -39,9 +40,14 @@ const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
 const OVERLAY_HANDLE_SIZE = 12;
 const OVERLAY_CENTER_HANDLE_SIZE = 16;
+const OVERLAY_ROTATE_HANDLE_SIZE = 14;
 const OVERLAY_HANDLE_COLOR = "#f97316";
 const OVERLAY_CENTER_HANDLE_COLOR = "#0ea5e9";
+const OVERLAY_ROTATE_HANDLE_COLOR = "#14b8a6";
 const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
+const OVERLAY_ROTATE_HANDLE_OFFSET_RATIO = 0.2;
+const OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS = 1.5;
+const OVERLAY_ROTATE_HANDLE_OFFSET_MAX_METERS = 6;
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 const featureTypeExpression: unknown[] = ["coalesce", ["get", "imdfType"], ["get", "kind"], ""];
@@ -638,6 +644,74 @@ const overlayCenter = (corners: FloorOverlay["corners"]): Coordinates => [
   (corners.topLeft[1] + corners.topRight[1] + corners.bottomRight[1] + corners.bottomLeft[1]) / 4,
 ];
 
+const EARTH_RADIUS_METERS = 6_378_137;
+const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+
+const metersPerLongitude = (latitude: number): number =>
+  EARTH_RADIUS_METERS * Math.cos(latitude * DEG_TO_RAD) * DEG_TO_RAD;
+
+const toLocalMeters = (
+  point: Coordinates,
+  center: Coordinates,
+): {
+  x: number;
+  y: number;
+} => ({
+  x: (point[0] - center[0]) * metersPerLongitude(center[1]),
+  y: (point[1] - center[1]) * EARTH_RADIUS_METERS * DEG_TO_RAD,
+});
+
+const toCoordinates = (xMeters: number, yMeters: number, center: Coordinates): Coordinates => [
+  center[0] + xMeters / metersPerLongitude(center[1]),
+  center[1] + yMeters / (EARTH_RADIUS_METERS * DEG_TO_RAD),
+];
+
+const angleFromCenter = (center: Coordinates, point: Coordinates): number => {
+  const localPoint = toLocalMeters(point, center);
+  return Math.atan2(localPoint.y, localPoint.x);
+};
+
+const rotateOverlayCorners = (
+  corners: FloorOverlay["corners"],
+  angleDegrees: number,
+): FloorOverlay["corners"] => {
+  const center = overlayCenter(corners);
+  return {
+    topLeft: rotateAroundPoint(corners.topLeft, center, angleDegrees),
+    topRight: rotateAroundPoint(corners.topRight, center, angleDegrees),
+    bottomRight: rotateAroundPoint(corners.bottomRight, center, angleDegrees),
+    bottomLeft: rotateAroundPoint(corners.bottomLeft, center, angleDegrees),
+  };
+};
+
+const rotateHandleCoordinate = (corners: FloorOverlay["corners"]): Coordinates => {
+  const center = overlayCenter(corners);
+  const topRightMeters = toLocalMeters(corners.topRight, center);
+  const distanceFromCenter = Math.hypot(topRightMeters.x, topRightMeters.y);
+  if (distanceFromCenter < 1e-6) {
+    return corners.topRight;
+  }
+
+  const offsetDistance = Math.min(
+    OVERLAY_ROTATE_HANDLE_OFFSET_MAX_METERS,
+    Math.max(
+      OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS,
+      distanceFromCenter * OVERLAY_ROTATE_HANDLE_OFFSET_RATIO,
+    ),
+  );
+  const normalized = {
+    x: topRightMeters.x / distanceFromCenter,
+    y: topRightMeters.y / distanceFromCenter,
+  };
+
+  return toCoordinates(
+    topRightMeters.x + normalized.x * offsetDistance,
+    topRightMeters.y + normalized.y * offsetDistance,
+    center,
+  );
+};
+
 const isDrawInMode = (
   draw: {
     getMode?: () => string;
@@ -661,17 +735,64 @@ const firstDrawLayerId = (
 ): string | undefined =>
   styleLayers?.find((layer) => typeof layer.id === "string" && layer.id.startsWith("gl-draw-"))?.id;
 
-const createOverlayHandleElement = (kind: "corner" | "center"): HTMLDivElement => {
+const createOverlayHandleElement = (
+  kind: "corner" | "center" | "rotate",
+  corner?: OverlayCornerKey,
+): HTMLDivElement => {
   const element = document.createElement("div");
-  const size = kind === "center" ? OVERLAY_CENTER_HANDLE_SIZE : OVERLAY_HANDLE_SIZE;
-  const backgroundColor = kind === "center" ? OVERLAY_CENTER_HANDLE_COLOR : OVERLAY_HANDLE_COLOR;
+  element.setAttribute("data-overlay-handle", kind);
+  if (corner) {
+    element.setAttribute("data-overlay-corner", corner);
+  }
+  const size =
+    kind === "center"
+      ? OVERLAY_CENTER_HANDLE_SIZE
+      : kind === "rotate"
+        ? OVERLAY_ROTATE_HANDLE_SIZE
+        : OVERLAY_HANDLE_SIZE;
+  const backgroundColor =
+    kind === "center"
+      ? OVERLAY_CENTER_HANDLE_COLOR
+      : kind === "rotate"
+        ? OVERLAY_ROTATE_HANDLE_COLOR
+        : OVERLAY_HANDLE_COLOR;
   element.style.width = `${size}px`;
   element.style.height = `${size}px`;
   element.style.borderRadius = "9999px";
   element.style.backgroundColor = backgroundColor;
   element.style.border = `2px solid ${OVERLAY_HANDLE_STROKE_COLOR}`;
+  element.style.display = "grid";
+  element.style.placeItems = "center";
   element.style.boxShadow = "0 0 0 1px rgba(0, 0, 0, 0.2)";
   element.style.cursor = kind === "center" ? "move" : "grab";
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("width", kind === "center" ? "11" : "10");
+  icon.setAttribute("height", kind === "center" ? "11" : "10");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "#ffffff");
+  icon.setAttribute("stroke-width", "1.75");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+
+  if (kind === "center") {
+    icon.innerHTML =
+      '<path d="M8 2v12"/><path d="M2 8h12"/><path d="m8 2 2 2"/><path d="m8 2-2 2"/><path d="m14 8-2 2"/><path d="m14 8-2-2"/><path d="m8 14 2-2"/><path d="m8 14-2-2"/><path d="m2 8 2 2"/><path d="m2 8 2-2"/>';
+  } else if (kind === "rotate") {
+    icon.innerHTML =
+      '<path d="M12.5 5.5a4.8 4.8 0 1 0 .2 4.6"/><path d="m11.5 1.7 2.8-.2-.2 2.8"/>';
+  } else {
+    icon.innerHTML = '<path d="M4 12 12 4"/><path d="m8.6 4H12v3.4"/>';
+    const rotationByCorner: Record<OverlayCornerKey, string> = {
+      topLeft: "180deg",
+      topRight: "0deg",
+      bottomRight: "90deg",
+      bottomLeft: "270deg",
+    };
+    icon.style.transform = `rotate(${rotationByCorner[corner ?? "topRight"]})`;
+  }
+
+  element.append(icon);
   return element;
 };
 
@@ -739,10 +860,17 @@ export const createMapController = async (
   type MarkerInstance = InstanceType<MapLibreModule["Marker"]>;
   const overlayHandleMarkers: Partial<Record<OverlayCornerKey, MarkerInstance>> = {};
   let overlayCenterMarker: MarkerInstance | undefined;
+  let overlayRotateMarker: MarkerInstance | undefined;
   let overlayCenterDragStart:
     | {
         startCenter: Coordinates;
         startCorners: FloorOverlay["corners"];
+      }
+    | undefined;
+  let overlayRotateDragStart:
+    | {
+        startCorners: FloorOverlay["corners"];
+        startAngleRadians: number;
       }
     | undefined;
 
@@ -1015,7 +1143,10 @@ export const createMapController = async (
     }
     overlayCenterMarker?.remove();
     overlayCenterMarker = undefined;
+    overlayRotateMarker?.remove();
+    overlayRotateMarker = undefined;
     overlayCenterDragStart = undefined;
+    overlayRotateDragStart = undefined;
   };
 
   const syncOverlayHandles = () => {
@@ -1041,7 +1172,7 @@ export const createMapController = async (
       }
 
       const marker = new maplibre.Marker({
-        element: createOverlayHandleElement("corner"),
+        element: createOverlayHandleElement("corner", key),
         draggable: true,
       })
         .setLngLat(lngLat)
@@ -1083,45 +1214,109 @@ export const createMapController = async (
     const center = overlayCenter(currentOverlay.corners);
     if (overlayCenterMarker) {
       overlayCenterMarker.setLngLat(center);
+    } else {
+      overlayCenterMarker = new maplibre.Marker({
+        element: createOverlayHandleElement("center"),
+        draggable: true,
+      })
+        .setLngLat(center)
+        .addTo(map);
+
+      overlayCenterMarker.on("dragstart", () => {
+        if (!currentOverlay || currentOverlay.locked) {
+          return;
+        }
+
+        overlayCenterDragStart = {
+          startCenter: overlayCenter(currentOverlay.corners),
+          startCorners: structuredClone(currentOverlay.corners),
+        };
+        map.dragPan.disable();
+      });
+
+      overlayCenterMarker.on("drag", () => {
+        if (
+          !currentOverlay ||
+          currentOverlay.locked ||
+          !overlayCenterDragStart ||
+          !overlayCenterMarker
+        ) {
+          return;
+        }
+
+        const handlePosition = overlayCenterMarker.getLngLat();
+        const deltaLng = handlePosition.lng - overlayCenterDragStart.startCenter[0];
+        const deltaLat = handlePosition.lat - overlayCenterDragStart.startCenter[1];
+        const nextCorners = shiftOverlayCorners(
+          overlayCenterDragStart.startCorners,
+          deltaLng,
+          deltaLat,
+        );
+        currentOverlay = {
+          ...currentOverlay,
+          corners: nextCorners,
+          updatedAt: new Date().toISOString(),
+        };
+        applyOverlay();
+        syncOverlayHandles();
+        handlers.onOverlayCornersChange(nextCorners);
+      });
+
+      overlayCenterMarker.on("dragend", () => {
+        overlayCenterDragStart = undefined;
+        if (currentInteractionMode === "select") {
+          map.dragPan.enable();
+        }
+      });
+    }
+
+    const rotateHandle = rotateHandleCoordinate(currentOverlay.corners);
+    if (overlayRotateMarker) {
+      overlayRotateMarker.setLngLat(rotateHandle);
       return;
     }
 
-    overlayCenterMarker = new maplibre.Marker({
-      element: createOverlayHandleElement("center"),
+    overlayRotateMarker = new maplibre.Marker({
+      element: createOverlayHandleElement("rotate"),
       draggable: true,
     })
-      .setLngLat(center)
+      .setLngLat(rotateHandle)
       .addTo(map);
 
-    overlayCenterMarker.on("dragstart", () => {
-      if (!currentOverlay || currentOverlay.locked) {
+    overlayRotateMarker.on("dragstart", () => {
+      if (!currentOverlay || currentOverlay.locked || !overlayRotateMarker) {
         return;
       }
 
-      overlayCenterDragStart = {
-        startCenter: overlayCenter(currentOverlay.corners),
+      const rotateHandlePosition = overlayRotateMarker.getLngLat();
+      overlayRotateDragStart = {
         startCorners: structuredClone(currentOverlay.corners),
+        startAngleRadians: angleFromCenter(overlayCenter(currentOverlay.corners), [
+          rotateHandlePosition.lng,
+          rotateHandlePosition.lat,
+        ]),
       };
       map.dragPan.disable();
     });
 
-    overlayCenterMarker.on("drag", () => {
+    overlayRotateMarker.on("drag", () => {
       if (
         !currentOverlay ||
         currentOverlay.locked ||
-        !overlayCenterDragStart ||
-        !overlayCenterMarker
+        !overlayRotateDragStart ||
+        !overlayRotateMarker
       ) {
         return;
       }
 
-      const handlePosition = overlayCenterMarker.getLngLat();
-      const deltaLng = handlePosition.lng - overlayCenterDragStart.startCenter[0];
-      const deltaLat = handlePosition.lat - overlayCenterDragStart.startCenter[1];
-      const nextCorners = shiftOverlayCorners(
-        overlayCenterDragStart.startCorners,
-        deltaLng,
-        deltaLat,
+      const centerPoint = overlayCenter(overlayRotateDragStart.startCorners);
+      const handlePosition = overlayRotateMarker.getLngLat();
+      const currentAngle = angleFromCenter(centerPoint, [handlePosition.lng, handlePosition.lat]);
+      const deltaAngleRadians = currentAngle - overlayRotateDragStart.startAngleRadians;
+      const deltaAngleDegrees = deltaAngleRadians * RAD_TO_DEG;
+      const nextCorners = rotateOverlayCorners(
+        overlayRotateDragStart.startCorners,
+        deltaAngleDegrees,
       );
       currentOverlay = {
         ...currentOverlay,
@@ -1133,8 +1328,8 @@ export const createMapController = async (
       handlers.onOverlayCornersChange(nextCorners);
     });
 
-    overlayCenterMarker.on("dragend", () => {
-      overlayCenterDragStart = undefined;
+    overlayRotateMarker.on("dragend", () => {
+      overlayRotateDragStart = undefined;
       if (currentInteractionMode === "select") {
         map.dragPan.enable();
       }

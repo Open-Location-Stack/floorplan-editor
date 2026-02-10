@@ -145,8 +145,12 @@ class MockMap {
 class MockMarker {
   lngLat = { lng: 0, lat: 0 };
   handlers = new Map<string, Array<() => void>>();
+  options: {
+    element?: HTMLElement;
+  };
 
-  constructor(_options: unknown) {
+  constructor(options: { element?: HTMLElement }) {
+    this.options = options;
     mockMarkers.push(this);
   }
 
@@ -268,6 +272,27 @@ const createOverlay = (): FloorOverlay => ({
   },
   updatedAt: "2026-02-09T00:00:00.000Z",
 });
+
+const findOverlayMarker = (
+  kind: string,
+  corner?: "topLeft" | "topRight" | "bottomRight" | "bottomLeft",
+): MockMarker | undefined =>
+  mockMarkers.find((marker) => {
+    const element = marker.options.element;
+    if (!element) {
+      return false;
+    }
+
+    if (element.getAttribute("data-overlay-handle") !== kind) {
+      return false;
+    }
+
+    if (corner) {
+      return element.getAttribute("data-overlay-corner") === corner;
+    }
+
+    return true;
+  });
 
 const pointFeatureCollection = (): FeatureCollection => ({
   type: "FeatureCollection",
@@ -460,8 +485,8 @@ describe("createMapController", () => {
     controller.setOverlay(overlay);
     map.emit("load");
 
-    expect(mockMarkers.length).toBeGreaterThanOrEqual(5);
-    const centerMarker = mockMarkers[4];
+    expect(mockMarkers.length).toBeGreaterThanOrEqual(6);
+    const centerMarker = findOverlayMarker("center");
     expect(centerMarker).toBeDefined();
     if (!centerMarker) {
       throw new Error("Expected center overlay marker");
@@ -496,6 +521,89 @@ describe("createMapController", () => {
     expect(latestCorners.topLeft[1]).toBeCloseTo(overlay.corners.topLeft[1] - 0.0015);
     expect(latestCorners.bottomRight[0]).toBeCloseTo(overlay.corners.bottomRight[0] + 0.002);
     expect(latestCorners.bottomRight[1]).toBeCloseTo(overlay.corners.bottomRight[1] - 0.0015);
+  });
+
+  it("drags the rotate overlay handle to rotate corners around overlay center", async () => {
+    const onOverlayCornersChange = vi.fn();
+    const overlay = createOverlay();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange,
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setOverlay(overlay);
+    map.emit("load");
+
+    const rotateMarker = findOverlayMarker("rotate");
+    expect(rotateMarker).toBeDefined();
+    if (!rotateMarker) {
+      throw new Error("Expected rotate overlay marker");
+    }
+
+    const center = [
+      (overlay.corners.topLeft[0] +
+        overlay.corners.topRight[0] +
+        overlay.corners.bottomRight[0] +
+        overlay.corners.bottomLeft[0]) /
+        4,
+      (overlay.corners.topLeft[1] +
+        overlay.corners.topRight[1] +
+        overlay.corners.bottomRight[1] +
+        overlay.corners.bottomLeft[1]) /
+        4,
+    ] as const;
+    const rotateHandleStart = rotateMarker.getLngLat();
+    const rotateVector = [
+      rotateHandleStart.lng - center[0],
+      rotateHandleStart.lat - center[1],
+    ] as const;
+
+    rotateMarker.emit("dragstart");
+    rotateMarker.setLngLat([center[0] - rotateVector[1], center[1] + rotateVector[0]]);
+    rotateMarker.emit("drag");
+    rotateMarker.emit("dragend");
+
+    expect(onOverlayCornersChange).toHaveBeenCalled();
+    const latestCorners = onOverlayCornersChange.mock.lastCall?.[0];
+    expect(latestCorners).toBeDefined();
+    if (!latestCorners) {
+      throw new Error("Expected overlay corner update payload");
+    }
+
+    const nextCenter = [
+      (latestCorners.topLeft[0] +
+        latestCorners.topRight[0] +
+        latestCorners.bottomRight[0] +
+        latestCorners.bottomLeft[0]) /
+        4,
+      (latestCorners.topLeft[1] +
+        latestCorners.topRight[1] +
+        latestCorners.bottomRight[1] +
+        latestCorners.bottomLeft[1]) /
+        4,
+    ] as const;
+
+    expect(nextCenter[0]).toBeCloseTo(center[0], 6);
+    expect(nextCenter[1]).toBeCloseTo(center[1], 6);
+    const topRightDelta = Math.hypot(
+      latestCorners.topRight[0] - overlay.corners.topRight[0],
+      latestCorners.topRight[1] - overlay.corners.topRight[1],
+    );
+    expect(topRightDelta).toBeGreaterThan(1e-6);
   });
 
   it("applies buffered features into draw after style load", async () => {

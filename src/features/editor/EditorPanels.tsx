@@ -426,7 +426,8 @@ export const EditorPanels = ({
             </button>
           </div>
           <p className="text-xs text-base-content/70">
-            Drag the blue center handle to move the image; drag orange corners to scale/rotate.
+            Drag the blue center handle to move, orange corners to scale, and the teal handle near
+            top-right to rotate.
           </p>
         </div>
       </section>

@@ -42,6 +42,18 @@ const toCoordinates = (xMeters: number, yMeters: number, center: Coordinates): C
   center[1] + yMeters / (EARTH_RADIUS_METERS * DEG_TO_RAD),
 ];
 
+const unitVector = (x: number, y: number): { x: number; y: number } | undefined => {
+  const length = Math.hypot(x, y);
+  if (length < 1e-9) {
+    return undefined;
+  }
+
+  return {
+    x: x / length,
+    y: y / length,
+  };
+};
+
 const distance = (left: { x: number; y: number }, right: { x: number; y: number }): number => {
   const dx = right.x - left.x;
   const dy = right.y - left.y;
@@ -74,35 +86,54 @@ export const transformOverlayFromDraggedCorner = (
   const fixedPoint = corners[oppositeCorner];
   const ratio = Math.max(0.05, Math.min(20, aspectRatio(corners)));
 
-  const center: Coordinates = [
-    (draggedPoint[0] + fixedPoint[0]) / 2,
-    (draggedPoint[1] + fixedPoint[1]) / 2,
-  ];
-  const draggedMeters = toLocalMeters(draggedPoint, center);
-  const diagonalMagnitude = Math.hypot(draggedMeters.x, draggedMeters.y);
+  const topLeftMeters = toLocalMeters(corners.topLeft, fixedPoint);
+  const topRightMeters = toLocalMeters(corners.topRight, fixedPoint);
+  const bottomLeftMeters = toLocalMeters(corners.bottomLeft, fixedPoint);
+  const widthDirection = unitVector(
+    topRightMeters.x - topLeftMeters.x,
+    topRightMeters.y - topLeftMeters.y,
+  );
+  const heightDirection = unitVector(
+    topLeftMeters.x - bottomLeftMeters.x,
+    topLeftMeters.y - bottomLeftMeters.y,
+  );
+  if (!widthDirection || !heightDirection) {
+    return corners;
+  }
+
+  const draggedMeters = toLocalMeters(draggedPoint, fixedPoint);
+  const signs = cornerSignsByKey[draggedCorner];
+  const alignedWidth =
+    draggedMeters.x * signs.sx * widthDirection.x + draggedMeters.y * signs.sx * widthDirection.y;
+  const alignedHeight =
+    draggedMeters.x * signs.sy * heightDirection.x + draggedMeters.y * signs.sy * heightDirection.y;
+  if (alignedWidth <= 0 && alignedHeight <= 0) {
+    return corners;
+  }
+
+  const diagonalMagnitude = Math.hypot(alignedWidth, alignedHeight);
   if (diagonalMagnitude < MIN_DIAGONAL_METERS) {
     return corners;
   }
 
-  const halfHeight = diagonalMagnitude / Math.sqrt(1 + ratio ** 2);
-  const halfWidth = halfHeight * ratio;
+  const height = diagonalMagnitude / Math.sqrt(1 + ratio ** 2);
+  const width = height * ratio;
+  const halfHeight = height / 2;
+  const halfWidth = width / 2;
 
-  const signs = cornerSignsByKey[draggedCorner];
-  const expectedAngle = Math.atan2(signs.sy * halfHeight, signs.sx * halfWidth);
-  const actualAngle = Math.atan2(draggedMeters.y, draggedMeters.x);
-  const rotation = actualAngle - expectedAngle;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
+  const centerMeters = {
+    x: signs.sx * widthDirection.x * halfWidth + signs.sy * heightDirection.x * halfHeight,
+    y: signs.sx * widthDirection.y * halfWidth + signs.sy * heightDirection.y * halfHeight,
+  };
 
-  const widthVector = { x: cos * halfWidth, y: sin * halfWidth };
-  const heightVector = { x: -sin * halfHeight, y: cos * halfHeight };
+  const widthVector = { x: widthDirection.x * halfWidth, y: widthDirection.y * halfWidth };
+  const heightVector = { x: heightDirection.x * halfHeight, y: heightDirection.y * halfHeight };
 
-  const projectCorner = (sx: -1 | 1, sy: -1 | 1): Coordinates =>
-    toCoordinates(
-      sx * widthVector.x + sy * heightVector.x,
-      sx * widthVector.y + sy * heightVector.y,
-      center,
-    );
+  const projectCorner = (sx: -1 | 1, sy: -1 | 1): Coordinates => {
+    const x = centerMeters.x + sx * widthVector.x + sy * heightVector.x;
+    const y = centerMeters.y + sx * widthVector.y + sy * heightVector.y;
+    return toCoordinates(x, y, fixedPoint);
+  };
 
   return {
     topLeft: projectCorner(-1, 1),
