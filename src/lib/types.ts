@@ -80,6 +80,7 @@ export type FloorOverlay = {
 export type Building = {
   id: string;
   name: string;
+  location?: Coordinates;
 };
 
 export type Floor = {

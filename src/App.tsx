@@ -54,12 +54,8 @@ const getInitialTheme = (): ThemeId => {
   return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "qr-dark" : "qr-light";
 };
 
-const defaultBuilding = (): Building => ({ id: "building-1", name: "Building 1" });
-const defaultFloor = (buildingId: string): Floor => ({
-  id: "floor-1",
-  buildingId,
-  name: "Ground Floor",
-});
+const INITIAL_MAP_CENTER: Coordinates = [5.1214, 52.0907];
+const INITIAL_MAP_ZOOM = 17;
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LocationSearchStatus = "idle" | "loading" | "error";
@@ -132,12 +128,9 @@ function App() {
   const [theme, setTheme] = useState<ThemeId>(() => getInitialTheme());
   const [editorState, setEditorState] = useState<EditorState>(() => createInitialEditorState());
   const [overlays, setOverlays] = useState<FloorOverlay[]>([]);
-  const [buildings, setBuildings] = useState<Building[]>(() => [defaultBuilding()]);
-  const [floors, setFloors] = useState<Floor[]>(() => [defaultFloor(defaultBuilding().id)]);
-  const [selection, setSelection] = useState<Selection | undefined>(() => ({
-    kind: "floor",
-    id: defaultFloor(defaultBuilding().id).id,
-  }));
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [floors, setFloors] = useState<Floor[]>([]);
+  const [selection, setSelection] = useState<Selection | undefined>(undefined);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
   const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
@@ -146,8 +139,8 @@ function App() {
   const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
   const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>({
-    center: [5.1214, 52.0907],
-    zoom: 17,
+    center: INITIAL_MAP_CENTER,
+    zoom: INITIAL_MAP_ZOOM,
   });
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("");
@@ -186,39 +179,46 @@ function App() {
       }
 
       const sanitizedProject = sanitizeProjectSnapshot(project);
-      const loadedBuildings = sanitizedProject.buildings?.length
-        ? sanitizedProject.buildings
-        : [defaultBuilding()];
-      const primaryBuilding = loadedBuildings[0] ?? defaultBuilding();
-      const loadedFloors = sanitizedProject.floors?.length
-        ? sanitizedProject.floors
-        : [defaultFloor(primaryBuilding.id)];
-      const primaryFloor = loadedFloors[0] ?? defaultFloor(primaryBuilding.id);
+      const loadedBuildings = sanitizedProject.buildings ?? [];
+      const loadedFloors = sanitizedProject.floors ?? [];
+      const primaryFloor = loadedFloors[0];
+      const primaryBuilding = loadedBuildings[0];
 
-      const migratedFeatures = sanitizedProject.features.map((feature) =>
-        normalizeFeature(
+      const migratedFeatures = sanitizedProject.features.map((feature) => {
+        const resolvedFloorId =
+          typeof feature.properties.floorId === "string"
+            ? feature.properties.floorId
+            : primaryFloor?.id;
+
+        return normalizeFeature(
           {
             ...feature,
             properties: {
               ...feature.properties,
-              floorId: feature.properties.floorId ?? primaryFloor.id,
+              ...(resolvedFloorId ? { floorId: resolvedFloorId } : {}),
             },
           },
           {
-            floorId: feature.properties.floorId ?? primaryFloor.id,
+            floorId: resolvedFloorId ?? "",
             buildingId:
-              loadedFloors.find(
-                (floor) => floor.id === (feature.properties.floorId ?? primaryFloor.id),
-              )?.buildingId ?? primaryBuilding.id,
+              loadedFloors.find((floor) => floor.id === resolvedFloorId)?.buildingId ??
+              primaryBuilding?.id ??
+              "",
           },
-        ),
-      );
+        );
+      });
 
       setEditorState(createInitialEditorState(migratedFeatures));
       setOverlays(sanitizedProject.overlays);
       setBuildings(loadedBuildings);
       setFloors(loadedFloors);
-      setSelection({ kind: "floor", id: primaryFloor.id });
+      setSelection(
+        firstValidSelection({
+          buildings: loadedBuildings,
+          floors: loadedFloors,
+          features: migratedFeatures,
+        }),
+      );
       setSaveStatus("saved");
     });
 
@@ -637,6 +637,7 @@ function App() {
     const building: Building = {
       id: buildingId,
       name: `Building ${buildings.length + 1}`,
+      location: mapView.center,
     };
     const floor: Floor = {
       id: floorId,
@@ -646,9 +647,9 @@ function App() {
 
     setBuildings((current) => [...current, building]);
     setFloors((current) => [...current, floor]);
-    setSelection({ kind: "building", id: buildingId });
+    setSelection({ kind: "floor", id: floorId });
     setEditorState((current) => selectFeature(current, undefined));
-  }, [buildings.length]);
+  }, [buildings.length, mapView.center]);
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {

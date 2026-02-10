@@ -170,6 +170,33 @@ describe("App browser smoke", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("starts with no default building until add building is clicked", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No buildings.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        buildings: Array<{ id: string; location?: [number, number] }>;
+        floors: Array<{ id: string; buildingId: string }>;
+      };
+
+      expect(latestSnapshot.buildings).toHaveLength(1);
+      expect(latestSnapshot.buildings[0]?.location).toEqual([5.1214, 52.0907]);
+      expect(latestSnapshot.floors).toHaveLength(1);
+      expect(latestSnapshot.floors[0]?.buildingId).toBe(latestSnapshot.buildings[0]?.id);
+    });
+  });
+
   it("searches addresses and recenters the map when selecting a result", async () => {
     mockRepository.loadProject.mockResolvedValue(undefined);
     vi.stubGlobal(
@@ -392,6 +419,8 @@ describe("App browser smoke", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /draw path/i })).toBeInTheDocument();
     });
@@ -437,6 +466,8 @@ describe("App browser smoke", () => {
 
     const { default: App } = await import("./App");
     render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /draw zone/i })).toBeInTheDocument();

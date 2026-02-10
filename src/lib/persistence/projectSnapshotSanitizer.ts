@@ -274,16 +274,9 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
   };
 };
 
-const defaultBuilding = (): Building => ({ id: "building-1", name: "Building 1" });
-const defaultFloor = (buildingId: string): Floor => ({
-  id: "floor-1",
-  buildingId,
-  name: "Ground Floor",
-});
-
 const normalizeBuildings = (buildings: unknown): Building[] => {
   if (!Array.isArray(buildings)) {
-    return [defaultBuilding()];
+    return [];
   }
 
   const normalized = buildings
@@ -292,7 +285,7 @@ const normalizeBuildings = (buildings: unknown): Building[] => {
         return undefined;
       }
 
-      const raw = building as { id?: unknown; name?: unknown };
+      const raw = building as { id?: unknown; name?: unknown; location?: unknown };
       if (!isNonEmptyString(raw.id)) {
         return undefined;
       }
@@ -300,13 +293,10 @@ const normalizeBuildings = (buildings: unknown): Building[] => {
       return {
         id: raw.id,
         name: isNonEmptyString(raw.name) ? raw.name : "Untitled building",
+        ...(isCoordinates(raw.location) ? { location: raw.location } : {}),
       };
     })
     .filter((building): building is Building => Boolean(building));
-
-  if (normalized.length === 0) {
-    return [defaultBuilding()];
-  }
 
   return normalized;
 };
@@ -314,7 +304,7 @@ const normalizeBuildings = (buildings: unknown): Building[] => {
 const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
   const validBuildingIds = new Set(buildings.map((building) => building.id));
   if (!Array.isArray(floors)) {
-    return [defaultFloor(buildings[0]?.id ?? defaultBuilding().id)];
+    return [];
   }
 
   const normalized = floors
@@ -340,19 +330,15 @@ const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
     })
     .filter((floor): floor is Floor => Boolean(floor));
 
-  if (normalized.length === 0) {
-    return [defaultFloor(buildings[0]?.id ?? defaultBuilding().id)];
-  }
-
   return normalized;
 };
 
 const normalizeFeatures = (
   features: unknown,
-  defaultFloorId: string,
+  defaultFloorId: string | undefined,
   floorIds: Set<string>,
 ): FloorFeature[] => {
-  if (!Array.isArray(features)) {
+  if (!Array.isArray(features) || !defaultFloorId) {
     return [];
   }
 
@@ -385,7 +371,7 @@ const normalizeOverlays = (overlays: unknown, floorIds: Set<string>): FloorOverl
 export const sanitizeProjectSnapshot = (project: ProjectSnapshot): ProjectSnapshot => {
   const buildings = normalizeBuildings(project.buildings);
   const floors = normalizeFloors(project.floors, buildings);
-  const defaultFloorId = floors[0]?.id ?? defaultFloor(buildings[0]?.id ?? defaultBuilding().id).id;
+  const defaultFloorId = floors[0]?.id;
   const floorIds = new Set(floors.map((floor) => floor.id));
 
   return {

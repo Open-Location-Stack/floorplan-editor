@@ -63,7 +63,7 @@ describe("sanitizeProjectSnapshot", () => {
     expect(sanitized.overlays[0]?.visible).toBe(true);
   });
 
-  it("creates defaults when building/floor data is missing", () => {
+  it("keeps project empty when building/floor data is missing", () => {
     const sanitized = sanitizeProjectSnapshot({
       id: "p2",
       name: "project",
@@ -73,8 +73,7 @@ describe("sanitizeProjectSnapshot", () => {
       overlays: [],
     });
 
-    expect(sanitized.buildings).toHaveLength(1);
-    expect(sanitized.floors).toHaveLength(1);
-    expect(sanitized.floors?.[0]?.buildingId).toBe(sanitized.buildings?.[0]?.id);
+    expect(sanitized.buildings).toHaveLength(0);
+    expect(sanitized.floors).toHaveLength(0);
   });
 });

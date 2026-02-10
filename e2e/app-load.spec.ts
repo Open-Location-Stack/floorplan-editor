@@ -5,7 +5,7 @@ type ProjectSnapshot = {
   name: string;
   version: number;
   updatedAt: string;
-  buildings: Array<{ id: string; name: string }>;
+  buildings: Array<{ id: string; name: string; location?: [number, number] }>;
   floors: Array<{ id: string; buildingId: string; name: string }>;
   features: unknown[];
   overlays: unknown[];
@@ -156,6 +156,7 @@ test("critical journey: edit building details and survive reload", async ({ page
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
+  await page.getByRole("button", { name: /add building/i }).click();
 
   await page.getByRole("button", { name: "Building 1" }).click();
   const buildingPanel = page.locator("section").filter({
