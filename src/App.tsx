@@ -15,6 +15,7 @@ import {
   updateFeature,
 } from "./lib/editor/editorModel";
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
+import { cloneFloorWithReferences } from "./lib/floorClone";
 import { type OpenCageSearchResult, searchOpenCage } from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
@@ -728,6 +729,37 @@ function App() {
     [floors],
   );
 
+  const onCloneFloor = useCallback(
+    (floorId: string) => {
+      const sourceFloor = floors.find((floor) => floor.id === floorId);
+      if (!sourceFloor) {
+        return;
+      }
+
+      const clone = cloneFloorWithReferences({
+        floor: sourceFloor,
+        floors,
+        features: editorState.features,
+        overlays,
+      });
+
+      setFloors((current) => [...current, clone.floor]);
+      setEditorState((current) =>
+        replaceAllFeatures(selectFeature(current, undefined), [
+          ...current.features,
+          ...clone.features,
+        ]),
+      );
+      const cloneOverlay = clone.overlay;
+      if (cloneOverlay) {
+        setOverlays((current) => [...current, cloneOverlay]);
+      }
+      setSelection({ kind: "floor", id: clone.floor.id });
+      setDrawMode("select");
+    },
+    [editorState.features, floors, overlays],
+  );
+
   const onCreateFeature = useCallback(
     (type: SupportedImdfType) => {
       const schema = getImdfSchemaRule(type);
@@ -1122,6 +1154,7 @@ function App() {
                     ),
                   );
                 }}
+                onCloneFloor={onCloneFloor}
                 onDeleteFloor={onDeleteFloor}
                 onCreateFeature={onCreateFeature}
                 onUpdateFeatureProperty={(featureId, key, value) => {

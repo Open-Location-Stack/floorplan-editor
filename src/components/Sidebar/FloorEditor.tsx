@@ -11,6 +11,7 @@ type FloorEditorProps = {
   overlay: FloorOverlay | undefined;
   validationWarnings: string[];
   onRenameFloor: (name: string) => void;
+  onCloneFloor: () => void;
   onDeleteFloor: () => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onOverlayUpload: (file: File) => void;
@@ -35,6 +36,7 @@ export const FloorEditor = ({
   overlay,
   validationWarnings,
   onRenameFloor,
+  onCloneFloor,
   onDeleteFloor,
   onCreateFeature,
   onOverlayUpload,
@@ -80,9 +82,14 @@ export const FloorEditor = ({
           Sketch by clicking vertices on the map and double-clicking to finish.
         </p>
 
-        <button className="btn btn-sm btn-error" type="button" onClick={onDeleteFloor}>
-          Delete floor
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-sm" type="button" onClick={onCloneFloor}>
+            Clone floor
+          </button>
+          <button className="btn btn-sm btn-error" type="button" onClick={onDeleteFloor}>
+            Delete floor
+          </button>
+        </div>
 
         {validationWarnings.length > 0 ? (
           <div className="rounded-box border border-warning/30 bg-warning/10 p-3 text-sm">

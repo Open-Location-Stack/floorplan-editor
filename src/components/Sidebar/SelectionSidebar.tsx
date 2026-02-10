@@ -17,6 +17,7 @@ type SelectionSidebarProps = {
   onDeleteBuilding: (buildingId: string) => void;
   onAddFloor: (buildingId: string) => void;
   onRenameFloor: (floorId: string, name: string) => void;
+  onCloneFloor: (floorId: string) => void;
   onDeleteFloor: (floorId: string) => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onUpdateFeatureProperty: (featureId: string, key: string, value: string) => void;
@@ -42,6 +43,7 @@ export const SelectionSidebar = ({
   onDeleteBuilding,
   onAddFloor,
   onRenameFloor,
+  onCloneFloor,
   onDeleteFloor,
   onCreateFeature,
   onUpdateFeatureProperty,
@@ -89,6 +91,7 @@ export const SelectionSidebar = ({
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
         onRenameFloor={(name) => onRenameFloor(floor.id, name)}
+        onCloneFloor={() => onCloneFloor(floor.id)}
         onDeleteFloor={() => onDeleteFloor(floor.id)}
         onCreateFeature={onCreateFeature}
         onOverlayUpload={onOverlayUpload}

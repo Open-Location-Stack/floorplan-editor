@@ -587,6 +587,117 @@ describe("App browser smoke", () => {
     });
   });
 
+  it("clones a floor and remaps feature references to new ids", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 3,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "unit-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Room A" },
+        },
+        {
+          type: "Feature",
+          id: "relationship-1",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.121, 52.091],
+              [5.122, 52.09],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            floorId: "floor-1",
+            origin_id: "unit-1",
+            destination_id: "unit-1",
+            linked_feature_ids: ["unit-1", "relationship-1"],
+            metadata: {
+              sourceFloor: "floor-1",
+              sourceFeature: "relationship-1",
+            },
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /clone floor/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /clone floor/i }));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        floors: Array<{ id: string; buildingId: string; name: string }>;
+        features: Array<{
+          id: string;
+          properties: {
+            floorId?: string;
+            kind?: string;
+            origin_id?: string;
+            destination_id?: string;
+            linked_feature_ids?: string[];
+            metadata?: unknown;
+          };
+        }>;
+      };
+
+      expect(latestSnapshot.floors).toHaveLength(2);
+      const clonedFloor = latestSnapshot.floors.find((floor) => floor.id !== "floor-1");
+      expect(clonedFloor).toBeDefined();
+      expect(clonedFloor?.name).toMatch(/^Ground Floor copy/);
+      expect(clonedFloor?.buildingId).toBe("building-1");
+
+      const clonedFloorFeatures = latestSnapshot.features.filter(
+        (feature) => feature.properties.floorId === clonedFloor?.id,
+      );
+      expect(clonedFloorFeatures).toHaveLength(2);
+
+      const clonedUnit = clonedFloorFeatures.find((feature) => feature.properties.kind === "unit");
+      const clonedRelationship = clonedFloorFeatures.find(
+        (feature) => typeof feature.properties.origin_id === "string",
+      );
+      expect(clonedUnit).toBeDefined();
+      expect(clonedRelationship).toBeDefined();
+      expect(clonedUnit?.id).not.toBe("unit-1");
+      expect(clonedRelationship?.id).not.toBe("relationship-1");
+      expect(clonedRelationship?.properties.origin_id).toBe(clonedUnit?.id);
+      expect(clonedRelationship?.properties.destination_id).toBe(clonedUnit?.id);
+      expect(clonedRelationship?.properties.linked_feature_ids).toEqual([
+        clonedUnit?.id,
+        clonedRelationship?.id,
+      ]);
+      expect(clonedRelationship?.properties.metadata).toEqual({
+        sourceFloor: clonedFloor?.id,
+        sourceFeature: clonedRelationship?.id,
+      });
+    });
+  });
+
   it("allows deleting the last building and cascades floors and floor data", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
