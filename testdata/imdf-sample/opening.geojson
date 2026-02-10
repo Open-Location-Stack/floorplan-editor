@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "66666666-6666-4666-8666-666666666666",
+      "feature_type": "opening",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [5.1211, 52.0908],
+          [5.1218, 52.0908]
+        ]
+      },
+      "properties": {
+        "name": {
+          "en": "Main path"
+        },
+        "level_id": "44444444-4444-4444-8444-444444444444"
+      }
+    }
+  ]
+}

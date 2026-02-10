@@ -1,0 +1,72 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "level-outline-1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5.1206, 52.0902],
+            [5.1223, 52.0902],
+            [5.1223, 52.0916],
+            [5.1206, 52.0916],
+            [5.1206, 52.0902]
+          ]
+        ]
+      },
+      "properties": {
+        "kind": "level",
+        "imdfType": "level",
+        "name": "Ground floor",
+        "floorId": "floor-1",
+        "buildingId": "building-1",
+        "level_id": "floor-1",
+        "building_id": "building-1"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "unit-101",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5.1208, 52.0905],
+            [5.1214, 52.0905],
+            [5.1214, 52.0911],
+            [5.1208, 52.0911],
+            [5.1208, 52.0905]
+          ]
+        ]
+      },
+      "properties": {
+        "kind": "unit",
+        "imdfType": "unit",
+        "name": "Room 101",
+        "floorId": "floor-1",
+        "buildingId": "building-1",
+        "level_id": "floor-1",
+        "building_id": "building-1",
+        "category": "unspecified"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "path-main",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[5.1211, 52.0908], [5.1218, 52.0908]]
+      },
+      "properties": {
+        "kind": "path",
+        "imdfType": "path",
+        "name": "Main path",
+        "floorId": "floor-1",
+        "buildingId": "building-1",
+        "connects_to": ["unit-101", "floor-1"]
+      }
+    }
+  ]
+}

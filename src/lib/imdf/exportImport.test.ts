@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { exportFloorGeoJson, sortFeaturesForRendering } from "./export";
+import type { FeatureCollection } from "../types";
+import mixedFloorCollection from "./__fixtures__/mixed-floor-feature-collection.json";
+import {
+  exportFloorGeoJson,
+  exportImdfDataset,
+  IMDF_DATASET_TYPES,
+  sortFeaturesForRendering,
+} from "./export";
 import { importFloorGeoJson } from "./import";
+import { validateImdfDatasetFiles } from "./validate";
+
+const fixture = mixedFloorCollection as FeatureCollection;
 
 describe("imdf export/import", () => {
   it("exports one floor with normalized metadata", () => {
@@ -124,5 +134,74 @@ describe("imdf export/import", () => {
 
     expect(ordered[0]?.properties.kind).toBe("level");
     expect(ordered[1]?.properties.kind).toBe("unit");
+  });
+
+  it("exports a proper IMDF package with required files", () => {
+    const dataset = exportImdfDataset({
+      building: { id: "building-1", name: "HQ Building" },
+      floor: { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
+      features: fixture.features,
+    });
+
+    expect(Object.keys(dataset.files)).toEqual(
+      expect.arrayContaining([
+        "manifest.json",
+        "venue.geojson",
+        "building.geojson",
+        "footprint.geojson",
+        "level.geojson",
+        "unit.geojson",
+        "opening.geojson",
+        "relationship.geojson",
+      ]),
+    );
+
+    for (const type of IMDF_DATASET_TYPES) {
+      const collection = dataset.files[`${type}.geojson`];
+      expect(collection).toBeDefined();
+      if (!collection || !("features" in collection) || !Array.isArray(collection.features)) {
+        continue;
+      }
+
+      expect(
+        collection.features.every(
+          (feature) =>
+            typeof feature === "object" &&
+            feature !== null &&
+            "feature_type" in feature &&
+            feature.feature_type === type,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("converts internal paths to opening + relationship and passes validator", () => {
+    const dataset = exportImdfDataset({
+      building: { id: "building-1", name: "HQ Building" },
+      floor: { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
+      features: fixture.features,
+    });
+
+    const openingCollection = dataset.files["opening.geojson"];
+    const relationshipCollection = dataset.files["relationship.geojson"];
+
+    expect(openingCollection).toBeDefined();
+    expect(relationshipCollection).toBeDefined();
+    if (
+      !openingCollection ||
+      !("features" in openingCollection) ||
+      !Array.isArray(openingCollection.features) ||
+      !relationshipCollection ||
+      !("features" in relationshipCollection) ||
+      !Array.isArray(relationshipCollection.features)
+    ) {
+      return;
+    }
+
+    expect(openingCollection.features.length).toBeGreaterThan(0);
+    expect(relationshipCollection.features.length).toBeGreaterThan(0);
+
+    const validation = validateImdfDatasetFiles(dataset.files);
+    expect(validation.errors).toEqual([]);
   });
 });

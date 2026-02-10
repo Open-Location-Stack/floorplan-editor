@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "validate:all": "npm run typecheck && npm run lint && npm run test -- --run && npm run test:browser && npm run test:e2e && npm run build",
+    "validate-imdf": "node scripts/validate-imdf.mjs",
     "setup:hooks": "git config core.hooksPath .githooks",
     "test": "vitest",
     "test:browser": "vitest run src/App.browser-smoke.test.tsx",

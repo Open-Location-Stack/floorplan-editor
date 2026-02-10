@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-02-10T00:00:00.000Z",
+  "generator": "formation-floorplan-editor",
+  "files": [
+    {
+      "name": "venue.geojson",
+      "feature_type": "venue",
+      "count": 1
+    },
+    {
+      "name": "building.geojson",
+      "feature_type": "building",
+      "count": 1
+    },
+    {
+      "name": "footprint.geojson",
+      "feature_type": "footprint",
+      "count": 1
+    },
+    {
+      "name": "level.geojson",
+      "feature_type": "level",
+      "count": 1
+    },
+    {
+      "name": "unit.geojson",
+      "feature_type": "unit",
+      "count": 1
+    },
+    {
+      "name": "opening.geojson",
+      "feature_type": "opening",
+      "count": 1
+    },
+    {
+      "name": "relationship.geojson",
+      "feature_type": "relationship",
+      "count": 1
+    }
+  ]
+}

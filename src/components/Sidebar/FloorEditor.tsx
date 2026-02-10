@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { exportFloorGeoJsonText } from "../../lib/imdf/export";
+import { exportImdfDatasetText } from "../../lib/imdf/export";
 import { importFloorGeoJson } from "../../lib/imdf/import";
 import type { SupportedImdfType } from "../../lib/imdf/schema";
 import type { Building, Floor, FloorFeature, FloorOverlay } from "../../lib/types";
@@ -173,7 +173,7 @@ export const FloorEditor = ({
         </details>
 
         <div className="rounded-box border border-base-300 p-3">
-          <div className="mb-2 text-sm font-medium">Per-floor GeoJSON</div>
+          <div className="mb-2 text-sm font-medium">Floor import + IMDF package export</div>
           <textarea
             className="textarea textarea-bordered h-24 w-full font-mono text-xs"
             value={importText}
@@ -207,7 +207,7 @@ export const FloorEditor = ({
               type="button"
               onClick={() => {
                 setExportText(
-                  exportFloorGeoJsonText({
+                  exportImdfDatasetText({
                     building,
                     floor,
                     features: floorFeatures,
@@ -215,7 +215,7 @@ export const FloorEditor = ({
                 );
               }}
             >
-              Export floor
+              Export IMDF
             </button>
           </div>
           {importError ? <pre className="mt-2 text-xs text-error">{importError}</pre> : null}

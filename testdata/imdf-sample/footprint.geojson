@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "33333333-3333-4333-8333-333333333333",
+      "feature_type": "footprint",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5.1206, 52.0902],
+            [5.1223, 52.0902],
+            [5.1223, 52.0916],
+            [5.1206, 52.0916],
+            [5.1206, 52.0902]
+          ]
+        ]
+      },
+      "properties": {
+        "name": {
+          "en": "HQ Building footprint"
+        },
+        "building_ids": ["22222222-2222-4222-8222-222222222222"]
+      }
+    }
+  ]
+}

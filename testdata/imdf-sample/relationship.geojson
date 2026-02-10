@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "77777777-7777-4777-8777-777777777777",
+      "feature_type": "relationship",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [5.1211, 52.0908],
+          [5.1218, 52.0908]
+        ]
+      },
+      "properties": {
+        "name": {
+          "en": "Main path"
+        },
+        "origin_id": "55555555-5555-4555-8555-555555555555",
+        "intermediary_id": "66666666-6666-4666-8666-666666666666",
+        "destination_id": "44444444-4444-4444-8444-444444444444"
+      }
+    }
+  ]
+}

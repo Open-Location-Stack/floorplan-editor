@@ -32,6 +32,7 @@ Visit the dev server at `http://localhost:5173`.
 - `npm run lint:fix` – apply Biome fixes.
 - `npm run format` – format the codebase with Biome.
 - `npm run typecheck` – run TypeScript in `--noEmit` mode for static analysis.
+- `npm run validate-imdf -- <dataset-dir>` – validate an IMDF dataset directory (`manifest.json` + per-type `*.geojson` files).
 - `npm run validate:all` – run completion gate checks (`typecheck`, `lint`, `test`, `test:browser`, `test:e2e`, `build`).
 - `npm run setup:hooks` – configure local git hooks path (`.githooks`) for pre-push validation.
 
@@ -63,3 +64,11 @@ Run through these before kicking off a new project:
 
 ## Deployment
 Run `npm run build`, then deploy the contents of `dist/` to your preferred static hosting provider (e.g., Vercel, Netlify, S3 + CloudFront).
+
+## IMDF Validation
+- Exported IMDF datasets are packaged as `manifest.json` plus per-type `*.geojson` files.
+- Run the validator locally:
+
+```bash
+npm run validate-imdf -- testdata/imdf-sample
+```

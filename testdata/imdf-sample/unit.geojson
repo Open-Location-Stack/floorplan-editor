@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "55555555-5555-4555-8555-555555555555",
+      "feature_type": "unit",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5.1208, 52.0905],
+            [5.1214, 52.0905],
+            [5.1214, 52.0911],
+            [5.1208, 52.0911],
+            [5.1208, 52.0905]
+          ]
+        ]
+      },
+      "properties": {
+        "name": {
+          "en": "Room 101"
+        },
+        "level_id": "44444444-4444-4444-8444-444444444444",
+        "category": "unspecified",
+        "display_point": [5.1211, 52.0908]
+      }
+    }
+  ]
+}

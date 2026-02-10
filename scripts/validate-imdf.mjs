@@ -1,87 +1,16 @@
-import type { FloorFeature } from "../types";
-import { IMDF_DATASET_TYPES, type ImdfDatasetType } from "./export";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
 
-export type FloorValidationResult = {
-  errors: string[];
-  warnings: string[];
-};
-
-export const validateFloor = (floorId: string, features: FloorFeature[]): FloorValidationResult => {
-  const floorFeatures = features.filter((feature) => feature.properties.floorId === floorId);
-
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  for (const feature of floorFeatures) {
-    if (typeof feature.properties.imdfType !== "string" || !feature.properties.imdfType) {
-      warnings.push(`Feature ${feature.id} has no IMDF type.`);
-    }
-
-    if (
-      typeof feature.properties.name !== "string" ||
-      feature.properties.name.trim().length === 0
-    ) {
-      warnings.push(`Feature ${feature.id} has no display name.`);
-    }
-
-    if (feature.geometry.type === "LineString" && feature.properties.kind !== "path") {
-      warnings.push(`Feature ${feature.id} is a line but not marked as path.`);
-    }
-
-    if (typeof feature.properties.floorId !== "string" || feature.properties.floorId !== floorId) {
-      errors.push(`Feature ${feature.id} is not assigned to floor ${floorId}.`);
-    }
-  }
-
-  return { errors, warnings };
-};
-
-export type ImdfDatasetValidationResult = {
-  errors: string[];
-  warnings: string[];
-};
-
-type RawManifest = {
-  version?: unknown;
-  files?: unknown;
-};
-
-type RawManifestEntry = {
-  name?: unknown;
-};
-
-type RawCollection = {
-  type?: unknown;
-  features?: unknown;
-};
-
-type RawFeature = {
-  type?: unknown;
-  id?: unknown;
-  feature_type?: unknown;
-  geometry?: unknown;
-  properties?: unknown;
-};
-
-type RawProperties = {
-  name?: unknown;
-  short_name?: unknown;
-  venue_id?: unknown;
-  ordinal?: unknown;
-  outdoor?: unknown;
-  building_ids?: unknown;
-  level_id?: unknown;
-  category?: unknown;
-  origin_id?: unknown;
-  intermediary_id?: unknown;
-  destination_id?: unknown;
-  [key: string]: unknown;
-};
-
-type RawGeometry = {
-  type?: unknown;
-  coordinates?: unknown;
-};
+const IMDF_DATASET_TYPES = [
+  "venue",
+  "building",
+  "footprint",
+  "level",
+  "unit",
+  "opening",
+  "relationship",
+];
 
 const requiredDatasetFiles = [
   "manifest.json",
@@ -90,21 +19,19 @@ const requiredDatasetFiles = [
   "footprint.geojson",
   "level.geojson",
   "unit.geojson",
-] as const;
+];
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const isUuid = (value: unknown): value is string =>
-  typeof value === "string" && uuidPattern.test(value);
+const isUuid = (value) => typeof value === "string" && uuidPattern.test(value);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isLabelObject = (value: unknown): value is Record<string, string> =>
+const isLabelObject = (value) =>
   isRecord(value) &&
   Object.values(value).every((label) => typeof label === "string" && label.trim().length > 0);
 
-const isCoordinate = (value: unknown): value is [number, number] =>
+const isCoordinate = (value) =>
   Array.isArray(value) &&
   value.length === 2 &&
   typeof value[0] === "number" &&
@@ -116,24 +43,22 @@ const isCoordinate = (value: unknown): value is [number, number] =>
   value[1] >= -90 &&
   value[1] <= 90;
 
-const validateLineStringGeometry = (geometry: unknown, context: string, errors: string[]): void => {
-  if (!isRecord(geometry)) {
+const validateLineStringGeometry = (geometry, context, errors) => {
+  if (
+    !isRecord(geometry) ||
+    geometry.type !== "LineString" ||
+    !Array.isArray(geometry.coordinates)
+  ) {
     errors.push(`${context} must contain a LineString geometry.`);
     return;
   }
 
-  const candidate = geometry as RawGeometry;
-  if (candidate.type !== "LineString" || !Array.isArray(candidate.coordinates)) {
-    errors.push(`${context} must contain a LineString geometry.`);
-    return;
-  }
-
-  if (candidate.coordinates.length < 2 || !candidate.coordinates.every(isCoordinate)) {
+  if (geometry.coordinates.length < 2 || !geometry.coordinates.every(isCoordinate)) {
     errors.push(`${context} has invalid LineString coordinates.`);
   }
 };
 
-const ringSignedArea = (ring: [number, number][]): number => {
+const ringSignedArea = (ring) => {
   let sum = 0;
   for (let index = 0; index < ring.length - 1; index += 1) {
     const current = ring[index];
@@ -146,24 +71,13 @@ const ringSignedArea = (ring: [number, number][]): number => {
   return sum / 2;
 };
 
-const validatePolygonGeometry = (
-  geometry: unknown,
-  context: string,
-  errors: string[],
-  warnings: string[],
-): void => {
-  if (!isRecord(geometry)) {
+const validatePolygonGeometry = (geometry, context, errors, warnings) => {
+  if (!isRecord(geometry) || geometry.type !== "Polygon" || !Array.isArray(geometry.coordinates)) {
     errors.push(`${context} must contain a Polygon geometry.`);
     return;
   }
 
-  const candidate = geometry as RawGeometry;
-  if (candidate.type !== "Polygon" || !Array.isArray(candidate.coordinates)) {
-    errors.push(`${context} must contain a Polygon geometry.`);
-    return;
-  }
-
-  const ring = candidate.coordinates[0];
+  const ring = geometry.coordinates[0];
   if (!Array.isArray(ring) || ring.length < 4 || !ring.every(isCoordinate)) {
     errors.push(`${context} has invalid Polygon coordinates.`);
     return;
@@ -182,7 +96,7 @@ const validatePolygonGeometry = (
   }
 };
 
-const parseFeatureTypeFromFilename = (filename: string): ImdfDatasetType | undefined => {
+const parseFeatureTypeFromFilename = (filename) => {
   if (!filename.endsWith(".geojson")) {
     return undefined;
   }
@@ -191,29 +105,21 @@ const parseFeatureTypeFromFilename = (filename: string): ImdfDatasetType | undef
   return IMDF_DATASET_TYPES.find((type) => type === base);
 };
 
-const collectManifestFiles = (manifest: RawManifest): Set<string> => {
+const collectManifestFiles = (manifest) => {
   if (!Array.isArray(manifest.files)) {
     return new Set();
   }
 
   return new Set(
     manifest.files
-      .map((entry) => {
-        if (!isRecord(entry)) {
-          return undefined;
-        }
-        const manifestEntry = entry as RawManifestEntry;
-        return typeof manifestEntry.name === "string" ? manifestEntry.name : undefined;
-      })
-      .filter((entry): entry is string => Boolean(entry)),
+      .map((entry) => (isRecord(entry) && typeof entry.name === "string" ? entry.name : undefined))
+      .filter((entry) => Boolean(entry)),
   );
 };
 
-export const validateImdfDatasetFiles = (
-  files: Record<string, unknown>,
-): ImdfDatasetValidationResult => {
-  const errors: string[] = [];
-  const warnings: string[] = [];
+const validateImdfDatasetFiles = (files) => {
+  const errors = [];
+  const warnings = [];
 
   for (const requiredFile of requiredDatasetFiles) {
     if (!(requiredFile in files)) {
@@ -227,13 +133,11 @@ export const validateImdfDatasetFiles = (
   } else if (!isRecord(manifestRaw)) {
     errors.push("manifest.json must contain a JSON object.");
   } else {
-    const manifest = manifestRaw as RawManifest;
-
-    if (manifest.version !== "1.0.0") {
+    if (manifestRaw.version !== "1.0.0") {
       warnings.push("manifest.json version is expected to be 1.0.0.");
     }
 
-    const manifestFiles = collectManifestFiles(manifest);
+    const manifestFiles = collectManifestFiles(manifestRaw);
     for (const type of IMDF_DATASET_TYPES) {
       const fileName = `${type}.geojson`;
       if (!manifestFiles.has(fileName)) {
@@ -242,8 +146,8 @@ export const validateImdfDatasetFiles = (
     }
   }
 
-  const knownIds = new Set<string>();
-  const references: Array<{ source: string; target: string; field: string }> = [];
+  const knownIds = new Set();
+  const references = [];
 
   for (const [filename, collectionRaw] of Object.entries(files)) {
     const expectedType = parseFeatureTypeFromFilename(filename);
@@ -251,58 +155,45 @@ export const validateImdfDatasetFiles = (
       continue;
     }
 
-    if (!isRecord(collectionRaw)) {
+    if (!isRecord(collectionRaw) || collectionRaw.type !== "FeatureCollection") {
       errors.push(`${filename} must be a FeatureCollection.`);
       continue;
     }
 
-    const collection = collectionRaw as RawCollection;
-    if (collection.type !== "FeatureCollection") {
-      errors.push(`${filename} must be a FeatureCollection.`);
-      continue;
-    }
-
-    const rawFeatures = collection.features;
-    if (!Array.isArray(rawFeatures)) {
+    if (!Array.isArray(collectionRaw.features)) {
       errors.push(`${filename} must contain a features array.`);
       continue;
     }
 
-    for (const [index, featureRaw] of rawFeatures.entries()) {
+    for (const [index, featureRaw] of collectionRaw.features.entries()) {
       const context = `${filename} feature[${index}]`;
-      if (!isRecord(featureRaw)) {
+      if (!isRecord(featureRaw) || featureRaw.type !== "Feature") {
         errors.push(`${context} must be a GeoJSON Feature.`);
         continue;
       }
 
-      const feature = featureRaw as RawFeature;
-      if (feature.type !== "Feature") {
-        errors.push(`${context} must be a GeoJSON Feature.`);
-        continue;
-      }
-
-      if (!isUuid(feature.id)) {
+      if (!isUuid(featureRaw.id)) {
         errors.push(`${context} has a non-UUID id.`);
-      } else if (knownIds.has(feature.id)) {
-        errors.push(`${context} has duplicate id ${feature.id}.`);
+      } else if (knownIds.has(featureRaw.id)) {
+        errors.push(`${context} has duplicate id ${featureRaw.id}.`);
       } else {
-        knownIds.add(feature.id);
+        knownIds.add(featureRaw.id);
       }
 
-      if (feature.feature_type !== expectedType) {
+      if (featureRaw.feature_type !== expectedType) {
         errors.push(
           `${context} must have feature_type "${expectedType}" (received "${String(
-            feature.feature_type,
+            featureRaw.feature_type,
           )}").`,
         );
       }
 
-      if (!isRecord(feature.properties)) {
+      if (!isRecord(featureRaw.properties)) {
         errors.push(`${context} must contain a properties object.`);
         continue;
       }
 
-      const properties = feature.properties as RawProperties;
+      const properties = featureRaw.properties;
 
       if ("name" in properties && !isLabelObject(properties.name)) {
         errors.push(`${context} properties.name must be a labels object.`);
@@ -312,31 +203,26 @@ export const validateImdfDatasetFiles = (
       }
 
       if (expectedType === "building") {
-        if (feature.geometry !== null) {
+        if (featureRaw.geometry !== null) {
           errors.push(`${context} building geometry must be null.`);
         }
         if (!isUuid(properties.venue_id)) {
           errors.push(`${context} properties.venue_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.venue_id,
             field: "venue_id",
           });
         }
       }
 
-      if (
-        expectedType === "venue" ||
-        expectedType === "footprint" ||
-        expectedType === "level" ||
-        expectedType === "unit"
-      ) {
-        validatePolygonGeometry(feature.geometry, context, errors, warnings);
+      if (["venue", "footprint", "level", "unit"].includes(expectedType)) {
+        validatePolygonGeometry(featureRaw.geometry, context, errors, warnings);
       }
 
-      if (expectedType === "opening" || expectedType === "relationship") {
-        validateLineStringGeometry(feature.geometry, context, errors);
+      if (["opening", "relationship"].includes(expectedType)) {
+        validateLineStringGeometry(featureRaw.geometry, context, errors);
       }
 
       if (expectedType === "level") {
@@ -355,7 +241,7 @@ export const validateImdfDatasetFiles = (
               continue;
             }
             references.push({
-              source: `${feature.id}`,
+              source: `${featureRaw.id}`,
               target: buildingId,
               field: "building_ids",
             });
@@ -373,7 +259,7 @@ export const validateImdfDatasetFiles = (
               continue;
             }
             references.push({
-              source: `${feature.id}`,
+              source: `${featureRaw.id}`,
               target: buildingId,
               field: "building_ids",
             });
@@ -386,7 +272,7 @@ export const validateImdfDatasetFiles = (
           errors.push(`${context} properties.level_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.level_id,
             field: "level_id",
           });
@@ -401,7 +287,7 @@ export const validateImdfDatasetFiles = (
           errors.push(`${context} properties.level_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.level_id,
             field: "level_id",
           });
@@ -413,7 +299,7 @@ export const validateImdfDatasetFiles = (
           errors.push(`${context} properties.origin_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.origin_id,
             field: "origin_id",
           });
@@ -423,7 +309,7 @@ export const validateImdfDatasetFiles = (
           errors.push(`${context} properties.intermediary_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.intermediary_id,
             field: "intermediary_id",
           });
@@ -433,7 +319,7 @@ export const validateImdfDatasetFiles = (
           errors.push(`${context} properties.destination_id must be a UUID.`);
         } else {
           references.push({
-            source: `${feature.id}`,
+            source: `${featureRaw.id}`,
             target: properties.destination_id,
             field: "destination_id",
           });
@@ -452,3 +338,50 @@ export const validateImdfDatasetFiles = (
 
   return { errors, warnings };
 };
+
+const loadDatasetFiles = async (directory) => {
+  const resolvedDirectory = path.resolve(directory);
+  const entries = await readdir(resolvedDirectory);
+  const files = entries.filter((entry) => entry.endsWith(".json") || entry.endsWith(".geojson"));
+
+  const parsedEntries = await Promise.all(
+    files.map(async (entry) => {
+      const raw = await readFile(path.join(resolvedDirectory, entry), "utf8");
+      return [entry, JSON.parse(raw)];
+    }),
+  );
+
+  return Object.fromEntries(parsedEntries);
+};
+
+const printIssues = (heading, issues) => {
+  if (issues.length === 0) {
+    return;
+  }
+
+  console.error(heading);
+  for (const issue of issues) {
+    console.error(`- ${issue}`);
+  }
+};
+
+const targetDirectory = process.argv[2] ?? "testdata/imdf-sample";
+
+try {
+  const datasetFiles = await loadDatasetFiles(targetDirectory);
+  const result = validateImdfDatasetFiles(datasetFiles);
+
+  printIssues("IMDF validation errors:", result.errors);
+  printIssues("IMDF validation warnings:", result.warnings);
+
+  if (result.errors.length > 0) {
+    process.exitCode = 1;
+  } else {
+    console.log(`IMDF dataset is valid: ${path.resolve(targetDirectory)}`);
+  }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`Failed to validate IMDF dataset at ${path.resolve(targetDirectory)}.`);
+  console.error(message);
+  process.exitCode = 1;
+}
