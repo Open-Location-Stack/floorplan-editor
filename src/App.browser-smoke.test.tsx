@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const MockMapCanvas = ({
   onViewStateChange,
@@ -138,6 +138,10 @@ const mockMatchMedia = () => ({
 });
 
 describe("App browser smoke", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     Object.defineProperty(window, "matchMedia", {
       writable: true,
@@ -148,6 +152,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockReset();
     mockRepository.saveProject.mockClear();
     vi.stubEnv("VITE_MAPTILER_API_KEY", "fake-key");
+    vi.stubEnv("VITE_OPENCAGE_API_KEY", "fake-open-cage-key");
   });
 
   it("renders successfully with valid configuration", async () => {
@@ -163,6 +168,53 @@ describe("App browser smoke", () => {
     expect(
       screen.queryByText(/something went wrong\. please reload the editor\./i),
     ).not.toBeInTheDocument();
+  });
+
+  it("searches addresses and recenters the map when selecting a result", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                formatted: "Times Square, Manhattan, New York, NY, USA",
+                geometry: {
+                  lat: 40.758,
+                  lng: -73.9855,
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      ),
+    );
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: /search map address/i });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "times square" } });
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /times square/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("option", { name: /times square/i }));
+
+    expect(screen.getByText(/Center: -73\.985500, 40\.758000/i)).toBeInTheDocument();
   });
 
   it("renders when matchMedia is unavailable", async () => {

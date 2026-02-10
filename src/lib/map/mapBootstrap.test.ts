@@ -135,6 +135,7 @@ class MockMap {
   getStyle = vi.fn(() => ({ layers: this.styleLayers }));
   getCenter = vi.fn(() => ({ lng: 5.1214, lat: 52.0907 }));
   getZoom = vi.fn(() => 17);
+  easeTo = vi.fn();
   getCanvas = vi.fn(() => this.canvas);
   resize = vi.fn();
   remove = vi.fn();
@@ -1529,6 +1530,30 @@ describe("createMapController", () => {
     expect(switchedToSimpleSelect).toBe(false);
 
     controller.destroy();
+  });
+
+  it("recenters map when setView is called", async () => {
+    const controller = await createMapController(document.createElement("div"), "fake-key", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setView([4.892222, 52.373056], 16);
+
+    expect(map.easeTo).toHaveBeenCalledWith({
+      center: [4.892222, 52.373056],
+      duration: 500,
+      zoom: 16,
+    });
   });
 
   it("updates cursor when hovering controllable draw elements", async () => {

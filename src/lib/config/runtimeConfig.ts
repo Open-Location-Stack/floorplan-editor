@@ -1,5 +1,6 @@
 export type RuntimeConfig = {
   maptilerApiKey: string;
+  opencageApiKey: string;
 };
 
 export type RuntimeConfigResult =
@@ -7,9 +8,10 @@ export type RuntimeConfigResult =
   | { ok: false; error: string };
 
 export const getRuntimeConfig = (): RuntimeConfigResult => {
-  const apiKey = import.meta.env.VITE_MAPTILER_API_KEY;
+  const maptilerApiKey = import.meta.env.VITE_MAPTILER_API_KEY;
+  const opencageApiKey = import.meta.env.VITE_OPENCAGE_API_KEY;
 
-  if (!apiKey || apiKey.trim().length === 0) {
+  if (!maptilerApiKey || maptilerApiKey.trim().length === 0) {
     return {
       ok: false,
       error:
@@ -17,10 +19,19 @@ export const getRuntimeConfig = (): RuntimeConfigResult => {
     };
   }
 
+  if (!opencageApiKey || opencageApiKey.trim().length === 0) {
+    return {
+      ok: false,
+      error:
+        "Missing VITE_OPENCAGE_API_KEY. Add it to your environment (see .env.example) to enable address search.",
+    };
+  }
+
   return {
     ok: true,
     config: {
-      maptilerApiKey: apiKey,
+      maptilerApiKey,
+      opencageApiKey,
     },
   };
 };

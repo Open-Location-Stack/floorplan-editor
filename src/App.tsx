@@ -15,6 +15,7 @@ import {
   updateFeature,
 } from "./lib/editor/editorModel";
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
+import { type OpenCageSearchResult, searchOpenCage } from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
@@ -61,6 +62,13 @@ const defaultFloor = (buildingId: string): Floor => ({
 });
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+type LocationSearchStatus = "idle" | "loading" | "error";
+
+type MapRelocationRequest = {
+  center: Coordinates;
+  zoom?: number;
+  requestVersion: number;
+};
 
 const cornersAroundView = (center: Coordinates, zoom: number): OverlayCorners => {
   const span = Math.max(0.00005, 0.02 / 2 ** Math.max(0, zoom - 14));
@@ -142,8 +150,15 @@ function App() {
     zoom: 17,
   });
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationSearchResults, setLocationSearchResults] = useState<OpenCageSearchResult[]>([]);
+  const [locationSearchStatus, setLocationSearchStatus] = useState<LocationSearchStatus>("idle");
+  const [locationSearchNoResults, setLocationSearchNoResults] = useState(false);
+  const [locationSearchFocused, setLocationSearchFocused] = useState(false);
+  const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>();
 
   const runtimeConfig = getRuntimeConfig();
+  const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
 
   const resolvedSelection = useMemo(
     () =>
@@ -427,6 +442,73 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const trimmedQuery = locationQuery.trim();
+    if (!locationSearchFocused || !openCageApiKey || trimmedQuery.length < 3) {
+      setLocationSearchStatus("idle");
+      setLocationSearchResults([]);
+      setLocationSearchNoResults(false);
+      return;
+    }
+
+    setLocationSearchStatus("idle");
+    setLocationSearchResults([]);
+    setLocationSearchNoResults(false);
+
+    const abortController = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLocationSearchStatus("loading");
+
+      void searchOpenCage(trimmedQuery, openCageApiKey, {
+        limit: 6,
+        signal: abortController.signal,
+      })
+        .then((results) => {
+          if (abortController.signal.aborted) {
+            return;
+          }
+
+          setLocationSearchResults(results);
+          setLocationSearchNoResults(results.length === 0);
+          setLocationSearchStatus("idle");
+        })
+        .catch((error: unknown) => {
+          if (abortController.signal.aborted) {
+            return;
+          }
+
+          clientLogger.error("geocoding.opencage_search_failed", {
+            error,
+            query: trimmedQuery,
+          });
+          setLocationSearchStatus("error");
+          setLocationSearchResults([]);
+          setLocationSearchNoResults(false);
+        });
+    }, 250);
+
+    return () => {
+      abortController.abort();
+      window.clearTimeout(timer);
+    };
+  }, [locationQuery, locationSearchFocused, openCageApiKey]);
+
+  const onLocationSearchSelect = useCallback((result: OpenCageSearchResult) => {
+    setLocationQuery(result.formatted);
+    setLocationSearchResults([]);
+    setLocationSearchStatus("idle");
+    setLocationSearchNoResults(false);
+    setLocationSearchFocused(false);
+    setMapView((current) => ({
+      ...current,
+      center: result.coordinates,
+    }));
+    setRelocationRequest((current) => ({
+      center: result.coordinates,
+      requestVersion: (current?.requestVersion ?? 0) + 1,
+    }));
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName ?? "";
@@ -661,6 +743,13 @@ function App() {
   );
 
   const canEditPathNode = drawMode === "select" && hasSelectedVertex;
+  const trimmedLocationQuery = locationQuery.trim();
+  const showLocationSearchPopup =
+    locationSearchFocused &&
+    trimmedLocationQuery.length >= 3 &&
+    (locationSearchStatus !== "idle" ||
+      locationSearchNoResults ||
+      locationSearchResults.length > 0);
 
   if (!runtimeConfig.ok) {
     return (
@@ -708,6 +797,66 @@ function App() {
                 <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
                   Add building
                 </button>
+              </div>
+              <div className="relative mb-3">
+                <label className="input input-bordered input-sm flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="size-4 opacity-70" aria-hidden="true">
+                    <path
+                      d="m21 21-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <input
+                    type="text"
+                    className="grow"
+                    value={locationQuery}
+                    placeholder="Search any address worldwide"
+                    aria-label="Search map address"
+                    autoComplete="off"
+                    onFocus={() => setLocationSearchFocused(true)}
+                    onBlur={() => setLocationSearchFocused(false)}
+                    onChange={(event) => setLocationQuery(event.currentTarget.value)}
+                  />
+                </label>
+                {showLocationSearchPopup ? (
+                  <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-xl">
+                    {locationSearchStatus === "loading" ? (
+                      <div className="px-3 py-2 text-sm text-base-content/70">Searching…</div>
+                    ) : null}
+                    {locationSearchStatus === "error" ? (
+                      <div className="px-3 py-2 text-sm text-error">
+                        Address search failed. Please try again.
+                      </div>
+                    ) : null}
+                    {locationSearchStatus === "idle" && locationSearchResults.length > 0 ? (
+                      <div role="listbox" aria-label="Address results">
+                        <ul className="menu menu-sm w-full p-1">
+                          {locationSearchResults.map((result) => (
+                            <li key={result.id}>
+                              <button
+                                type="button"
+                                role="option"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => onLocationSearchSelect(result)}
+                              >
+                                {result.formatted}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {locationSearchStatus === "idle" && locationSearchNoResults ? (
+                      <div className="px-3 py-2 text-sm text-base-content/70">
+                        No matching addresses found.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <BuildingsTree
                 buildings={buildings}
@@ -912,6 +1061,7 @@ function App() {
                     deleteVertexRequestVersion={deleteVertexRequestVersion}
                     splitPathRequestVersion={splitPathRequestVersion}
                     forkPathRequestVersion={forkPathRequestVersion}
+                    relocationRequest={relocationRequest}
                     onFeaturesChange={onDrawFeaturesChange}
                     onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}

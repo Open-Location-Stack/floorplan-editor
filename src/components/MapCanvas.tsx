@@ -6,6 +6,12 @@ import type { Coordinates, FloorFeature, FloorOverlay, OverlayCorners } from "..
 
 export type { DrawMode } from "../lib/map/mapBootstrap";
 
+type MapRelocationRequest = {
+  center: Coordinates;
+  zoom?: number;
+  requestVersion: number;
+};
+
 type MapCanvasProps = {
   maptilerApiKey: string;
   features: FloorFeature[];
@@ -16,6 +22,7 @@ type MapCanvasProps = {
   deleteVertexRequestVersion: number;
   splitPathRequestVersion: number;
   forkPathRequestVersion: number;
+  relocationRequest: MapRelocationRequest | undefined;
   onFeaturesChange: (features: FloorFeature[]) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onViewStateChange: (center: Coordinates, zoom: number) => void;
@@ -34,6 +41,7 @@ export const MapCanvas = ({
   deleteVertexRequestVersion,
   splitPathRequestVersion,
   forkPathRequestVersion,
+  relocationRequest,
   onFeaturesChange,
   onFeatureSelectionChange,
   onViewStateChange,
@@ -55,6 +63,7 @@ export const MapCanvas = ({
   const selectedFeatureRef = useRef(selectedFeature);
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
+  const relocationRequestRef = useRef(relocationRequest);
 
   useEffect(() => {
     featuresHandlerRef.current = onFeaturesChange;
@@ -97,6 +106,10 @@ export const MapCanvas = ({
   }, [drawMode]);
 
   useEffect(() => {
+    relocationRequestRef.current = relocationRequest;
+  }, [relocationRequest]);
+
+  useEffect(() => {
     const element = rootRef.current;
     if (!element) {
       return;
@@ -137,6 +150,10 @@ export const MapCanvas = ({
       controller.setSelection(selectedFeatureRef.current);
       controller.setOverlay(overlayRef.current);
       controller.setInteractionMode(drawModeRef.current);
+
+      if (relocationRequestRef.current) {
+        controller.setView(relocationRequestRef.current.center, relocationRequestRef.current.zoom);
+      }
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -202,6 +219,14 @@ export const MapCanvas = ({
 
     controllerRef.current?.forkPathAtNode();
   }, [forkPathRequestVersion]);
+
+  useEffect(() => {
+    if (!relocationRequest) {
+      return;
+    }
+
+    controllerRef.current?.setView(relocationRequest.center, relocationRequest.zoom);
+  }, [relocationRequest]);
 
   return (
     <div

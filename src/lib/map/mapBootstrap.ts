@@ -20,6 +20,7 @@ type MapController = {
   setSelection: (feature: FloorFeature | undefined) => void;
   setOverlay: (overlay: FloorOverlay | undefined) => void;
   setInteractionMode: (mode: DrawMode) => void;
+  setView: (center: Coordinates, zoom?: number) => void;
   deleteSelection: () => void;
   deleteVertex: () => void;
   splitPathSegment: () => void;
@@ -1513,6 +1514,21 @@ export const createMapController = async (
     setInteractionMode: (mode) => {
       currentInteractionMode = mode;
       applyPendingState();
+    },
+    setView: (center, zoom) => {
+      if (typeof zoom === "number") {
+        map.easeTo({
+          center,
+          zoom,
+          duration: 500,
+        });
+        return;
+      }
+
+      map.easeTo({
+        center,
+        duration: 500,
+      });
     },
     deleteSelection: () => {
       if (!isStyleReady) {
