@@ -59,6 +59,7 @@ const getInitialTheme = (): ThemeId => {
 const INITIAL_MAP_CENTER: Coordinates = [5.1214, 52.0907];
 const INITIAL_MAP_ZOOM = 17;
 const DEFAULT_MAP_STYLE_ID = "basic-v2";
+const DEFAULT_SNAP_DISTANCE_METERS = 0.2;
 const MAP_STYLE_OPTIONS = [
   { id: "basic-v2", label: "Basic (no buildings)" },
   { id: "streets-v2", label: "Streets (with buildings)" },
@@ -232,6 +233,7 @@ function App() {
   const [floors, setFloors] = useState<Floor[]>([]);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
   const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
   const [splitPathRequestVersion, setSplitPathRequestVersion] = useState(0);
@@ -1190,6 +1192,25 @@ function App() {
                         </svg>
                       </button>
                       <button
+                        className={`btn btn-sm join-item ${snapEnabled ? "btn-secondary" : ""}`}
+                        type="button"
+                        aria-label="Toggle snap to geometry"
+                        title={`Snap to geometry (${Math.round(DEFAULT_SNAP_DISTANCE_METERS * 100)} cm base)`}
+                        aria-pressed={snapEnabled}
+                        onClick={() => setSnapEnabled((current) => !current)}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+                          <path
+                            d="M4 4h6v6H4V4Zm10 10h6v6h-6v-6ZM10 8l4 4M12 4v2m8 8h-2M4 12h2m8 8v-2"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
                         className="btn btn-sm join-item"
                         type="button"
                         aria-label="Undo"
@@ -1310,6 +1331,7 @@ function App() {
                     selectedFeature={selectedFeatureForMap}
                     overlay={selectedOverlay}
                     drawMode={drawMode}
+                    snapEnabled={snapEnabled}
                     deleteRequestVersion={deleteRequestVersion}
                     deleteVertexRequestVersion={deleteVertexRequestVersion}
                     splitPathRequestVersion={splitPathRequestVersion}

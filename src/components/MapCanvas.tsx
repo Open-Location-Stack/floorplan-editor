@@ -23,6 +23,7 @@ type MapCanvasProps = {
   selectedFeature: FloorFeature | undefined;
   overlay: FloorOverlay | undefined;
   drawMode: DrawMode;
+  snapEnabled: boolean;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
   splitPathRequestVersion: number;
@@ -44,6 +45,7 @@ export const MapCanvas = ({
   selectedFeature,
   overlay,
   drawMode,
+  snapEnabled,
   deleteRequestVersion,
   deleteVertexRequestVersion,
   splitPathRequestVersion,
@@ -70,6 +72,7 @@ export const MapCanvas = ({
   const selectedFeatureRef = useRef(selectedFeature);
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
+  const snapEnabledRef = useRef(snapEnabled);
   const relocationRequestRef = useRef(relocationRequest);
 
   useEffect(() => {
@@ -111,6 +114,10 @@ export const MapCanvas = ({
   useEffect(() => {
     drawModeRef.current = drawMode;
   }, [drawMode]);
+
+  useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
 
   useEffect(() => {
     relocationRequestRef.current = relocationRequest;
@@ -163,6 +170,7 @@ export const MapCanvas = ({
       controller.setSelection(selectedFeatureRef.current);
       controller.setOverlay(overlayRef.current);
       controller.setInteractionMode(drawModeRef.current);
+      controller.setSnapEnabled(snapEnabledRef.current);
 
       if (relocationRequestRef.current) {
         controller.setView(relocationRequestRef.current.center, relocationRequestRef.current.zoom);
@@ -200,6 +208,10 @@ export const MapCanvas = ({
   useEffect(() => {
     controllerRef.current?.setInteractionMode(drawMode);
   }, [drawMode]);
+
+  useEffect(() => {
+    controllerRef.current?.setSnapEnabled(snapEnabled);
+  }, [snapEnabled]);
 
   useEffect(() => {
     if (!deleteRequestVersion) {

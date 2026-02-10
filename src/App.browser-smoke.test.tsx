@@ -11,6 +11,7 @@ const MockMapCanvas = ({
   onInteractionModeChange,
   onFeaturesChange,
   drawMode,
+  snapEnabled: _snapEnabled,
   deleteRequestVersion,
 }: {
   mapStyleId: string;
@@ -38,6 +39,7 @@ const MockMapCanvas = ({
     }>,
   ) => void;
   drawMode: "select" | "point" | "line" | "polygon";
+  snapEnabled: boolean;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
   splitPathRequestVersion: number;
@@ -477,6 +479,19 @@ describe("App browser smoke", () => {
       expect(screen.getByText(/selected:/i)).toBeInTheDocument();
       expect(screen.getAllByText(/test unit/i).length).toBeGreaterThan(0);
     });
+  });
+
+  it("toggles snap mode from the toolbar", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const snapToggle = await screen.findByRole("button", { name: /toggle snap to geometry/i });
+    expect(snapToggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(snapToggle);
+    expect(snapToggle).toHaveAttribute("aria-pressed", "false");
   });
 
   it("applies draw-driven deletes from keyboard", async () => {
