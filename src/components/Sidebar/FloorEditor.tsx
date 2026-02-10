@@ -8,7 +8,6 @@ type FloorEditorProps = {
   building: Building;
   floor: Floor;
   floorFeatures: FloorFeature[];
-  siblingFloorCount: number;
   overlay: FloorOverlay | undefined;
   validationWarnings: string[];
   onRenameFloor: (name: string) => void;
@@ -33,7 +32,6 @@ export const FloorEditor = ({
   building,
   floor,
   floorFeatures,
-  siblingFloorCount,
   overlay,
   validationWarnings,
   onRenameFloor,
@@ -82,12 +80,7 @@ export const FloorEditor = ({
           Sketch by clicking vertices on the map and double-clicking to finish.
         </p>
 
-        <button
-          className="btn btn-sm btn-error"
-          type="button"
-          onClick={onDeleteFloor}
-          disabled={siblingFloorCount <= 1}
-        >
+        <button className="btn btn-sm btn-error" type="button" onClick={onDeleteFloor}>
           Delete floor
         </button>
 

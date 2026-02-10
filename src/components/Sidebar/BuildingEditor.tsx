@@ -2,7 +2,6 @@ import type { Building } from "../../lib/types";
 
 type BuildingEditorProps = {
   building: Building;
-  canDeleteBuilding: boolean;
   onRenameBuilding: (name: string) => void;
   onDeleteBuilding: () => void;
   onAddFloor: () => void;
@@ -10,7 +9,6 @@ type BuildingEditorProps = {
 
 export const BuildingEditor = ({
   building,
-  canDeleteBuilding,
   onRenameBuilding,
   onDeleteBuilding,
   onAddFloor,
@@ -31,12 +29,7 @@ export const BuildingEditor = ({
         <button className="btn btn-sm" type="button" onClick={onAddFloor}>
           Add floor
         </button>
-        <button
-          className="btn btn-sm btn-error"
-          type="button"
-          onClick={onDeleteBuilding}
-          disabled={!canDeleteBuilding}
-        >
+        <button className="btn btn-sm btn-error" type="button" onClick={onDeleteBuilding}>
           Delete building
         </button>
       </div>

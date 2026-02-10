@@ -8,11 +8,9 @@ import { FloorEditor } from "./FloorEditor";
 
 type SelectionSidebarProps = {
   selection: Selection | undefined;
-  allBuildings: Building[];
   building: Building | undefined;
   floor: Floor | undefined;
   feature: FloorFeature | undefined;
-  allFloors: Floor[];
   allFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
@@ -35,11 +33,9 @@ type SelectionSidebarProps = {
 
 export const SelectionSidebar = ({
   selection,
-  allBuildings,
   building,
   floor,
   feature,
-  allFloors,
   allFeatures,
   overlay,
   onRenameBuilding,
@@ -74,7 +70,6 @@ export const SelectionSidebar = ({
     return (
       <BuildingEditor
         building={building}
-        canDeleteBuilding={allBuildings.length > 1}
         onRenameBuilding={(name) => onRenameBuilding(building.id, name)}
         onDeleteBuilding={() => onDeleteBuilding(building.id)}
         onAddFloor={() => onAddFloor(building.id)}
@@ -84,9 +79,6 @@ export const SelectionSidebar = ({
 
   if (selection.kind === "floor" && floor) {
     const floorFeatures = allFeatures.filter((current) => current.properties.floorId === floor.id);
-    const siblingFloorCount = allFloors.filter(
-      (current) => current.buildingId === floor.buildingId,
-    ).length;
     const validation = validateFloor(floor.id, allFeatures);
 
     return (
@@ -94,7 +86,6 @@ export const SelectionSidebar = ({
         building={building}
         floor={floor}
         floorFeatures={floorFeatures}
-        siblingFloorCount={siblingFloorCount}
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
         onRenameFloor={(name) => onRenameFloor(floor.id, name)}

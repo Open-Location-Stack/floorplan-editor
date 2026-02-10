@@ -570,18 +570,11 @@ function App() {
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {
-      if (buildings.length <= 1) {
-        return;
-      }
-
       const floorsToDelete = floors
         .filter((floor) => floor.buildingId === buildingId)
         .map((floor) => floor.id);
       const nextBuildings = buildings.filter((building) => building.id !== buildingId);
       const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
-      if (nextBuildings.length === 0 || nextFloors.length === 0) {
-        return;
-      }
 
       setBuildings(nextBuildings);
       setFloors(nextFloors);
@@ -631,11 +624,6 @@ function App() {
         return;
       }
 
-      const siblingFloors = floors.filter((current) => current.buildingId === floor.buildingId);
-      if (siblingFloors.length <= 1) {
-        return;
-      }
-
       const nextFloors = floors.filter((current) => current.id !== floorId);
       setFloors(nextFloors);
       setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
@@ -650,6 +638,8 @@ function App() {
         nextFloors.find((current) => current.buildingId === floor.buildingId) ?? nextFloors[0];
       if (nextFloor) {
         setSelection({ kind: "floor", id: nextFloor.id });
+      } else {
+        setSelection({ kind: "building", id: floor.buildingId });
       }
     },
     [floors],
@@ -958,11 +948,9 @@ function App() {
             <aside className="xl:min-h-0 xl:overflow-y-auto xl:pl-1">
               <SelectionSidebar
                 selection={selection}
-                allBuildings={buildings}
                 building={resolvedSelection?.building}
                 floor={activeFloor}
                 feature={selectedFeature}
-                allFloors={floors}
                 allFeatures={editorState.features}
                 overlay={selectedOverlay}
                 onRenameBuilding={(buildingId, name) => {

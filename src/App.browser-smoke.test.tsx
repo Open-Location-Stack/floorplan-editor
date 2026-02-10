@@ -428,4 +428,155 @@ describe("App browser smoke", () => {
       expect(latestSnapshot.features[0]?.properties.name).toBe("Zone");
     });
   });
+
+  it("allows deleting the last floor and cascades floor data", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 3,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "ground.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.12, 52.1],
+            topRight: [5.13, 52.1],
+            bottomRight: [5.13, 52.09],
+            bottomLeft: [5.12, 52.09],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /delete floor/i })).toBeInTheDocument();
+    });
+
+    const deleteFloorButton = screen.getByRole("button", { name: /delete floor/i });
+    expect(deleteFloorButton).not.toBeDisabled();
+    fireEvent.click(deleteFloorButton);
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        buildings: Array<{ id: string }>;
+        floors: Array<{ id: string }>;
+        features: Array<{ id: string }>;
+        overlays: Array<{ id: string }>;
+      };
+
+      expect(latestSnapshot.buildings.map((building) => building.id)).toEqual(["building-1"]);
+      expect(latestSnapshot.floors).toHaveLength(0);
+      expect(latestSnapshot.features).toHaveLength(0);
+      expect(latestSnapshot.overlays).toHaveLength(0);
+    });
+  });
+
+  it("allows deleting the last building and cascades floors and floor data", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 3,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "ground.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.12, 52.1],
+            topRight: [5.13, 52.1],
+            bottomRight: [5.13, 52.09],
+            bottomLeft: [5.12, 52.09],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "HQ Building" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "HQ Building" }));
+    const deleteBuildingButton = screen.getByRole("button", { name: /delete building/i });
+    expect(deleteBuildingButton).not.toBeDisabled();
+    fireEvent.click(deleteBuildingButton);
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        buildings: Array<{ id: string }>;
+        floors: Array<{ id: string }>;
+        features: Array<{ id: string }>;
+        overlays: Array<{ id: string }>;
+      };
+
+      expect(latestSnapshot.buildings).toHaveLength(0);
+      expect(latestSnapshot.floors).toHaveLength(0);
+      expect(latestSnapshot.features).toHaveLength(0);
+      expect(latestSnapshot.overlays).toHaveLength(0);
+    });
+  });
 });
