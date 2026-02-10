@@ -1,57 +1,61 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import App from "./App";
 
-const mockMatchMedia = () => ({
-  matches: false,
-  media: "(prefers-color-scheme: dark)",
-  onchange: null,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  addListener: vi.fn(),
-  removeListener: vi.fn(),
-  dispatchEvent: vi.fn(),
-});
-
-const originalMatchMedia = "matchMedia" in window ? window.matchMedia : undefined;
-
 describe("App", () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-    document.documentElement.removeAttribute("data-theme");
-    Object.defineProperty(window, "matchMedia", {
-      writable: true,
-      configurable: true,
-      value: vi.fn().mockImplementation(mockMatchMedia as unknown as typeof window.matchMedia),
-    });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    if (originalMatchMedia) {
-      window.matchMedia = originalMatchMedia;
-    } else {
-      Reflect.deleteProperty(window, "matchMedia");
-    }
-  });
-
-  it("renders hello world content", () => {
+  it("keeps delete controls enabled even when entities have children", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { level: 2, name: /hello, world/i })).toBeInTheDocument();
-    expect(screen.getByText(/tailwind css 4 with daisyui/i)).toBeInTheDocument();
+    const deleteBuildingButton = screen.getByRole("button", { name: /delete building hq/i });
+    const deleteFloorButton = screen.getByRole("button", { name: /delete floor ground floor/i });
+
+    expect(deleteBuildingButton).toBeEnabled();
+    expect(deleteBuildingButton).not.toHaveAttribute("disabled");
+    expect(deleteFloorButton).toBeEnabled();
+    expect(deleteFloorButton).not.toHaveAttribute("disabled");
   });
 
-  it("toggles the theme preference", async () => {
+  it("deletes a floor and removes child content", () => {
     render(<App />);
 
-    const toggle = screen.getByRole("checkbox", { name: /toggle theme/i });
+    expect(screen.getByText("Ground Floor")).toBeInTheDocument();
+    expect(screen.getByText("Reception Desk")).toBeInTheDocument();
 
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: /delete floor ground floor/i }));
 
-    await waitFor(() =>
-      expect(document.documentElement.getAttribute("data-theme")).toBe("qr-dark"),
-    );
-    expect(window.localStorage.getItem("vite-ts-template-theme")).toBe("qr-dark");
+    expect(screen.queryByText("Ground Floor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reception Desk")).not.toBeInTheDocument();
+  });
+
+  it("deletes a building and removes all nested floors and child content", () => {
+    render(<App />);
+
+    const deleteBuildingButton = screen.getByRole("button", { name: /delete building hq/i });
+    fireEvent.click(deleteBuildingButton);
+
+    expect(screen.queryByText("HQ")).not.toBeInTheDocument();
+    expect(screen.queryByText("First Floor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Conference Room A")).not.toBeInTheDocument();
+    expect(screen.getByText("No buildings yet")).toBeInTheDocument();
+  });
+
+  it("allows deleting a building that still has child floors", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /delete building hq/i }));
+
+    expect(screen.queryByRole("button", { name: /delete building hq/i })).not.toBeInTheDocument();
+    expect(screen.getByText("No buildings yet")).toBeInTheDocument();
+  });
+
+  it("allows deleting a floor that still has child items", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /delete floor ground floor/i }));
+
+    expect(
+      screen.queryByRole("button", { name: /delete floor ground floor/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Reception Desk")).not.toBeInTheDocument();
   });
 });
