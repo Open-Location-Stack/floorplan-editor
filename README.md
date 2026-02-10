@@ -1,74 +1,48 @@
-# Vite + React + DaisyUI Template
+# FORMATION Floorplan Editor
 
-Minimal Vite + React 19 starter wired with Tailwind CSS 4, DaisyUI themes, and Vitest. Use it as a foundation for your next TypeScript front-end without hauling in application-specific code.
+Browser-based editor for creating and maintaining building/floor plans on top of a live map.  
+The app is local-first (IndexedDB), supports import/export workflows, and is built with React + Vite + TypeScript.
 
 ## Features
-- Vite dev server with React SWC and fast HMR.
-- Tailwind CSS v4 directives with DaisyUI light/dark themes.
-- Ready-to-use theme toggle with local storage persistence.
-- Vitest + Testing Library configured for browser-like component tests.
-- Type-driven linting via the TypeScript compiler.
+- Interactive map canvas powered by MapLibre + MapTiler.
+- Building/floor hierarchy with selection-aware editing panels.
+- Draw/edit/delete support for point, line, and polygon floor features.
+- Floorplan image overlays with corner-based alignment.
+- Auto-save to IndexedDB with project snapshot sanitization and migration-safe loading.
+- GeoJSON and IMDF-oriented import/export + validation utilities.
+- Address search/recenter flow via OpenCage geocoding.
 
-## Getting Started
+## Run Locally
+1. Ensure Node.js `>=22` is installed.
+2. Install dependencies:
 
 ```bash
-git clone <repo-url>
-cd vite-ts-template
-nvm use
 npm install
+```
+
+3. Create a local env file and add required API keys:
+
+```bash
+cp .env.example .env
+```
+
+Required variables:
+- `VITE_MAPTILER_API_KEY` (map rendering)
+- `VITE_OPENCAGE_API_KEY` (location search)
+
+4. Start the dev server:
+
+```bash
 npm run dev
 ```
 
-Visit the dev server at `http://localhost:5173`.
+Open `http://localhost:5173`.
 
-## Available Scripts
-- `npm run dev` – start the Vite dev server with hot module replacement.
-- `npm run build` – type-check then emit a production bundle to `dist/`.
-- `npm run preview` – serve the production build for smoke testing.
-- `npm run test` – execute Vitest unit tests in a jsdom environment.
-- `npm run test:browser` – run browser-smoke tests for app startup and runtime wiring.
-- `npm run test:e2e` – run Playwright end-to-end coverage.
-- `npm run lint` – run Biome for linting and formatting checks.
-- `npm run lint:fix` – apply Biome fixes.
-- `npm run format` – format the codebase with Biome.
-- `npm run typecheck` – run TypeScript in `--noEmit` mode for static analysis.
-- `npm run validate-imdf -- <dataset-dir>` – validate an IMDF dataset directory (`manifest.json` + per-type `*.geojson` files).
-- `npm run validate:all` – run completion gate checks (`typecheck`, `lint`, `test`, `test:browser`, `test:e2e`, `build`).
-- `npm run setup:hooks` – configure local git hooks path (`.githooks`) for pre-push validation.
-
-## Guardrails
-- Run `npm run setup:hooks` once after clone to enforce local pre-push checks.
-- CI publishes independent required checks (`typecheck`, `lint`, `unit-tests`, `browser-smoke`, `e2e`, `build`).
-- Configure default branch protection using `/Users/jillesvangurp/git/formation/floorplan-editor/.github/branch-protection.md`.
-
-## Project Structure
-- `src/main.tsx` – entry point that mounts the React app.
-- `src/App.tsx` – starter UI with hello world copy and theme toggle.
-- `src/App.test.tsx` – sample Vitest suite exercising the template.
-- `src/test/setup.ts` – shared Testing Library and Vitest setup.
-- `src/index.css` – Tailwind directives (`@import "tailwindcss";`, `@plugin "daisyui"`) and global resets.
-- `vite.config.ts` – registers React SWC, `@tailwindcss/vite`, and Vitest globals.
-
-## Template TODO Checklist
-Run through these before kicking off a new project:
-- [ ] Update the project name, description, and author fields in `package.json`.
-- [ ] Choose a license and add `LICENSE` if required by your organization.
-- [ ] Reset or remove `README.md` sections that no longer fit your app.
-- [ ] Update `.nvmrc` and `engines.node` if you need a different Node baseline.
-- [ ] Decide whether to keep Biome defaults or customize `biome.json`.
-- [ ] Adjust DaisyUI theme names, colors, or add additional themes in `src/index.css`.
-- [ ] Replace the placeholder UI in `src/App.tsx` with your first feature.
-- [ ] Add environment variables and document them in `.env.example` if needed.
-- [ ] Configure CI (e.g., GitHub Actions) to run `npm run lint && npm run test`.
-- [ ] Remove or tailor this checklist once setup is complete.
-
-## Deployment
-Run `npm run build`, then deploy the contents of `dist/` to your preferred static hosting provider (e.g., Vercel, Netlify, S3 + CloudFront).
-
-## IMDF Validation
-- Exported IMDF datasets are packaged as `manifest.json` plus per-type `*.geojson` files.
-- Run the validator locally:
-
-```bash
-npm run validate-imdf -- testdata/imdf-sample
-```
+## Useful Commands
+- `npm run test` for unit tests.
+- `npm run test:browser` for browser smoke tests.
+- `npm run test:e2e` for Playwright end-to-end tests.
+- `npm run typecheck` for TypeScript checks.
+- `npm run lint` for Biome lint/format checks.
+- `npm run build` for production build output in `dist/`.
+- `npm run validate-imdf -- <dataset-dir>` to validate IMDF datasets.
