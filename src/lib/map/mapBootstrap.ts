@@ -62,7 +62,20 @@ const DEFAULT_SNAP_BASE_DISTANCE_METERS = 0.2;
 const SNAP_REFERENCE_ZOOM = 17;
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
-const featureTypeExpression: unknown[] = ["coalesce", ["get", "imdfType"], ["get", "kind"], ""];
+const featureTypeExpression: unknown[] = [
+  "coalesce",
+  ["get", "user_imdfType"],
+  ["get", "user_kind"],
+  ["get", "imdfType"],
+  ["get", "kind"],
+  "",
+];
+const featureCategoryExpression: unknown[] = [
+  "coalesce",
+  ["get", "user_category"],
+  ["get", "category"],
+  "",
+];
 
 const drawLineColor = "#dc2626";
 const geofenceFillColorExpression: unknown[] = [
@@ -89,30 +102,182 @@ const pointColorExpression: unknown[] = [
   "#111827",
 ];
 
-const pointIconTextExpression: unknown[] = [
+const pointIconImageExpression: unknown[] = [
   "case",
-  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "entrance"]],
-  "↔",
-  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "elevator"]],
-  "⇅",
-  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "stairs"]],
-  "⇵",
-  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "escalator"]],
-  "⇳",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "entrance"]],
+  "point-icon-opening-entrance",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "door"]],
+  "point-icon-opening-door",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "elevator"]],
+  "point-icon-opening-elevator",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "stairs"]],
+  "point-icon-opening-stairs",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "escalator"]],
+  "point-icon-opening-escalator",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "exit"]],
+  "point-icon-opening-exit",
   ["==", featureTypeExpression, "amenity"],
-  "•",
+  "point-icon-amenity",
   ["==", featureTypeExpression, "anchor"],
-  "◎",
+  "point-icon-anchor",
   ["==", featureTypeExpression, "detail"],
-  "◉",
+  "point-icon-detail",
   ["==", featureTypeExpression, "fixture"],
-  "◆",
+  "point-icon-fixture",
   ["==", featureTypeExpression, "kiosk"],
-  "⬢",
+  "point-icon-kiosk",
   ["==", featureTypeExpression, "occupant"],
-  "◍",
-  "",
+  "point-icon-occupant",
+  ["==", featureTypeExpression, "opening"],
+  "point-icon-opening",
+  ["==", featureTypeExpression, "relationship"],
+  "point-icon-relationship",
+  "point-icon-default",
 ];
+
+type PointIconSpec = {
+  id: string;
+  color: string;
+  glyph: string;
+};
+
+const POINT_ICON_SIZE = 32;
+const POINT_ICON_GLYPH_SCALE = 2;
+
+const POINT_ICON_SPECS: PointIconSpec[] = [
+  { id: "point-icon-amenity", color: "#0ea5e9", glyph: "A" },
+  { id: "point-icon-anchor", color: "#2563eb", glyph: "N" },
+  { id: "point-icon-detail", color: "#4f46e5", glyph: "D" },
+  { id: "point-icon-fixture", color: "#7c3aed", glyph: "F" },
+  { id: "point-icon-kiosk", color: "#d946ef", glyph: "K" },
+  { id: "point-icon-occupant", color: "#ea580c", glyph: "O" },
+  { id: "point-icon-opening", color: "#16a34a", glyph: "P" },
+  { id: "point-icon-opening-entrance", color: "#0f766e", glyph: "I" },
+  { id: "point-icon-opening-door", color: "#0ea5a4", glyph: "D" },
+  { id: "point-icon-opening-elevator", color: "#0891b2", glyph: "L" },
+  { id: "point-icon-opening-stairs", color: "#0284c7", glyph: "S" },
+  { id: "point-icon-opening-escalator", color: "#0369a1", glyph: "C" },
+  { id: "point-icon-opening-exit", color: "#047857", glyph: "X" },
+  { id: "point-icon-relationship", color: "#6b7280", glyph: "R" },
+  { id: "point-icon-default", color: "#111827", glyph: "•" },
+];
+
+const GLYPH_PATTERNS: Record<string, string[]> = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  "•": ["00000", "00000", "01110", "01110", "01110", "00000", "00000"],
+};
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const value = hex.startsWith("#") ? hex.slice(1) : hex;
+  const normalized =
+    value.length === 3
+      ? value
+          .split("")
+          .map((entry) => `${entry}${entry}`)
+          .join("")
+      : value;
+  const parsed = Number.parseInt(normalized, 16);
+  const red = (parsed >> 16) & 0xff;
+  const green = (parsed >> 8) & 0xff;
+  const blue = parsed & 0xff;
+  return [red, green, blue];
+};
+
+const writePixel = (
+  data: Uint8Array,
+  x: number,
+  y: number,
+  color: [number, number, number],
+  alpha = 255,
+) => {
+  if (x < 0 || y < 0 || x >= POINT_ICON_SIZE || y >= POINT_ICON_SIZE) {
+    return;
+  }
+
+  const offset = (y * POINT_ICON_SIZE + x) * 4;
+  data[offset] = color[0];
+  data[offset + 1] = color[1];
+  data[offset + 2] = color[2];
+  data[offset + 3] = alpha;
+};
+
+const drawFilledCircle = (data: Uint8Array, center: number, radius: number, colorHex: string) => {
+  const color = hexToRgb(colorHex);
+  const radiusSquared = radius * radius;
+  for (let y = 0; y < POINT_ICON_SIZE; y += 1) {
+    for (let x = 0; x < POINT_ICON_SIZE; x += 1) {
+      const dx = x - center;
+      const dy = y - center;
+      if (dx * dx + dy * dy <= radiusSquared) {
+        writePixel(data, x, y, color);
+      }
+    }
+  }
+};
+
+const drawGlyph = (data: Uint8Array, glyph: string) => {
+  const pattern = GLYPH_PATTERNS[glyph] ?? GLYPH_PATTERNS["•"];
+  if (!pattern) {
+    return;
+  }
+
+  const glyphHeight = pattern.length * POINT_ICON_GLYPH_SCALE;
+  const glyphWidth = (pattern[0]?.length ?? 0) * POINT_ICON_GLYPH_SCALE;
+  const startX = Math.floor((POINT_ICON_SIZE - glyphWidth) / 2);
+  const startY = Math.floor((POINT_ICON_SIZE - glyphHeight) / 2);
+  const white: [number, number, number] = [255, 255, 255];
+
+  for (let rowIndex = 0; rowIndex < pattern.length; rowIndex += 1) {
+    const row = pattern[rowIndex];
+    if (!row) {
+      continue;
+    }
+
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if (row[columnIndex] !== "1") {
+        continue;
+      }
+
+      for (let y = 0; y < POINT_ICON_GLYPH_SCALE; y += 1) {
+        for (let x = 0; x < POINT_ICON_GLYPH_SCALE; x += 1) {
+          writePixel(
+            data,
+            startX + columnIndex * POINT_ICON_GLYPH_SCALE + x,
+            startY + rowIndex * POINT_ICON_GLYPH_SCALE + y,
+            white,
+          );
+        }
+      }
+    }
+  }
+};
+
+const createPointIconImage = (
+  spec: PointIconSpec,
+): { width: number; height: number; data: Uint8Array } => {
+  const data = new Uint8Array(POINT_ICON_SIZE * POINT_ICON_SIZE * 4);
+  const center = Math.floor(POINT_ICON_SIZE / 2);
+  drawFilledCircle(data, center, 12, spec.color);
+  drawFilledCircle(data, center, 11, spec.color);
+  drawGlyph(data, spec.glyph);
+  return {
+    width: POINT_ICON_SIZE,
+    height: POINT_ICON_SIZE,
+    data,
+  };
+};
 
 const drawPolygonFillColorExpression: unknown[] = [
   "case",
@@ -266,12 +431,10 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       ["!=", "mode", "static"],
     ],
     layout: {
-      "text-field": pointIconTextExpression,
-      "text-size": 11,
-      "text-allow-overlap": true,
-    },
-    paint: {
-      "text-color": "#ffffff",
+      "icon-image": pointIconImageExpression,
+      "icon-size": 0.8,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   },
   {
@@ -279,12 +442,10 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     type: "symbol",
     filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
     layout: {
-      "text-field": pointIconTextExpression,
-      "text-size": 12,
-      "text-allow-overlap": true,
-    },
-    paint: {
-      "text-color": "#ffffff",
+      "icon-image": pointIconImageExpression,
+      "icon-size": 0.9,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   },
   {
@@ -1448,8 +1609,20 @@ export const createMapController = async (
       return;
     }
 
-    if (currentSelectedFeatureId && draw.get(currentSelectedFeatureId)) {
+    const selectedFeature = currentSelectedFeatureId
+      ? draw.get(currentSelectedFeatureId)
+      : undefined;
+    if (currentSelectedFeatureId && selectedFeature) {
+      const selectedGeometryType = selectedFeature.geometry?.type;
+      const canUseDirectSelect = selectedGeometryType !== "Point";
       if (isDrawInMode(draw, "direct_select")) {
+        if (!canUseDirectSelect) {
+          draw.changeMode("simple_select", {
+            featureIds: [currentSelectedFeatureId],
+          });
+          return;
+        }
+
         if (drawHasSelectedFeature(draw, currentSelectedFeatureId)) {
           return;
         }
@@ -1826,6 +1999,17 @@ export const createMapController = async (
     }
   };
 
+  const registerPointIcons = () => {
+    for (const icon of POINT_ICON_SPECS) {
+      if (map.hasImage(icon.id)) {
+        continue;
+      }
+      map.addImage(icon.id, createPointIconImage(icon), {
+        pixelRatio: 2,
+      });
+    }
+  };
+
   const applyPendingState = () => {
     if (!isStyleReady) {
       return;
@@ -2151,6 +2335,7 @@ export const createMapController = async (
   };
 
   map.on("load", () => {
+    registerPointIcons();
     map.addControl(draw as never, "top-left");
     isStyleReady = true;
     applyPendingState();

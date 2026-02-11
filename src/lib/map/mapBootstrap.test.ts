@@ -64,6 +64,7 @@ class MockMap {
   sources = new Map<string, unknown>();
   layers = new Set<string>();
   styleLayers: Array<{ id: string }> = [];
+  images = new Set<string>();
   canvas = { style: { cursor: "" } };
 
   dragPan = {
@@ -130,6 +131,10 @@ class MockMap {
   setPaintProperty = vi.fn();
   setLayoutProperty = vi.fn();
   moveLayer = vi.fn();
+  hasImage = vi.fn((id: string) => this.images.has(id));
+  addImage = vi.fn((id: string) => {
+    this.images.add(id);
+  });
   addControl = vi.fn((control: { onAdd: (map: MockMap) => HTMLElement }) => control.onAdd(this));
   queryRenderedFeatures = vi.fn(() => []);
   getStyle = vi.fn(() => ({ layers: this.styleLayers }));
@@ -639,6 +644,42 @@ describe("createMapController", () => {
         geometry: expect.objectContaining({ type: "Point" }),
       }),
     );
+  });
+
+  it("registers custom point icons on map load", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    map.emit("load");
+
+    expect(map.addImage).toHaveBeenCalledWith(
+      "point-icon-kiosk",
+      expect.objectContaining({
+        width: expect.any(Number),
+        height: expect.any(Number),
+        data: expect.any(Uint8Array),
+      }),
+      { pixelRatio: 2 },
+    );
+    expect(map.hasImage("point-icon-kiosk")).toBe(true);
+
+    controller.destroy();
   });
 
   it("emits draw feature mutations", async () => {
@@ -1840,6 +1881,60 @@ describe("createMapController", () => {
 
     controller.setInteractionMode("line");
     expect(draw.mode).toBe("draw_line_string");
+
+    controller.destroy();
+  });
+
+  it("does not force direct_select for point selections", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures(pointFeatureCollection());
+    map.emit("load");
+    draw.changeMode("direct_select", { featureId: "shape-1" });
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+
+    controller.setSelection({
+      type: "Feature",
+      id: "f1",
+      geometry: {
+        type: "Point",
+        coordinates: [5.12, 52.09],
+      },
+      properties: {
+        kind: "amenity",
+        floorId: "f1",
+      },
+    });
+
+    expect(draw.changeMode).toHaveBeenCalledWith("simple_select", {
+      featureIds: ["f1"],
+    });
+    expect(
+      (
+        draw.changeMode as unknown as {
+          mock: { calls: Array<[string, unknown?]> };
+        }
+      ).mock.calls.some(([mode]) => mode === "direct_select"),
+    ).toBe(false);
 
     controller.destroy();
   });
