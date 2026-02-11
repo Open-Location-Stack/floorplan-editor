@@ -1981,9 +1981,9 @@ export const createMapController = async (
         source: ROUTE_SOURCE_ID,
         filter: ["==", "$type", "LineString"],
         paint: {
-          "line-color": "#1d4ed8",
-          "line-width": 5,
-          "line-opacity": 0.9,
+          "line-color": "#2563eb",
+          "line-width": 8,
+          "line-opacity": 1,
         },
       });
     }
@@ -1994,13 +1994,16 @@ export const createMapController = async (
         source: ROUTE_SOURCE_ID,
         filter: ["==", "$type", "Point"],
         paint: {
-          "circle-color": "#1d4ed8",
-          "circle-radius": 5,
+          "circle-color": "#2563eb",
+          "circle-radius": 6,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
+          "circle-stroke-width": 2,
         },
       });
     }
+    // Keep route overlay above draw layers so the computed path remains visible.
+    map.moveLayer(ROUTE_LINE_LAYER_ID);
+    map.moveLayer(ROUTE_POINT_LAYER_ID);
   };
 
   const registerPointIcons = () => {

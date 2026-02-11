@@ -1660,7 +1660,7 @@ function App() {
                     setRouteEndCoordinate(undefined);
                   }}
                 >
-                  Clear route
+                  Clear path
                 </button>
               </div>
               <div className="mt-auto rounded-box bg-base-200 p-3 text-sm">
