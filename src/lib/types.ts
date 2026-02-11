@@ -30,6 +30,8 @@ export type JsonObject = {
 export type FeatureProperties = {
   kind: string;
   name?: string;
+  connects_to?: string[];
+  pathway_type?: string;
   floorId?: string;
   buildingId?: string;
   id?: string;

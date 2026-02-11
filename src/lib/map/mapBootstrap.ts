@@ -55,6 +55,7 @@ const OVERLAY_ROTATE_HANDLE_OFFSET_RATIO = 0.2;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS = 1.5;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MAX_METERS = 6;
 const DEFAULT_SNAP_BASE_DISTANCE_METERS = 0.2;
+const CONNECTION_VERTEX_EPSILON_METERS = 0.02;
 const SNAP_REFERENCE_ZOOM = 17;
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
@@ -335,19 +336,45 @@ const coordinateEquals = (left: Coordinates, right: Coordinates): boolean =>
 
 const coordinateKey = (coordinate: Coordinates): string => `${coordinate[0]},${coordinate[1]}`;
 
+const isPathFeature = (feature: GeoJsonFeature): boolean => {
+  if (feature.geometry?.type !== "LineString") {
+    return false;
+  }
+
+  if (!feature.properties || typeof feature.properties !== "object") {
+    return false;
+  }
+
+  const properties = feature.properties as {
+    kind?: unknown;
+    imdfType?: unknown;
+  };
+
+  return (
+    properties.kind === "path" || properties.kind === "pathway" || properties.imdfType === "path"
+  );
+};
+
 const withConnectsTo = (
   properties: FloorFeature["properties"],
   targetId: string,
 ): FloorFeature["properties"] => {
+  if (targetId.length === 0) {
+    return properties;
+  }
+
+  const selfId = typeof properties.id === "string" ? properties.id : undefined;
+  if (selfId && selfId === targetId) {
+    return properties;
+  }
+
   const propertyBag = properties as FloorFeature["properties"] & { connects_to?: unknown };
   const currentValue = propertyBag.connects_to;
   const normalized = Array.isArray(currentValue)
     ? currentValue
         .filter((value): value is string => typeof value === "string" && value.length > 0)
         .map((value) => value)
-    : typeof currentValue === "string" && currentValue.length > 0
-      ? [currentValue]
-      : [];
+    : [];
   if (!normalized.includes(targetId)) {
     normalized.push(targetId);
   }
@@ -690,16 +717,29 @@ const toCoordinates = (xMeters: number, yMeters: number, center: Coordinates): C
 ];
 
 type SnapTargets = {
-  vertices: Coordinates[];
+  vertices: Array<{
+    featureId: string;
+    coordinate: Coordinates;
+    vertexIndex: number;
+    geometryType: "Point" | "LineString" | "Polygon";
+  }>;
   edges: Array<{
+    featureId: string;
     start: Coordinates;
     end: Coordinates;
+    segmentIndex: number;
+    geometryType: "LineString" | "Polygon";
   }>;
 };
 
 type SnapCandidate = {
   coordinate: Coordinates;
   distanceMeters: number;
+  kind: "vertex" | "edge";
+  targetFeatureId: string;
+  targetGeometryType: "Point" | "LineString" | "Polygon";
+  targetVertexIndex?: number;
+  targetSegmentIndex?: number;
 };
 
 type ActiveDrawPointerTarget =
@@ -727,6 +767,27 @@ const distanceMetersBetween = (
   return Math.hypot(fromLocal.x - toLocal.x, fromLocal.y - toLocal.y);
 };
 
+const findNearbyVertexIndex = (
+  coordinates: Coordinates[],
+  target: Coordinates,
+  referenceCenter: Coordinates,
+  maxDistanceMeters: number,
+): number | undefined => {
+  let bestIndex: number | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const [index, coordinate] of coordinates.entries()) {
+    const distance = distanceMetersBetween(coordinate, target, referenceCenter);
+    if (distance > maxDistanceMeters || distance >= bestDistance) {
+      continue;
+    }
+    bestIndex = index;
+    bestDistance = distance;
+  }
+
+  return bestIndex;
+};
+
 const getClosestPointOnSegment = (
   point: Coordinates,
   segmentStart: Coordinates,
@@ -750,9 +811,19 @@ const getClosestPointOnSegment = (
   return toCoordinates(startLocal.x + segmentDx * t, startLocal.y + segmentDy * t, referenceCenter);
 };
 
-const appendLineSnapTargets = (coordinates: Coordinates[], targets: SnapTargets) => {
-  for (const coordinate of coordinates) {
-    targets.vertices.push(coordinate);
+const appendLineSnapTargets = (
+  featureId: string,
+  geometryType: "LineString" | "Polygon",
+  coordinates: Coordinates[],
+  targets: SnapTargets,
+) => {
+  for (const [index, coordinate] of coordinates.entries()) {
+    targets.vertices.push({
+      featureId,
+      coordinate,
+      vertexIndex: index,
+      geometryType,
+    });
   }
 
   for (let index = 0; index < coordinates.length - 1; index += 1) {
@@ -761,7 +832,13 @@ const appendLineSnapTargets = (coordinates: Coordinates[], targets: SnapTargets)
     if (!start || !end) {
       continue;
     }
-    targets.edges.push({ start, end });
+    targets.edges.push({
+      featureId,
+      start,
+      end,
+      segmentIndex: index,
+      geometryType,
+    });
   }
 };
 
@@ -783,7 +860,12 @@ const collectSnapTargets = (
     if (feature.geometry.type === "Point") {
       const coordinate = normalizePoint(feature.geometry.coordinates);
       if (coordinate) {
-        targets.vertices.push(coordinate);
+        targets.vertices.push({
+          featureId,
+          coordinate,
+          vertexIndex: 0,
+          geometryType: "Point",
+        });
       }
       continue;
     }
@@ -791,7 +873,7 @@ const collectSnapTargets = (
     if (feature.geometry.type === "LineString") {
       const coordinates = normalizeLine(feature.geometry.coordinates);
       if (coordinates) {
-        appendLineSnapTargets(coordinates, targets);
+        appendLineSnapTargets(featureId, "LineString", coordinates, targets);
       }
       continue;
     }
@@ -799,7 +881,7 @@ const collectSnapTargets = (
     if (feature.geometry.type === "Polygon") {
       const ring = normalizePolygon(feature.geometry.coordinates)?.[0];
       if (ring && ring.length >= 3) {
-        appendLineSnapTargets(ring, targets);
+        appendLineSnapTargets(featureId, "Polygon", ring, targets);
       }
     }
   }
@@ -816,15 +898,19 @@ const findBestSnapCandidate = (
   let bestCandidate: SnapCandidate | undefined;
 
   for (const vertex of targets.vertices) {
-    const distanceMeters = distanceMetersBetween(coordinate, vertex, referenceCenter);
+    const distanceMeters = distanceMetersBetween(coordinate, vertex.coordinate, referenceCenter);
     if (distanceMeters > maxDistanceMeters) {
       continue;
     }
 
     if (!bestCandidate || distanceMeters < bestCandidate.distanceMeters) {
       bestCandidate = {
-        coordinate: vertex,
+        coordinate: vertex.coordinate,
         distanceMeters,
+        kind: "vertex",
+        targetFeatureId: vertex.featureId,
+        targetGeometryType: vertex.geometryType,
+        targetVertexIndex: vertex.vertexIndex,
       };
     }
   }
@@ -849,6 +935,10 @@ const findBestSnapCandidate = (
       bestCandidate = {
         coordinate: closestPoint,
         distanceMeters,
+        kind: "edge",
+        targetFeatureId: edge.featureId,
+        targetGeometryType: edge.geometryType,
+        targetSegmentIndex: edge.segmentIndex,
       };
     }
   }
@@ -864,8 +954,10 @@ const snapCoordinates = (
 ): {
   coordinates: Coordinates[];
   changed: boolean;
+  candidates: Array<SnapCandidate | undefined>;
 } => {
   let changed = false;
+  const candidates: Array<SnapCandidate | undefined> = [];
   const snapped = coordinates.map((coordinate) => {
     const candidate = findBestSnapCandidate(
       coordinate,
@@ -873,6 +965,7 @@ const snapCoordinates = (
       maxDistanceMeters,
       referenceCenter,
     );
+    candidates.push(candidate);
     if (!candidate) {
       return coordinate;
     }
@@ -884,7 +977,7 @@ const snapCoordinates = (
     return candidate.coordinate;
   });
 
-  return { coordinates: snapped, changed };
+  return { coordinates: snapped, changed, candidates };
 };
 
 const activeDrawPointerTargetForFeature = (
@@ -1795,13 +1888,15 @@ export const createMapController = async (
 
     const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
     const allDrawFeatures = draw.getAll().features;
-    const updates: Array<{
-      featureId: string;
-      feature: GeoJsonFeature;
-    }> = [];
+    const updatesById = new Map<string, GeoJsonFeature>();
+    const getWorkingFeature = (id: string): GeoJsonFeature | undefined =>
+      updatesById.get(id) ?? draw.get(id);
+    const queueUpdate = (id: string, feature: GeoJsonFeature) => {
+      updatesById.set(id, feature);
+    };
 
     for (const featureId of featureIds) {
-      const sourceFeature = draw.get(featureId);
+      const sourceFeature = getWorkingFeature(featureId);
       if (!sourceFeature?.geometry) {
         continue;
       }
@@ -1822,14 +1917,11 @@ export const createMapController = async (
           continue;
         }
 
-        updates.push({
-          featureId,
-          feature: {
-            ...sourceFeature,
-            geometry: {
-              type: "Point",
-              coordinates: candidate.coordinate,
-            },
+        queueUpdate(featureId, {
+          ...sourceFeature,
+          geometry: {
+            type: "Point",
+            coordinates: candidate.coordinate,
           },
         });
         continue;
@@ -1842,19 +1934,116 @@ export const createMapController = async (
         }
 
         const snapped = snapCoordinates(coordinates, targets, maxDistanceMeters, center);
-        if (!snapped.changed) {
+        const nextCoordinates = [...snapped.coordinates];
+        let hasGeometryChange = snapped.changed;
+        let nextProperties: FloorFeature["properties"] =
+          sourceFeature.properties && typeof sourceFeature.properties === "object"
+            ? (structuredClone(sourceFeature.properties) as FloorFeature["properties"])
+            : { kind: "unknown" };
+        let hasPropertiesChange = false;
+
+        if (isPathFeature(sourceFeature) && nextCoordinates.length >= 2) {
+          const endpointIndices = [0, nextCoordinates.length - 1];
+          for (const endpointIndex of endpointIndices) {
+            const endpointCandidate = snapped.candidates[endpointIndex];
+            if (
+              !endpointCandidate ||
+              endpointCandidate.targetFeatureId === featureId ||
+              endpointCandidate.targetGeometryType !== "LineString"
+            ) {
+              continue;
+            }
+
+            const targetFeature = getWorkingFeature(endpointCandidate.targetFeatureId);
+            if (
+              !targetFeature ||
+              !isPathFeature(targetFeature) ||
+              targetFeature.geometry.type !== "LineString"
+            ) {
+              continue;
+            }
+
+            const targetCoordinates = normalizeLine(targetFeature.geometry.coordinates);
+            if (!targetCoordinates || targetCoordinates.length < 2) {
+              continue;
+            }
+
+            let resolvedCoordinate = endpointCandidate.coordinate;
+            let targetCoordinatesChanged = false;
+
+            if (endpointCandidate.kind === "vertex") {
+              const vertexIndex = endpointCandidate.targetVertexIndex;
+              if (vertexIndex !== undefined && targetCoordinates[vertexIndex]) {
+                resolvedCoordinate = targetCoordinates[vertexIndex];
+              }
+            } else if (endpointCandidate.kind === "edge") {
+              const nearbyVertexIndex = findNearbyVertexIndex(
+                targetCoordinates,
+                endpointCandidate.coordinate,
+                center,
+                CONNECTION_VERTEX_EPSILON_METERS,
+              );
+              if (nearbyVertexIndex !== undefined) {
+                const nearbyVertex = targetCoordinates[nearbyVertexIndex];
+                if (nearbyVertex) {
+                  resolvedCoordinate = nearbyVertex;
+                }
+              } else {
+                const insertAt = (endpointCandidate.targetSegmentIndex ?? -1) + 1;
+                if (insertAt > 0 && insertAt < targetCoordinates.length) {
+                  targetCoordinates.splice(insertAt, 0, endpointCandidate.coordinate);
+                  targetCoordinatesChanged = true;
+                } else {
+                  continue;
+                }
+              }
+            }
+
+            if (
+              !coordinateEquals(
+                nextCoordinates[endpointIndex] ?? resolvedCoordinate,
+                resolvedCoordinate,
+              )
+            ) {
+              nextCoordinates[endpointIndex] = resolvedCoordinate;
+              hasGeometryChange = true;
+            }
+
+            const propertiesWithConnection = withConnectsTo(
+              nextProperties,
+              endpointCandidate.targetFeatureId,
+            );
+            if (
+              JSON.stringify(propertiesWithConnection.connects_to) !==
+              JSON.stringify(nextProperties.connects_to)
+            ) {
+              nextProperties = propertiesWithConnection;
+              hasPropertiesChange = true;
+            }
+
+            if (targetCoordinatesChanged) {
+              queueUpdate(endpointCandidate.targetFeatureId, {
+                ...targetFeature,
+                geometry: {
+                  type: "LineString",
+                  coordinates: targetCoordinates,
+                },
+              });
+            }
+          }
+        }
+
+        if (!hasGeometryChange && !hasPropertiesChange) {
           continue;
         }
 
-        updates.push({
-          featureId,
-          feature: {
-            ...sourceFeature,
-            geometry: {
-              type: "LineString",
-              coordinates: snapped.coordinates,
-            },
+        queueUpdate(featureId, {
+          ...sourceFeature,
+          geometry: {
+            type: "LineString",
+            coordinates: nextCoordinates,
           },
+          properties: nextProperties,
         });
         continue;
       }
@@ -1870,18 +2059,20 @@ export const createMapController = async (
           continue;
         }
 
-        updates.push({
-          featureId,
-          feature: {
-            ...sourceFeature,
-            geometry: {
-              type: "Polygon",
-              coordinates: [snapped.coordinates],
-            },
+        queueUpdate(featureId, {
+          ...sourceFeature,
+          geometry: {
+            type: "Polygon",
+            coordinates: [snapped.coordinates],
           },
         });
       }
     }
+
+    const updates = Array.from(updatesById.entries()).map(([featureId, feature]) => ({
+      featureId,
+      feature,
+    }));
 
     if (updates.length === 0) {
       return;

@@ -847,6 +847,295 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("connects path endpoints to existing target path vertices", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.12, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    expect(onFeaturesChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "source-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: expect.objectContaining({
+            connects_to: expect.arrayContaining(["target-path"]),
+          }),
+        }),
+        expect.objectContaining({
+          id: "target-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.12, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+        }),
+      ]),
+    );
+
+    controller.destroy();
+  });
+
+  it("connects endpoints to target edges by inserting a new target vertex", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.090001],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const latestFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    expect(latestFeatures).toBeDefined();
+    if (!latestFeatures) {
+      throw new Error("Expected updated features");
+    }
+
+    const source = latestFeatures.find((feature) => feature.id === "source-path");
+    const target = latestFeatures.find((feature) => feature.id === "target-path");
+    expect(source).toBeDefined();
+    expect(target).toBeDefined();
+    if (
+      !source ||
+      !target ||
+      source.geometry.type !== "LineString" ||
+      target.geometry.type !== "LineString"
+    ) {
+      throw new Error("Expected source and target path features");
+    }
+
+    expect(source.geometry.coordinates[0]).toEqual([5.12, 52.09]);
+    expect(target.geometry.coordinates).toEqual([
+      [5.1195, 52.09],
+      [5.12, 52.09],
+      [5.1205, 52.09],
+    ]);
+    expect(source.properties.connects_to).toEqual(expect.arrayContaining(["target-path"]));
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const repeatedFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    const repeatedTarget = repeatedFeatures?.find((feature) => feature.id === "target-path");
+    expect(repeatedTarget).toBeDefined();
+    if (!repeatedTarget || repeatedTarget.geometry.type !== "LineString") {
+      throw new Error("Expected target path feature");
+    }
+    expect(repeatedTarget.geometry.coordinates).toEqual([
+      [5.1195, 52.09],
+      [5.12, 52.09],
+      [5.1205, 52.09],
+    ]);
+
+    controller.destroy();
+  });
+
+  it("does not create path connections when only non-endpoint vertices snap", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.121, 52.091],
+              [5.12, 52.090001],
+              [5.122, 52.092],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const latestFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    const source = latestFeatures?.find((feature) => feature.id === "source-path");
+    expect(source).toBeDefined();
+    if (!source || source.geometry.type !== "LineString") {
+      throw new Error("Expected source path feature");
+    }
+    expect(source.properties.connects_to).toBeUndefined();
+
+    controller.destroy();
+  });
+
   it("keeps updated coordinates unchanged when snapping is disabled", async () => {
     const onFeaturesChange = vi.fn();
     const controller = await createMapController(
@@ -918,6 +1207,97 @@ describe("createMapController", () => {
         }),
       ]),
     );
+
+    controller.destroy();
+  });
+
+  it("does not connect paths while snapping is disabled", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    controller.setSnapEnabled(false);
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.090001],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "path",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const latestFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    const source = latestFeatures?.find((feature) => feature.id === "source-path");
+    const target = latestFeatures?.find((feature) => feature.id === "target-path");
+    expect(source).toBeDefined();
+    expect(target).toBeDefined();
+    if (
+      !source ||
+      !target ||
+      source.geometry.type !== "LineString" ||
+      target.geometry.type !== "LineString"
+    ) {
+      throw new Error("Expected source and target path features");
+    }
+
+    expect(source.properties.connects_to).toBeUndefined();
+    expect(source.geometry.coordinates[0]).toEqual([5.12, 52.090001]);
+    expect(target.geometry.coordinates).toEqual([
+      [5.1195, 52.09],
+      [5.1205, 52.09],
+    ]);
 
     controller.destroy();
   });

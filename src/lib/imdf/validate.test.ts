@@ -4,7 +4,7 @@ import mixedFloorCollection from "./__fixtures__/mixed-floor-feature-collection.
 import { exportImdfDataset } from "./export";
 import { validateFloor, validateImdfDatasetFiles } from "./validate";
 
-const fixture = mixedFloorCollection as FeatureCollection;
+const fixture = mixedFloorCollection as unknown as FeatureCollection;
 
 describe("validateFloor", () => {
   it("reports missing IMDF properties", () => {
@@ -27,12 +27,35 @@ describe("validateFloor", () => {
         properties: {
           kind: "unit",
           floorId: "f1",
+          level_id: "f1",
         },
       },
     ]);
 
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("reports missing level_id", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "shape-1",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+        properties: {
+          kind: "path",
+          floorId: "f1",
+        },
+      },
+    ]);
+
+    expect(result.errors).toContain("Feature shape-1 is not assigned to level_id f1.");
   });
 });
 

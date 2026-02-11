@@ -65,6 +65,8 @@
         "name": "Main path",
         "floorId": "floor-1",
         "buildingId": "building-1",
+        "level_id": "floor-1",
+        "building_id": "building-1",
         "connects_to": ["unit-101", "floor-1"]
       }
     }

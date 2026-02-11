@@ -10,7 +10,7 @@ import {
 import { importFloorGeoJson } from "./import";
 import { validateImdfDatasetFiles } from "./validate";
 
-const fixture = mixedFloorCollection as FeatureCollection;
+const fixture = mixedFloorCollection as unknown as FeatureCollection;
 
 describe("imdf export/import", () => {
   it("exports one floor with normalized metadata", () => {

@@ -31,6 +31,13 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
     if (typeof feature.properties.floorId !== "string" || feature.properties.floorId !== floorId) {
       errors.push(`Feature ${feature.id} is not assigned to floor ${floorId}.`);
     }
+
+    if (
+      typeof feature.properties.level_id !== "string" ||
+      feature.properties.level_id !== floorId
+    ) {
+      errors.push(`Feature ${feature.id} is not assigned to level_id ${floorId}.`);
+    }
   }
 
   return { errors, warnings };
