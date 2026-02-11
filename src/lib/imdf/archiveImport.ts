@@ -264,7 +264,6 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     "section",
     "geofence",
     "opening",
-    "relationship",
     "amenity",
     "anchor",
     "detail",

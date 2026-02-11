@@ -73,7 +73,7 @@ test("app loads with persisted overlay data", async ({ page }) => {
   await seedProjectSnapshot(page, {
     id: "default-project",
     name: "Overlay test project",
-    version: 3,
+    version: 5,
     updatedAt: "2026-02-09T00:00:00.000Z",
     buildings: [{ id: "b1", name: "Building 1" }],
     floors: [{ id: "f1", buildingId: "b1", name: "Ground Floor" }],
@@ -111,7 +111,7 @@ test("app loads with malformed persisted snapshot", async ({ page }) => {
   await seedProjectSnapshot(page, {
     id: "default-project",
     name: "Malformed project",
-    version: 1,
+    version: 5,
     updatedAt: "2026-02-09T00:00:00.000Z",
     buildings: [{ id: "b1", name: "Building 1" }],
     floors: [{ id: "f1", buildingId: "b1", name: "Ground Floor" }],

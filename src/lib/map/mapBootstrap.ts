@@ -15,6 +15,7 @@ type ViewStateHandler = (center: Coordinates, zoom: number) => void;
 type InteractionModeChangeHandler = (mode: DrawMode) => void;
 type OverlayCornersChangeHandler = (corners: FloorOverlay["corners"]) => void;
 type VertexSelectionChangeHandler = (hasSelectedVertex: boolean) => void;
+type MapClickHandler = (coordinate: Coordinates) => void;
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
@@ -22,6 +23,7 @@ type MapController = {
   setSelection: (feature: FloorFeature | undefined) => void;
   setOverlay: (overlay: FloorOverlay | undefined) => void;
   setInteractionMode: (mode: DrawMode) => void;
+  setRoutePickEnabled: (enabled: boolean) => void;
   setSnapEnabled: (enabled: boolean) => void;
   setView: (center: Coordinates, zoom?: number) => void;
   deleteSelection: () => void;
@@ -295,7 +297,7 @@ const drawPolygonFillOpacityExpression: unknown[] = [
   ["==", featureTypeExpression, "geofence"],
   ["coalesce", ["get", "opacity", ["get", "style", ["get", "metadata"]]], 0.35],
   ["==", featureTypeExpression, "level"],
-  1,
+  0,
   ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
   1,
   0.3,
@@ -1345,6 +1347,7 @@ export const createMapController = async (
     onInteractionModeChange: InteractionModeChangeHandler;
     onOverlayCornersChange: OverlayCornersChangeHandler;
     onVertexSelectionChange?: VertexSelectionChangeHandler;
+    onMapClick?: MapClickHandler;
   },
   initialView?: {
     center: Coordinates;
@@ -1377,6 +1380,7 @@ export const createMapController = async (
   let currentRouteOverlay: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
+  let currentRoutePickEnabled = false;
   let currentSnapEnabled = options?.snapping?.enabled ?? true;
   const snapBaseDistanceMeters =
     options?.snapping?.baseDistanceMeters ?? DEFAULT_SNAP_BASE_DISTANCE_METERS;
@@ -2437,6 +2441,11 @@ export const createMapController = async (
       return;
     }
 
+    if (currentRoutePickEnabled) {
+      handlers.onMapClick?.([event.lngLat.lng, event.lngLat.lat]);
+      return;
+    }
+
     const renderedHits = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
 
     if (hasVertexOrMidpointHit(renderedHits)) {
@@ -2587,6 +2596,9 @@ export const createMapController = async (
     setInteractionMode: (mode) => {
       currentInteractionMode = mode;
       applyPendingState();
+    },
+    setRoutePickEnabled: (enabled) => {
+      currentRoutePickEnabled = enabled;
     },
     setSnapEnabled: (enabled) => {
       currentSnapEnabled = enabled;

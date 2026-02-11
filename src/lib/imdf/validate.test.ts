@@ -57,6 +57,120 @@ describe("validateFloor", () => {
 
     expect(result.errors).toContain("Feature shape-1 is not assigned to level_id f1.");
   });
+
+  it("accepts relationship refs with origin and destination only", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "unit-a",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+              [0, 0],
+            ],
+          ],
+        },
+        properties: {
+          kind: "unit",
+          floorId: "f1",
+          level_id: "f1",
+        },
+      },
+      {
+        type: "Feature",
+        id: "unit-b",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [2, 0],
+              [3, 0],
+              [3, 1],
+              [2, 1],
+              [2, 0],
+            ],
+          ],
+        },
+        properties: {
+          kind: "unit",
+          floorId: "f1",
+          level_id: "f1",
+        },
+      },
+      {
+        type: "Feature",
+        id: "relationship-1",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0.5, 0.5],
+            [2.5, 0.5],
+          ],
+        },
+        properties: {
+          kind: "relationship",
+          floorId: "f1",
+          level_id: "f1",
+          origin_id: "unit-a",
+          destination_id: "unit-b",
+        },
+      },
+    ]);
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("does not report incomplete refs for unlinked relationship drafts", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "relationship-1",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+        properties: {
+          kind: "relationship",
+          floorId: "f1",
+          level_id: "f1",
+        },
+      },
+    ]);
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("still reports relationship refs as incomplete when origin or destination is missing", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "relationship-1",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+        properties: {
+          kind: "relationship",
+          floorId: "f1",
+          level_id: "f1",
+          origin_id: "unit-a",
+        },
+      },
+    ]);
+
+    expect(result.errors).toContain("Relationship relationship-1 has incomplete refs.");
+  });
 });
 
 describe("validateImdfDatasetFiles", () => {

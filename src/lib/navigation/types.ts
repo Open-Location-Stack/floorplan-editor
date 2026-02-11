@@ -1,19 +1,18 @@
+import type { Coordinates } from "../types";
+
 export type NavigationNode = {
   id: string;
-  featureId: string;
+  coordinate: Coordinates;
   floorId?: string;
-  name?: string;
-  category?: string;
 };
 
 export type NavigationEdge = {
   id: string;
-  relationshipFeatureId: string;
-  fromFeatureId: string;
-  toFeatureId: string;
-  intermediaryFeatureId?: string;
-  weight: number;
-  crossFloor: boolean;
+  fromNodeId: string;
+  toNodeId: string;
+  weightMeters: number;
+  floorId?: string;
+  coordinates: [Coordinates, Coordinates];
 };
 
 export type NavigationGraph = {
@@ -23,9 +22,28 @@ export type NavigationGraph = {
 
 export type RouteResult = {
   found: boolean;
-  startFeatureId: string;
-  endFeatureId: string;
-  featurePath: string[];
+  startNodeId: string;
+  endNodeId: string;
+  nodePath: string[];
   edgePath: string[];
-  totalWeight: number;
+  totalWeightMeters: number;
+};
+
+export type SnappedPoint = {
+  coordinate: Coordinates;
+  edgeId: string;
+  floorId?: string;
+  fromNodeId: string;
+  toNodeId: string;
+  distanceFromFromNodeMeters: number;
+  distanceFromToNodeMeters: number;
+};
+
+export type PointRouteResult = {
+  found: boolean;
+  routeCoordinates: Coordinates[];
+  snappedStart?: Coordinates;
+  snappedEnd?: Coordinates;
+  totalWeightMeters: number;
+  reason?: string;
 };

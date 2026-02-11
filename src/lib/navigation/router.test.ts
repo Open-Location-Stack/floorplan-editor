@@ -1,55 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { FloorFeature } from "../types";
-import { buildNavigationGraph } from "./graphBuilder";
-import { findRoute } from "./router";
+import { buildPathGraph } from "./pathGraphBuilder";
+import { findRouteBetweenPoints, snapPointToNetwork } from "./pointRouting";
 
-const makeFeature = (feature: FloorFeature): FloorFeature => feature;
-
-describe("navigation graph + routing", () => {
-  it("builds graph from relationships and finds shortest route", () => {
+describe("path graph + point routing", () => {
+  it("builds a graph from opening paths and routes across intersections", () => {
     const features: FloorFeature[] = [
-      makeFeature({
+      {
         type: "Feature",
-        id: "unit-a",
-        geometry: {
-          type: "Polygon",
-          coordinates: [
-            [
-              [0, 0],
-              [1, 0],
-              [1, 1],
-              [0, 1],
-              [0, 0],
-            ],
-          ],
-        },
-        properties: { kind: "unit", imdfType: "unit", floorId: "f1", level_id: "f1", name: "A" },
-      }),
-      makeFeature({
-        type: "Feature",
-        id: "unit-b",
-        geometry: {
-          type: "Polygon",
-          coordinates: [
-            [
-              [2, 0],
-              [3, 0],
-              [3, 1],
-              [2, 1],
-              [2, 0],
-            ],
-          ],
-        },
-        properties: { kind: "unit", imdfType: "unit", floorId: "f1", level_id: "f1", name: "B" },
-      }),
-      makeFeature({
-        type: "Feature",
-        id: "opening-1",
+        id: "opening-horizontal",
         geometry: {
           type: "LineString",
           coordinates: [
-            [1, 0.5],
-            [2, 0.5],
+            [5.12, 52.09],
+            [5.122, 52.09],
           ],
         },
         properties: {
@@ -57,41 +21,63 @@ describe("navigation graph + routing", () => {
           imdfType: "opening",
           floorId: "f1",
           level_id: "f1",
-          category: "door",
         },
-      }),
-      makeFeature({
+      },
+      {
         type: "Feature",
-        id: "rel-1",
+        id: "opening-vertical",
         geometry: {
           type: "LineString",
           coordinates: [
-            [1, 0.5],
-            [2, 0.5],
+            [5.121, 52.0895],
+            [5.121, 52.0905],
           ],
         },
         properties: {
-          kind: "relationship",
-          imdfType: "relationship",
+          kind: "opening",
+          imdfType: "opening",
           floorId: "f1",
           level_id: "f1",
-          relation: {
-            origin: { featureId: "unit-a" },
-            intermediary: { featureId: "opening-1", floorId: "f1" },
-            destination: { featureId: "unit-b" },
-          },
         },
-      }),
+      },
     ];
 
-    const graph = buildNavigationGraph(features);
-    expect(graph.nodes.length).toBeGreaterThanOrEqual(2);
-    expect(graph.edges).toHaveLength(1);
+    const graph = buildPathGraph(features);
+    expect(graph.nodes.length).toBeGreaterThanOrEqual(5);
+    expect(graph.edges.length).toBeGreaterThanOrEqual(4);
 
-    const route = findRoute(graph, "unit-a", "unit-b");
+    const start: [number, number] = [5.1201, 52.09];
+    const end: [number, number] = [5.121, 52.0904];
+    const route = findRouteBetweenPoints(graph, start, end);
     expect(route.found).toBe(true);
-    expect(route.featurePath).toEqual(["unit-a", "unit-b"]);
-    expect(route.edgePath).toEqual(["rel-1"]);
-    expect(route.totalWeight).toBeGreaterThan(0);
+    expect(route.routeCoordinates.length).toBeGreaterThanOrEqual(2);
+    expect(route.totalWeightMeters).toBeGreaterThan(0);
+  });
+
+  it("snaps arbitrary points to the nearest path segment", () => {
+    const features: FloorFeature[] = [
+      {
+        type: "Feature",
+        id: "opening-main",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.09],
+            [5.122, 52.09],
+          ],
+        },
+        properties: {
+          kind: "opening",
+          imdfType: "opening",
+          floorId: "f1",
+          level_id: "f1",
+        },
+      },
+    ];
+
+    const graph = buildPathGraph(features);
+    const snapped = snapPointToNetwork([5.121, 52.0902], graph);
+    expect(snapped).toBeDefined();
+    expect(snapped?.coordinate[1]).toBeCloseTo(52.09, 6);
   });
 });

@@ -9,7 +9,6 @@ import { KioskFeatureEditor } from "./FeatureEditors/KioskFeatureEditor";
 import { LevelFeatureEditor } from "./FeatureEditors/LevelFeatureEditor";
 import { OccupantFeatureEditor } from "./FeatureEditors/OccupantFeatureEditor";
 import { OpeningFeatureEditor } from "./FeatureEditors/OpeningFeatureEditor";
-import { RelationshipFeatureEditor } from "./FeatureEditors/RelationshipFeatureEditor";
 import { SectionFeatureEditor } from "./FeatureEditors/SectionFeatureEditor";
 import { UnitFeatureEditor } from "./FeatureEditors/UnitFeatureEditor";
 
@@ -49,14 +48,6 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
       return <GeofenceFeatureEditor {...editorProps} />;
     case "opening":
       return <OpeningFeatureEditor {...editorProps} />;
-    case "relationship":
-      return (
-        <RelationshipFeatureEditor
-          {...editorProps}
-          allFeatures={props.allFeatures}
-          floors={props.floors}
-        />
-      );
     case "amenity":
       return <AmenityFeatureEditor {...editorProps} />;
     case "anchor":

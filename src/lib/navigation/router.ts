@@ -1,7 +1,7 @@
 import type { NavigationGraph, RouteResult } from "./types";
 
 type QueueEntry = {
-  featureId: string;
+  nodeId: string;
   distance: number;
 };
 
@@ -24,41 +24,41 @@ const dequeueMin = (queue: QueueEntry[]): QueueEntry | undefined => {
 
 export const findRoute = (
   graph: NavigationGraph,
-  startFeatureId: string,
-  endFeatureId: string,
+  startNodeId: string,
+  endNodeId: string,
 ): RouteResult => {
   const adjacency = new Map<string, Array<{ edgeId: string; to: string; weight: number }>>();
   for (const edge of graph.edges) {
-    const fromEntries = adjacency.get(edge.fromFeatureId) ?? [];
-    fromEntries.push({ edgeId: edge.id, to: edge.toFeatureId, weight: edge.weight });
-    adjacency.set(edge.fromFeatureId, fromEntries);
+    const fromEntries = adjacency.get(edge.fromNodeId) ?? [];
+    fromEntries.push({ edgeId: edge.id, to: edge.toNodeId, weight: edge.weightMeters });
+    adjacency.set(edge.fromNodeId, fromEntries);
 
-    const toEntries = adjacency.get(edge.toFeatureId) ?? [];
-    toEntries.push({ edgeId: edge.id, to: edge.fromFeatureId, weight: edge.weight });
-    adjacency.set(edge.toFeatureId, toEntries);
+    const toEntries = adjacency.get(edge.toNodeId) ?? [];
+    toEntries.push({ edgeId: edge.id, to: edge.fromNodeId, weight: edge.weightMeters });
+    adjacency.set(edge.toNodeId, toEntries);
   }
 
   const distances = new Map<string, number>();
   const previousNode = new Map<string, string>();
   const previousEdge = new Map<string, string>();
   const visited = new Set<string>();
-  const queue: QueueEntry[] = [{ featureId: startFeatureId, distance: 0 }];
-  distances.set(startFeatureId, 0);
+  const queue: QueueEntry[] = [{ nodeId: startNodeId, distance: 0 }];
+  distances.set(startNodeId, 0);
 
   while (queue.length > 0) {
     const current = dequeueMin(queue);
     if (!current) {
       break;
     }
-    if (visited.has(current.featureId)) {
+    if (visited.has(current.nodeId)) {
       continue;
     }
-    visited.add(current.featureId);
-    if (current.featureId === endFeatureId) {
+    visited.add(current.nodeId);
+    if (current.nodeId === endNodeId) {
       break;
     }
 
-    const neighbors = adjacency.get(current.featureId) ?? [];
+    const neighbors = adjacency.get(current.nodeId) ?? [];
     for (const neighbor of neighbors) {
       if (visited.has(neighbor.to)) {
         continue;
@@ -67,44 +67,44 @@ export const findRoute = (
       const knownDistance = distances.get(neighbor.to) ?? Number.POSITIVE_INFINITY;
       if (nextDistance < knownDistance) {
         distances.set(neighbor.to, nextDistance);
-        previousNode.set(neighbor.to, current.featureId);
+        previousNode.set(neighbor.to, current.nodeId);
         previousEdge.set(neighbor.to, neighbor.edgeId);
-        queue.push({ featureId: neighbor.to, distance: nextDistance });
+        queue.push({ nodeId: neighbor.to, distance: nextDistance });
       }
     }
   }
 
-  if (!distances.has(endFeatureId)) {
+  if (!distances.has(endNodeId)) {
     return {
       found: false,
-      startFeatureId,
-      endFeatureId,
-      featurePath: [],
+      startNodeId,
+      endNodeId,
+      nodePath: [],
       edgePath: [],
-      totalWeight: 0,
+      totalWeightMeters: 0,
     };
   }
 
-  const featurePath: string[] = [endFeatureId];
+  const nodePath: string[] = [endNodeId];
   const edgePath: string[] = [];
-  let cursor = endFeatureId;
-  while (cursor !== startFeatureId) {
+  let cursor = endNodeId;
+  while (cursor !== startNodeId) {
     const from = previousNode.get(cursor);
     const edge = previousEdge.get(cursor);
     if (!from || !edge) {
       break;
     }
     edgePath.unshift(edge);
-    featurePath.unshift(from);
+    nodePath.unshift(from);
     cursor = from;
   }
 
   return {
-    found: featurePath[0] === startFeatureId,
-    startFeatureId,
-    endFeatureId,
-    featurePath,
+    found: nodePath[0] === startNodeId,
+    startNodeId,
+    endNodeId,
+    nodePath,
     edgePath,
-    totalWeight: distances.get(endFeatureId) ?? 0,
+    totalWeightMeters: distances.get(endNodeId) ?? 0,
   };
 };

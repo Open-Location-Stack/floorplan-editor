@@ -345,6 +345,13 @@ const normalizeFeatures = (
   return features
     .map(normalizeFeature)
     .filter((feature): feature is FloorFeature => Boolean(feature))
+    .filter((feature) => {
+      const type =
+        typeof feature.properties.imdfType === "string"
+          ? feature.properties.imdfType
+          : feature.properties.kind;
+      return type !== "relationship";
+    })
     .map((feature) => ({
       ...feature,
       properties: {

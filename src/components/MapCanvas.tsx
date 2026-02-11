@@ -24,6 +24,7 @@ type MapCanvasProps = {
   selectedFeature: FloorFeature | undefined;
   overlay: FloorOverlay | undefined;
   drawMode: DrawMode;
+  routePickEnabled: boolean;
   snapEnabled: boolean;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
@@ -36,6 +37,7 @@ type MapCanvasProps = {
   onInteractionModeChange: (mode: DrawMode) => void;
   onOverlayCornersChange: (corners: OverlayCorners) => void;
   onVertexSelectionChange: (hasSelectedVertex: boolean) => void;
+  onMapClick: (coordinate: Coordinates) => void;
 };
 
 export const MapCanvas = ({
@@ -47,6 +49,7 @@ export const MapCanvas = ({
   selectedFeature,
   overlay,
   drawMode,
+  routePickEnabled,
   snapEnabled,
   deleteRequestVersion,
   deleteVertexRequestVersion,
@@ -59,6 +62,7 @@ export const MapCanvas = ({
   onInteractionModeChange,
   onOverlayCornersChange,
   onVertexSelectionChange,
+  onMapClick,
 }: MapCanvasProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<Awaited<ReturnType<typeof createMapController>> | null>(null);
@@ -69,6 +73,7 @@ export const MapCanvas = ({
   const modeHandlerRef = useRef(onInteractionModeChange);
   const overlayChangeHandlerRef = useRef(onOverlayCornersChange);
   const vertexSelectionHandlerRef = useRef(onVertexSelectionChange);
+  const mapClickHandlerRef = useRef(onMapClick);
 
   const featuresRef = useRef(features);
   const selectedFeatureRef = useRef(selectedFeature);
@@ -76,6 +81,7 @@ export const MapCanvas = ({
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
   const snapEnabledRef = useRef(snapEnabled);
+  const routePickEnabledRef = useRef(routePickEnabled);
   const relocationRequestRef = useRef(relocationRequest);
 
   useEffect(() => {
@@ -103,6 +109,10 @@ export const MapCanvas = ({
   }, [onVertexSelectionChange]);
 
   useEffect(() => {
+    mapClickHandlerRef.current = onMapClick;
+  }, [onMapClick]);
+
+  useEffect(() => {
     featuresRef.current = features;
   }, [features]);
 
@@ -125,6 +135,10 @@ export const MapCanvas = ({
   useEffect(() => {
     snapEnabledRef.current = snapEnabled;
   }, [snapEnabled]);
+
+  useEffect(() => {
+    routePickEnabledRef.current = routePickEnabled;
+  }, [routePickEnabled]);
 
   useEffect(() => {
     relocationRequestRef.current = relocationRequest;
@@ -161,6 +175,9 @@ export const MapCanvas = ({
         onVertexSelectionChange: (hasSelectedVertex) => {
           vertexSelectionHandlerRef.current(hasSelectedVertex);
         },
+        onMapClick: (coordinate) => {
+          mapClickHandlerRef.current(coordinate);
+        },
       },
       initialView,
     ).then((controller) => {
@@ -181,6 +198,7 @@ export const MapCanvas = ({
       controller.setSelection(selectedFeatureRef.current);
       controller.setOverlay(overlayRef.current);
       controller.setInteractionMode(drawModeRef.current);
+      controller.setRoutePickEnabled(routePickEnabledRef.current);
       controller.setSnapEnabled(snapEnabledRef.current);
 
       if (relocationRequestRef.current) {
@@ -226,6 +244,10 @@ export const MapCanvas = ({
   useEffect(() => {
     controllerRef.current?.setInteractionMode(drawMode);
   }, [drawMode]);
+
+  useEffect(() => {
+    controllerRef.current?.setRoutePickEnabled(routePickEnabled);
+  }, [routePickEnabled]);
 
   useEffect(() => {
     controllerRef.current?.setSnapEnabled(snapEnabled);

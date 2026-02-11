@@ -25,7 +25,7 @@ const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
   },
   {
     title: "Paths",
-    types: ["opening", "relationship"],
+    types: ["opening"],
   },
   {
     title: "Points",
@@ -64,25 +64,18 @@ export const FloorEditor = ({
     return counts;
   }, [floorFeatures]);
 
-  const graphDiagnostics = useMemo(() => {
-    const byId = new Map(floorFeatures.map((feature) => [feature.id, feature]));
+  const pathDiagnostics = useMemo(() => {
     const issues: string[] = [];
-    const relationships = floorFeatures.filter(
-      (feature) =>
-        (typeof feature.properties.imdfType === "string"
+    const openings = floorFeatures.filter((feature) => {
+      const type =
+        typeof feature.properties.imdfType === "string"
           ? feature.properties.imdfType
-          : feature.properties.kind) === "relationship",
-    );
-    for (const relationship of relationships) {
-      const refs = relationship.properties.relation;
-      if (!refs) {
-        issues.push(`Relationship ${relationship.id}: missing relation refs.`);
-        continue;
-      }
-      for (const ref of [refs.origin, refs.intermediary, refs.destination]) {
-        if (!byId.has(ref.featureId)) {
-          issues.push(`Relationship ${relationship.id}: ref ${ref.featureId} not found on floor.`);
-        }
+          : feature.properties.kind;
+      return type === "opening";
+    });
+    for (const opening of openings) {
+      if (opening.geometry.type !== "LineString" || opening.geometry.coordinates.length < 2) {
+        issues.push(`Path ${opening.id}: invalid line geometry.`);
       }
     }
     return issues;
@@ -230,15 +223,13 @@ export const FloorEditor = ({
         </details>
 
         <details className="rounded-box border border-base-300 p-3">
-          <summary className="cursor-pointer font-medium">Graph diagnostics</summary>
+          <summary className="cursor-pointer font-medium">Path diagnostics</summary>
           <div className="mt-3 text-sm">
-            {graphDiagnostics.length === 0 ? (
-              <div className="text-success">
-                No relationship reference issues found on this floor.
-              </div>
+            {pathDiagnostics.length === 0 ? (
+              <div className="text-success">No path issues found on this floor.</div>
             ) : (
               <ul className="list-disc pl-4">
-                {graphDiagnostics.map((issue) => (
+                {pathDiagnostics.map((issue) => (
                   <li key={issue}>{issue}</li>
                 ))}
               </ul>

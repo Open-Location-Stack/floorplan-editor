@@ -60,10 +60,15 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
         (typeof feature.properties.destination_id === "string"
           ? feature.properties.destination_id
           : undefined);
-      if (!origin || !intermediary || !destination) {
+      const hasAnyRelationshipRef = Boolean(origin || intermediary || destination);
+      if (!hasAnyRelationshipRef) {
+        continue;
+      }
+      if (!origin || !destination) {
         errors.push(`Relationship ${feature.id} has incomplete refs.`);
       } else {
-        for (const ref of [origin, intermediary, destination]) {
+        const refs = intermediary ? [origin, intermediary, destination] : [origin, destination];
+        for (const ref of refs) {
           if (!allIds.has(ref)) {
             errors.push(`Relationship ${feature.id} references missing feature ${ref}.`);
           }

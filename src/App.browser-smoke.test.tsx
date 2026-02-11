@@ -11,8 +11,10 @@ const MockMapCanvas = ({
   onViewStateChange,
   onFeatureSelectionChange,
   onInteractionModeChange,
+  onMapClick: _onMapClick,
   onFeaturesChange,
   drawMode,
+  routePickEnabled: _routePickEnabled,
   snapEnabled: _snapEnabled,
   deleteRequestVersion,
 }: {
@@ -35,6 +37,7 @@ const MockMapCanvas = ({
   onViewStateChange: (center: [number, number], zoom: number) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onInteractionModeChange: (mode: "select" | "point" | "line" | "polygon") => void;
+  onMapClick: (coordinate: [number, number]) => void;
   onFeaturesChange: (
     features: Array<{
       type: "Feature";
@@ -47,6 +50,7 @@ const MockMapCanvas = ({
     }>,
   ) => void;
   drawMode: "select" | "point" | "line" | "polygon";
+  routePickEnabled: boolean;
   snapEnabled: boolean;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
@@ -163,6 +167,7 @@ const mockRepository = {
   loadProject: vi.fn(),
   saveProject: vi.fn().mockResolvedValue(undefined),
   listProjects: vi.fn().mockResolvedValue([]),
+  deleteProject: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("./lib/persistence/projectRepository", () => ({
@@ -197,6 +202,7 @@ describe("App browser smoke", () => {
 
     mockRepository.loadProject.mockReset();
     mockRepository.saveProject.mockClear();
+    mockRepository.deleteProject.mockClear();
     vi.stubEnv("VITE_MAPTILER_API_KEY", "fake-key");
     vi.stubEnv("VITE_OPENCAGE_API_KEY", "fake-open-cage-key");
   });
@@ -277,6 +283,27 @@ describe("App browser smoke", () => {
     });
   });
 
+  it("hard-resets persisted projects from old schema versions", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "legacy project",
+      version: 4,
+      updatedAt: "2026-02-10T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Legacy Building" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Legacy Floor" }],
+      features: [],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No buildings.")).toBeInTheDocument();
+    });
+    expect(mockRepository.deleteProject).toHaveBeenCalledWith("default-project");
+  });
+
   it("searches addresses and recenters the map when selecting a result", async () => {
     mockRepository.loadProject.mockResolvedValue(undefined);
     vi.stubGlobal(
@@ -328,7 +355,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "tree recenter",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-10T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building", location: [1, 2] }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -381,7 +408,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "floor activation",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-10T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building", location: [1, 2] }],
       floors: [
@@ -514,7 +541,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "bad project",
-      version: 1,
+      version: 5,
       updatedAt: "2026-02-06T00:00:00.000Z",
       buildings: [{ id: "b1", name: "Building" }],
       floors: [{ id: "f1", buildingId: "b1", name: "Floor" }],
@@ -565,7 +592,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "Building 1" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -626,7 +653,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "Building 1" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -782,7 +809,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -854,11 +881,11 @@ describe("App browser smoke", () => {
     });
   });
 
-  it("clones a floor and remaps feature references to new ids", async () => {
+  it("clones a floor and copies opening/unit floor features", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -879,28 +906,6 @@ describe("App browser smoke", () => {
             ],
           },
           properties: { kind: "unit", floorId: "floor-1", name: "Room A" },
-        },
-        {
-          type: "Feature",
-          id: "relationship-1",
-          geometry: {
-            type: "LineString",
-            coordinates: [
-              [5.121, 52.091],
-              [5.122, 52.09],
-            ],
-          },
-          properties: {
-            kind: "relationship",
-            floorId: "floor-1",
-            origin_id: "unit-1",
-            destination_id: "unit-1",
-            linked_feature_ids: ["unit-1", "relationship-1"],
-            metadata: {
-              sourceFloor: "floor-1",
-              sourceFeature: "relationship-1",
-            },
-          },
         },
       ],
       overlays: [],
@@ -926,10 +931,6 @@ describe("App browser smoke", () => {
           properties: {
             floorId?: string;
             kind?: string;
-            origin_id?: string;
-            destination_id?: string;
-            linked_feature_ids?: string[];
-            metadata?: unknown;
           };
         }>;
       };
@@ -943,26 +944,11 @@ describe("App browser smoke", () => {
       const clonedFloorFeatures = latestSnapshot.features.filter(
         (feature) => feature.properties.floorId === clonedFloor?.id,
       );
-      expect(clonedFloorFeatures).toHaveLength(2);
+      expect(clonedFloorFeatures).toHaveLength(1);
 
       const clonedUnit = clonedFloorFeatures.find((feature) => feature.properties.kind === "unit");
-      const clonedRelationship = clonedFloorFeatures.find(
-        (feature) => typeof feature.properties.origin_id === "string",
-      );
       expect(clonedUnit).toBeDefined();
-      expect(clonedRelationship).toBeDefined();
       expect(clonedUnit?.id).not.toBe("unit-1");
-      expect(clonedRelationship?.id).not.toBe("relationship-1");
-      expect(clonedRelationship?.properties.origin_id).toBe(clonedUnit?.id);
-      expect(clonedRelationship?.properties.destination_id).toBe(clonedUnit?.id);
-      expect(clonedRelationship?.properties.linked_feature_ids).toEqual([
-        clonedUnit?.id,
-        clonedRelationship?.id,
-      ]);
-      expect(clonedRelationship?.properties.metadata).toEqual({
-        sourceFloor: clonedFloor?.id,
-        sourceFeature: clonedRelationship?.id,
-      });
     });
   });
 
@@ -970,7 +956,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -1047,7 +1033,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
@@ -1104,7 +1090,7 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
-      version: 3,
+      version: 5,
       updatedAt: "2026-02-09T00:00:00.000Z",
       buildings: [{ id: "building-1", name: "HQ Building" }],
       floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],

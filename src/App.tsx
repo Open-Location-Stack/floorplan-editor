@@ -22,12 +22,11 @@ import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
-import { migrateProjectSnapshotToImdfV4 } from "./lib/imdf/migrations/v4";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
-import { findRoute } from "./lib/navigation/router";
+import { findRouteBetweenPoints } from "./lib/navigation/pointRouting";
 import { projectRepository } from "./lib/persistence/projectRepository";
 import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSanitizer";
 import type {
@@ -45,6 +44,7 @@ import type {
 const THEME_STORAGE_KEY = "floorplan-editor-theme";
 const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
 const PROJECT_ID = "default-project";
+const PROJECT_SCHEMA_VERSION = 5;
 
 const isThemeId = (value: string | null): value is ThemeId =>
   value === "qr-light" || value === "qr-dark";
@@ -294,7 +294,7 @@ const saveEditorSnapshot = async (
   await projectRepository.saveProject({
     id: PROJECT_ID,
     name: "Main project",
-    version: 4,
+    version: PROJECT_SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     features,
     overlays,
@@ -331,8 +331,9 @@ function App() {
   const [projectUndoStack, setProjectUndoStack] = useState<ProjectHistoryEntry[]>([]);
   const [projectRedoStack, setProjectRedoStack] = useState<ProjectHistoryEntry[]>([]);
   const [archiveWarnings, setArchiveWarnings] = useState<string[]>([]);
-  const [routeStartFeatureId, setRouteStartFeatureId] = useState("");
-  const [routeEndFeatureId, setRouteEndFeatureId] = useState("");
+  const [routePickEnabled, setRoutePickEnabled] = useState(false);
+  const [routeStartCoordinate, setRouteStartCoordinate] = useState<Coordinates>();
+  const [routeEndCoordinate, setRouteEndCoordinate] = useState<Coordinates>();
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
@@ -373,7 +374,12 @@ function App() {
         return;
       }
 
-      const sanitizedProject = sanitizeProjectSnapshot(migrateProjectSnapshotToImdfV4(project));
+      if (project.version < PROJECT_SCHEMA_VERSION) {
+        void projectRepository.deleteProject(PROJECT_ID);
+        return;
+      }
+
+      const sanitizedProject = sanitizeProjectSnapshot(project);
       const loadedBuildings = sanitizedProject.buildings ?? [];
       const loadedFloors = sanitizedProject.floors ?? [];
       const primaryFloor = loadedFloors[0];
@@ -537,71 +543,61 @@ function App() {
     );
   }, [editorState.features, activeFloor]);
 
-  const routeSelectableFeatures = useMemo(
-    () =>
-      editorState.features.filter((feature) => {
-        const type =
-          typeof feature.properties.imdfType === "string"
-            ? feature.properties.imdfType
-            : feature.properties.kind;
-        return type === "unit" || type === "opening" || type === "amenity" || type === "anchor";
-      }),
-    [editorState.features],
-  );
-
-  const navigationGraph = useMemo(
-    () => buildNavigationGraph(editorState.features),
-    [editorState.features],
-  );
+  const navigationGraph = useMemo(() => buildNavigationGraph(visibleFeatures), [visibleFeatures]);
   const routeResult = useMemo(() => {
-    if (!routeStartFeatureId || !routeEndFeatureId) {
+    if (!routeStartCoordinate || !routeEndCoordinate) {
       return undefined;
     }
-    return findRoute(navigationGraph, routeStartFeatureId, routeEndFeatureId);
-  }, [navigationGraph, routeStartFeatureId, routeEndFeatureId]);
+    return findRouteBetweenPoints(navigationGraph, routeStartCoordinate, routeEndCoordinate);
+  }, [navigationGraph, routeStartCoordinate, routeEndCoordinate]);
 
   const routeOverlayFeatures = useMemo(() => {
-    if (!routeResult?.found || !activeFloor) {
+    if (!activeFloor || !routeResult?.found) {
       return [] as FloorFeature[];
     }
-    const featuresById = new Map(editorState.features.map((feature) => [feature.id, feature]));
     const routeFeatures: FloorFeature[] = [];
-    for (const edgeId of routeResult.edgePath) {
-      const relationship = featuresById.get(edgeId);
-      if (
-        relationship &&
-        relationship.geometry.type === "LineString" &&
-        relationship.properties.floorId === activeFloor.id
-      ) {
-        routeFeatures.push({
-          ...relationship,
-          id: `route-edge-${relationship.id}`,
-          properties: {
-            ...relationship.properties,
-            kind: "route-edge",
-          },
-        });
-      }
+    routeFeatures.push({
+      type: "Feature",
+      id: "route-line",
+      geometry: {
+        type: "LineString",
+        coordinates: routeResult.routeCoordinates,
+      },
+      properties: {
+        kind: "route-edge",
+        floorId: activeFloor.id,
+      },
+    });
+    if (routeResult.snappedStart) {
+      routeFeatures.push({
+        type: "Feature",
+        id: "route-start",
+        geometry: {
+          type: "Point",
+          coordinates: routeResult.snappedStart,
+        },
+        properties: {
+          kind: "route-node",
+          floorId: activeFloor.id,
+        },
+      });
     }
-    for (const featureId of routeResult.featurePath) {
-      const nodeFeature = featuresById.get(featureId);
-      if (
-        nodeFeature &&
-        nodeFeature.geometry.type === "Point" &&
-        nodeFeature.properties.floorId === activeFloor.id
-      ) {
-        routeFeatures.push({
-          ...nodeFeature,
-          id: `route-node-${nodeFeature.id}`,
-          properties: {
-            ...nodeFeature.properties,
-            kind: "route-node",
-          },
-        });
-      }
+    if (routeResult.snappedEnd) {
+      routeFeatures.push({
+        type: "Feature",
+        id: "route-end",
+        geometry: {
+          type: "Point",
+          coordinates: routeResult.snappedEnd,
+        },
+        properties: {
+          kind: "route-node",
+          floorId: activeFloor.id,
+        },
+      });
     }
     return routeFeatures;
-  }, [routeResult, editorState.features, activeFloor]);
+  }, [routeResult, activeFloor]);
 
   const selectedFeatureForMap =
     selectedFeature && activeFloor && selectedFeature.properties.floorId === activeFloor.id
@@ -850,6 +846,21 @@ function App() {
       setHasSelectedVertex(false);
     }
   }, []);
+
+  const onRouteMapClick = useCallback(
+    (coordinate: Coordinates) => {
+      if (!activeFloor || !routePickEnabled || drawMode !== "select") {
+        return;
+      }
+      if (!routeStartCoordinate || routeEndCoordinate) {
+        setRouteStartCoordinate(coordinate);
+        setRouteEndCoordinate(undefined);
+        return;
+      }
+      setRouteEndCoordinate(coordinate);
+    },
+    [activeFloor, routePickEnabled, drawMode, routeStartCoordinate, routeEndCoordinate],
+  );
 
   useEffect(() => {
     const trimmedQuery = locationQuery.trim();
@@ -1602,50 +1613,51 @@ function App() {
                 </label>
               </div>
               <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
-                <div className="mb-2 text-sm font-semibold">Blue path navigation</div>
-                <label className="form-control mb-2 gap-1">
-                  <span className="label-text text-xs">Start feature</span>
-                  <select
-                    className="select select-bordered select-sm"
-                    value={routeStartFeatureId}
-                    onChange={(event) => setRouteStartFeatureId(event.currentTarget.value)}
-                  >
-                    <option value="">Select start</option>
-                    {routeSelectableFeatures.map((feature) => (
-                      <option key={feature.id} value={feature.id}>
-                        {feature.properties.name ?? feature.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control gap-1">
-                  <span className="label-text text-xs">Destination feature</span>
-                  <select
-                    className="select select-bordered select-sm"
-                    value={routeEndFeatureId}
-                    onChange={(event) => setRouteEndFeatureId(event.currentTarget.value)}
-                  >
-                    <option value="">Select destination</option>
-                    {routeSelectableFeatures.map((feature) => (
-                      <option key={feature.id} value={feature.id}>
-                        {feature.properties.name ?? feature.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="mb-2 text-sm font-semibold">Route mode</div>
+                <button
+                  className={`btn btn-sm ${routePickEnabled ? "btn-primary" : "btn-outline"}`}
+                  type="button"
+                  onClick={() => {
+                    setRoutePickEnabled((current) => !current);
+                    setDrawMode("select");
+                  }}
+                >
+                  {routePickEnabled ? "Routing enabled (click map)" : "Enable map route picking"}
+                </button>
+                <div className="mt-2 text-xs text-base-content/70">
+                  {!routePickEnabled
+                    ? "Enable route mode, then click start and destination on the map."
+                    : !routeStartCoordinate
+                      ? "Click the start point on the map."
+                      : !routeEndCoordinate
+                        ? "Click the destination point on the map."
+                        : "Route endpoints selected."}
+                </div>
+                <div className="mt-2 text-xs text-base-content/70">
+                  Start:{" "}
+                  {routeStartCoordinate
+                    ? `${routeStartCoordinate[0].toFixed(6)}, ${routeStartCoordinate[1].toFixed(6)}`
+                    : "not set"}
+                </div>
+                <div className="text-xs text-base-content/70">
+                  Destination:{" "}
+                  {routeEndCoordinate
+                    ? `${routeEndCoordinate[0].toFixed(6)}, ${routeEndCoordinate[1].toFixed(6)}`
+                    : "not set"}
+                </div>
                 <div className="mt-2 text-xs text-base-content/70">
                   {routeResult
                     ? routeResult.found
-                      ? `Route found: ${routeResult.featurePath.length} nodes`
-                      : "No route found for selected endpoints."
+                      ? `Route found: ${(routeResult.totalWeightMeters / 1).toFixed(1)} m`
+                      : (routeResult.reason ?? "No route found.")
                     : "Select start and destination to compute a route."}
                 </div>
                 <button
                   className="btn btn-xs btn-ghost mt-2"
                   type="button"
                   onClick={() => {
-                    setRouteStartFeatureId("");
-                    setRouteEndFeatureId("");
+                    setRouteStartCoordinate(undefined);
+                    setRouteEndCoordinate(undefined);
                   }}
                 >
                   Clear route
@@ -1826,6 +1838,7 @@ function App() {
                     selectedFeature={selectedFeatureForMap}
                     overlay={selectedOverlay}
                     drawMode={drawMode}
+                    routePickEnabled={routePickEnabled && drawMode === "select"}
                     snapEnabled={snapEnabled}
                     deleteRequestVersion={deleteRequestVersion}
                     deleteVertexRequestVersion={deleteVertexRequestVersion}
@@ -1836,6 +1849,7 @@ function App() {
                     onFeatureSelectionChange={onDrawSelectionChange}
                     onViewStateChange={onViewStateChange}
                     onInteractionModeChange={onInteractionModeChange}
+                    onMapClick={onRouteMapClick}
                     onVertexSelectionChange={(hasVertex) => setHasSelectedVertex(hasVertex)}
                     onOverlayCornersChange={(corners) => {
                       applyToCurrentOverlay((overlay) => ({

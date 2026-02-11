@@ -48,6 +48,11 @@ export const projectRepository = {
     const projects = await db.getAllFromIndex(PROJECTS_STORE, "by-updated-at");
     return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
+
+  async deleteProject(projectId: string): Promise<void> {
+    const db = await getDb();
+    await db.delete(PROJECTS_STORE, projectId);
+  },
 };
 
 export const __resetProjectRepositoryForTests = (): void => {
