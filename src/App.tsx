@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { type DrawMode, MapCanvas } from "./components/MapCanvas";
 import { SelectionSidebar } from "./components/Sidebar/SelectionSidebar";
@@ -84,16 +84,15 @@ type ProjectSnapshot = {
   drawMode: DrawMode;
 };
 
+type ProjectHistoryEntry = {
+  label: string;
+  snapshot: ProjectSnapshot;
+};
+
 type PendingConfirmation = {
   title: string;
   message: string;
-  undoLabel: string;
   confirmLabel: string;
-  apply: () => void;
-};
-
-type PendingUndo = {
-  label: string;
   apply: () => void;
 };
 
@@ -271,12 +270,15 @@ function App() {
   const [locationSearchNoResults, setLocationSearchNoResults] = useState(false);
   const [locationSearchFocused, setLocationSearchFocused] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
-  const [pendingUndo, setPendingUndo] = useState<PendingUndo>();
+  const [projectUndoStack, setProjectUndoStack] = useState<ProjectHistoryEntry[]>([]);
+  const [projectRedoStack, setProjectRedoStack] = useState<ProjectHistoryEntry[]>([]);
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
     requestVersion: 1,
   });
+  const projectUndoStackRef = useRef<ProjectHistoryEntry[]>([]);
+  const projectRedoStackRef = useRef<ProjectHistoryEntry[]>([]);
 
   const runtimeConfig = getRuntimeConfig();
   const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
@@ -351,6 +353,10 @@ function App() {
           features: migratedFeatures,
         }),
       );
+      projectUndoStackRef.current = [];
+      projectRedoStackRef.current = [];
+      setProjectUndoStack([]);
+      setProjectRedoStack([]);
       setSaveStatus("saved");
     });
 
@@ -445,20 +451,74 @@ function App() {
     setDrawMode(snapshot.drawMode);
   }, []);
 
-  const applyUndoableProjectMutation = useCallback(
-    (undoLabel: string, apply: () => void) => {
+  const applyProjectMutation = useCallback(
+    (label: string, apply: () => void) => {
       const snapshot = snapshotProjectState();
       apply();
-      setPendingUndo({
-        label: undoLabel,
-        apply: () => {
-          restoreProjectState(snapshot);
-          setPendingUndo(undefined);
-        },
-      });
+      const nextUndo = [...projectUndoStackRef.current, { label, snapshot }];
+      projectUndoStackRef.current = nextUndo;
+      projectRedoStackRef.current = [];
+      setProjectUndoStack(nextUndo);
+      setProjectRedoStack([]);
     },
-    [snapshotProjectState, restoreProjectState],
+    [snapshotProjectState],
   );
+
+  const undoProjectMutation = useCallback((): boolean => {
+    const previous = projectUndoStackRef.current.at(-1);
+    if (!previous) {
+      return false;
+    }
+
+    const currentSnapshot = snapshotProjectState();
+    restoreProjectState(previous.snapshot);
+    const nextUndo = projectUndoStackRef.current.slice(0, -1);
+    const nextRedo = [
+      ...projectRedoStackRef.current,
+      { label: previous.label, snapshot: currentSnapshot },
+    ];
+    projectUndoStackRef.current = nextUndo;
+    projectRedoStackRef.current = nextRedo;
+    setProjectUndoStack(nextUndo);
+    setProjectRedoStack(nextRedo);
+    return true;
+  }, [restoreProjectState, snapshotProjectState]);
+
+  const redoProjectMutation = useCallback((): boolean => {
+    const next = projectRedoStackRef.current.at(-1);
+    if (!next) {
+      return false;
+    }
+
+    const currentSnapshot = snapshotProjectState();
+    restoreProjectState(next.snapshot);
+    const nextRedo = projectRedoStackRef.current.slice(0, -1);
+    const nextUndo = [
+      ...projectUndoStackRef.current,
+      { label: next.label, snapshot: currentSnapshot },
+    ];
+    projectUndoStackRef.current = nextUndo;
+    projectRedoStackRef.current = nextRedo;
+    setProjectRedoStack(nextRedo);
+    setProjectUndoStack(nextUndo);
+    return true;
+  }, [restoreProjectState, snapshotProjectState]);
+
+  const undoAction = useCallback(() => {
+    if (undoProjectMutation()) {
+      return;
+    }
+
+    setEditorState((current) => undo(current));
+  }, [undoProjectMutation]);
+
+  const redoAction = useCallback(() => {
+    if (redoProjectMutation()) {
+      return;
+    }
+
+    setEditorState((current) => redo(current));
+  }, [redoProjectMutation]);
 
   const requestProjectConfirmation = useCallback((confirmation: PendingConfirmation) => {
     setPendingConfirmation(confirmation);
@@ -712,19 +772,19 @@ function App() {
 
       if (event.key.toLowerCase() === "z" && event.shiftKey) {
         event.preventDefault();
-        setEditorState((current) => redo(current));
+        redoAction();
         return;
       }
 
       if (event.key.toLowerCase() === "z") {
         event.preventDefault();
-        setEditorState((current) => undo(current));
+        undoAction();
         return;
       }
 
       if (event.key.toLowerCase() === "y") {
         event.preventDefault();
-        setEditorState((current) => redo(current));
+        redoAction();
       }
     };
 
@@ -732,7 +792,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cancelDrawMode, deleteSelection, deleteVertex, hasSelectedVertex]);
+  }, [cancelDrawMode, deleteSelection, deleteVertex, hasSelectedVertex, redoAction, undoAction]);
 
   const applyToCurrentOverlay = useCallback(
     (transform: (overlay: FloorOverlay) => FloorOverlay) => {
@@ -911,11 +971,13 @@ function App() {
       name: "Ground Floor",
     };
 
-    setBuildings((current) => [...current, building]);
-    setFloors((current) => [...current, floor]);
-    setSelection({ kind: "floor", id: floorId });
-    setEditorState((current) => selectFeature(current, undefined));
-  }, [buildings.length, mapView.center]);
+    applyProjectMutation("Building added", () => {
+      setBuildings((current) => [...current, building]);
+      setFloors((current) => [...current, floor]);
+      setSelection({ kind: "floor", id: floorId });
+      setEditorState((current) => selectFeature(current, undefined));
+    });
+  }, [applyProjectMutation, buildings.length, mapView.center]);
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {
@@ -928,10 +990,9 @@ function App() {
       requestProjectConfirmation({
         title: "Delete building?",
         message: `Delete "${buildingName}" and all its floors and features?`,
-        undoLabel: "Building deleted",
         confirmLabel: "Yes",
         apply: () =>
-          applyUndoableProjectMutation("Building deleted", () => {
+          applyProjectMutation("Building deleted", () => {
             const nextBuildings = buildings.filter((building) => building.id !== buildingId);
             const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
             const nextFeatures = editorState.features.filter(
@@ -956,13 +1017,7 @@ function App() {
           }),
       });
     },
-    [
-      buildings,
-      floors,
-      editorState.features,
-      applyUndoableProjectMutation,
-      requestProjectConfirmation,
-    ],
+    [buildings, floors, editorState.features, applyProjectMutation, requestProjectConfirmation],
   );
 
   const onAddFloor = useCallback(
@@ -973,11 +1028,41 @@ function App() {
         name: `Floor ${floors.filter((current) => current.buildingId === buildingId).length + 1}`,
       };
 
-      setFloors((current) => [...current, nextFloor]);
-      setSelection({ kind: "floor", id: nextFloor.id });
-      setEditorState((current) => selectFeature(current, undefined));
+      applyProjectMutation("Floor added", () => {
+        setFloors((current) => [...current, nextFloor]);
+        setSelection({ kind: "floor", id: nextFloor.id });
+        setEditorState((current) => selectFeature(current, undefined));
+      });
     },
-    [floors],
+    [applyProjectMutation, floors],
+  );
+
+  const onRenameBuilding = useCallback(
+    (buildingId: string, name: string) => {
+      applyProjectMutation("Building renamed", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? { ...building, name: name || "Untitled building" }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onRenameFloor = useCallback(
+    (floorId: string, name: string) => {
+      applyProjectMutation("Floor renamed", () => {
+        setFloors((current) =>
+          current.map((floor) =>
+            floor.id === floorId ? { ...floor, name: name || "Untitled floor" } : floor,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
   );
 
   const onDeleteFloor = useCallback(
@@ -990,10 +1075,9 @@ function App() {
       requestProjectConfirmation({
         title: "Delete floor?",
         message: `Delete "${floor.name}" and all features on this floor?`,
-        undoLabel: "Floor deleted",
         confirmLabel: "Yes",
         apply: () =>
-          applyUndoableProjectMutation("Floor deleted", () => {
+          applyProjectMutation("Floor deleted", () => {
             const nextFloors = floors.filter((current) => current.id !== floorId);
             setFloors(nextFloors);
             setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
@@ -1015,7 +1099,7 @@ function App() {
           }),
       });
     },
-    [floors, applyUndoableProjectMutation, requestProjectConfirmation],
+    [floors, applyProjectMutation, requestProjectConfirmation],
   );
 
   const onCloneFloor = useCallback(
@@ -1028,10 +1112,9 @@ function App() {
       requestProjectConfirmation({
         title: "Clone floor?",
         message: `Clone "${sourceFloor.name}" including features and overlay?`,
-        undoLabel: "Floor cloned",
         confirmLabel: "Yes",
         apply: () =>
-          applyUndoableProjectMutation("Floor cloned", () => {
+          applyProjectMutation("Floor cloned", () => {
             const clone = cloneFloorWithReferences({
               floor: sourceFloor,
               floors,
@@ -1055,13 +1138,7 @@ function App() {
           }),
       });
     },
-    [
-      editorState.features,
-      floors,
-      overlays,
-      applyUndoableProjectMutation,
-      requestProjectConfirmation,
-    ],
+    [editorState.features, floors, overlays, applyProjectMutation, requestProjectConfirmation],
   );
 
   const onCreateFeature = useCallback(
@@ -1079,6 +1156,8 @@ function App() {
     [startDrawMode],
   );
 
+  const canUndo = projectUndoStack.length > 0 || editorState.undoStack.length > 0;
+  const canRedo = projectRedoStack.length > 0 || editorState.redoStack.length > 0;
   const canEditPathNode = drawMode === "select" && hasSelectedVertex;
   const trimmedLocationQuery = locationQuery.trim();
   const showLocationSearchPopup =
@@ -1321,7 +1400,8 @@ function App() {
                         type="button"
                         aria-label="Undo"
                         title="Undo"
-                        onClick={() => setEditorState((current) => undo(current))}
+                        onClick={undoAction}
+                        disabled={!canUndo}
                       >
                         <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
                           <path
@@ -1339,7 +1419,8 @@ function App() {
                         type="button"
                         aria-label="Redo"
                         title="Redo"
-                        onClick={() => setEditorState((current) => redo(current))}
+                        onClick={redoAction}
+                        disabled={!canRedo}
                       >
                         <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
                           <path
@@ -1468,24 +1549,10 @@ function App() {
                 feature={selectedFeature}
                 allFeatures={editorState.features}
                 overlay={selectedOverlay}
-                onRenameBuilding={(buildingId, name) => {
-                  setBuildings((current) =>
-                    current.map((building) =>
-                      building.id === buildingId
-                        ? { ...building, name: name || "Untitled building" }
-                        : building,
-                    ),
-                  );
-                }}
+                onRenameBuilding={onRenameBuilding}
                 onDeleteBuilding={onDeleteBuilding}
                 onAddFloor={onAddFloor}
-                onRenameFloor={(floorId, name) => {
-                  setFloors((current) =>
-                    current.map((floor) =>
-                      floor.id === floorId ? { ...floor, name: name || "Untitled floor" } : floor,
-                    ),
-                  );
-                }}
+                onRenameFloor={onRenameFloor}
                 onCloneFloor={onCloneFloor}
                 onDeleteFloor={onDeleteFloor}
                 onCreateFeature={onCreateFeature}
@@ -1543,10 +1610,9 @@ function App() {
                   requestProjectConfirmation({
                     title: "Delete feature?",
                     message: `Delete "${featureName}"?`,
-                    undoLabel: "Feature deleted",
                     confirmLabel: "Yes",
                     apply: () =>
-                      applyUndoableProjectMutation("Feature deleted", () => {
+                      applyProjectMutation("Feature deleted", () => {
                         setEditorState((current) =>
                           replaceAllFeatures(
                             selectFeature(current, undefined),
@@ -1578,10 +1644,9 @@ function App() {
                   requestProjectConfirmation({
                     title: "Clone feature?",
                     message: `Clone "${source.properties.name ?? source.id}"?`,
-                    undoLabel: "Feature cloned",
                     confirmLabel: "Yes",
                     apply: () =>
-                      applyUndoableProjectMutation("Feature cloned", () => {
+                      applyProjectMutation("Feature cloned", () => {
                         const clone = cloneImdfFeature(source, {
                           floorId: floor.id,
                           buildingId: building.id,
@@ -1661,30 +1726,6 @@ function App() {
             </aside>
           </div>
         </div>
-        {pendingUndo ? (
-          <div className="pointer-events-none fixed bottom-4 right-4 z-40">
-            <div className="pointer-events-auto alert shadow-lg">
-              <span>{pendingUndo.label}. Undo?</span>
-              <div className="flex gap-2">
-                <button
-                  className="btn btn-xs"
-                  type="button"
-                  aria-label="Undo last project action"
-                  onClick={pendingUndo.apply}
-                >
-                  Undo
-                </button>
-                <button
-                  className="btn btn-xs btn-ghost"
-                  type="button"
-                  onClick={() => setPendingUndo(undefined)}
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
         {pendingConfirmation ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral/40 p-4">
             <div
