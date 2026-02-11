@@ -329,6 +329,9 @@ export const buildImdfArchivePayload = ({
   const featuresInBuilding = features.filter((feature) =>
     floorIds.has(feature.properties.floorId ?? ""),
   );
+  const featureUuidById = new Map(
+    featuresInBuilding.map((feature) => [feature.id, resolveUuid(feature.id)]),
+  );
   const levelByFloor = new Map<string, string>();
   const buildingId = resolveUuid(building.id);
   const venueId = resolveUuid(building.imdf?.venue?.id ?? `venue:${building.id}`);
@@ -465,21 +468,43 @@ export const buildImdfArchivePayload = ({
     if (typeof feature.properties["category"] === "string") {
       baseProperties["category"] = feature.properties["category"];
     }
-    for (const key of [
-      "origin_id",
-      "intermediary_id",
-      "destination_id",
-      "website",
-      "phone",
-      "hours",
-      "unit_ids",
-      "anchor_id",
-      "address_id",
-    ]) {
+    for (const key of ["website", "phone", "hours", "unit_ids", "anchor_id", "address_id"]) {
       const value = feature.properties[key];
       if (value !== undefined) {
         baseProperties[key] = value;
       }
+    }
+    const relation = feature.properties.relation;
+    const originId =
+      relation?.origin?.featureId ??
+      (typeof feature.properties.origin === "string" ? feature.properties.origin : undefined) ??
+      (typeof feature.properties.origin_id === "string" ? feature.properties.origin_id : undefined);
+    const intermediaryId =
+      relation?.intermediary?.featureId ??
+      (typeof feature.properties.intermediary === "string"
+        ? feature.properties.intermediary
+        : undefined) ??
+      (typeof feature.properties.intermediary_id === "string"
+        ? feature.properties.intermediary_id
+        : undefined);
+    const destinationId =
+      relation?.destination?.featureId ??
+      (typeof feature.properties.destination === "string"
+        ? feature.properties.destination
+        : undefined) ??
+      (typeof feature.properties.destination_id === "string"
+        ? feature.properties.destination_id
+        : undefined);
+    if (originId) {
+      baseProperties["origin_id"] = featureUuidById.get(originId) ?? resolveUuid(originId);
+    }
+    if (intermediaryId) {
+      baseProperties["intermediary_id"] =
+        featureUuidById.get(intermediaryId) ?? resolveUuid(intermediaryId);
+    }
+    if (destinationId) {
+      baseProperties["destination_id"] =
+        featureUuidById.get(destinationId) ?? resolveUuid(destinationId);
     }
 
     let geometry: FloorFeature["geometry"] | null = null;

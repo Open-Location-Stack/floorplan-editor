@@ -10,10 +10,15 @@ export type FloorValidationResult = {
 
 export const validateFloor = (floorId: string, features: FloorFeature[]): FloorValidationResult => {
   const floorFeatures = features.filter((feature) => feature.properties.floorId === floorId);
+  const allIds = new Set(features.map((feature) => feature.id));
   const errors: string[] = [];
   const warnings: string[] = [];
 
   for (const feature of floorFeatures) {
+    const featureType =
+      typeof feature.properties.imdfType === "string"
+        ? feature.properties.imdfType
+        : feature.properties.kind;
     if (feature.properties.level_id !== floorId) {
       errors.push(`Feature ${feature.id} is not assigned to level_id ${floorId}.`);
     }
@@ -22,6 +27,48 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
       feature.properties.imdfType.length === 0
     ) {
       warnings.push(`Feature ${feature.id} has no IMDF type.`);
+    }
+    if (featureType === "opening") {
+      if (
+        typeof feature.properties.category !== "string" ||
+        feature.properties.category.trim().length === 0
+      ) {
+        errors.push(`Opening ${feature.id} is missing category.`);
+      }
+    }
+    if (featureType === "relationship") {
+      const relation = feature.properties.relation;
+      const origin =
+        relation?.origin?.featureId ??
+        (typeof feature.properties.origin === "string" ? feature.properties.origin : undefined) ??
+        (typeof feature.properties.origin_id === "string"
+          ? feature.properties.origin_id
+          : undefined);
+      const intermediary =
+        relation?.intermediary?.featureId ??
+        (typeof feature.properties.intermediary === "string"
+          ? feature.properties.intermediary
+          : undefined) ??
+        (typeof feature.properties.intermediary_id === "string"
+          ? feature.properties.intermediary_id
+          : undefined);
+      const destination =
+        relation?.destination?.featureId ??
+        (typeof feature.properties.destination === "string"
+          ? feature.properties.destination
+          : undefined) ??
+        (typeof feature.properties.destination_id === "string"
+          ? feature.properties.destination_id
+          : undefined);
+      if (!origin || !intermediary || !destination) {
+        errors.push(`Relationship ${feature.id} has incomplete refs.`);
+      } else {
+        for (const ref of [origin, intermediary, destination]) {
+          if (!allIds.has(ref)) {
+            errors.push(`Relationship ${feature.id} references missing feature ${ref}.`);
+          }
+        }
+      }
     }
   }
   return { errors, warnings };

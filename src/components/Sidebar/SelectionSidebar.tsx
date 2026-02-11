@@ -9,6 +9,7 @@ import { FloorEditor } from "./FloorEditor";
 type SelectionSidebarProps = {
   selection: Selection | undefined;
   building: Building | undefined;
+  floors: Floor[];
   floor: Floor | undefined;
   feature: FloorFeature | undefined;
   allFeatures: FloorFeature[];
@@ -35,12 +36,12 @@ type SelectionSidebarProps = {
   onOverlayRecenter: () => void;
   onOverlayToggleVisibility: () => void;
   onOverlayToggleLock: () => void;
-  onReplaceFloorFeatures: (floorId: string, features: FloorFeature[]) => void;
 };
 
 export const SelectionSidebar = ({
   selection,
   building,
+  floors,
   floor,
   feature,
   allFeatures,
@@ -67,7 +68,6 @@ export const SelectionSidebar = ({
   onOverlayRecenter,
   onOverlayToggleVisibility,
   onOverlayToggleLock,
-  onReplaceFloorFeatures,
 }: SelectionSidebarProps) => {
   if (!selection || !building) {
     return (
@@ -105,7 +105,6 @@ export const SelectionSidebar = ({
 
     return (
       <FloorEditor
-        building={building}
         floor={floor}
         floorFeatures={floorFeatures}
         overlay={overlay}
@@ -119,7 +118,6 @@ export const SelectionSidebar = ({
         onOverlayRecenter={onOverlayRecenter}
         onOverlayToggleVisibility={onOverlayToggleVisibility}
         onOverlayToggleLock={onOverlayToggleLock}
-        onReplaceFloorFeatures={(features) => onReplaceFloorFeatures(floor.id, features)}
       />
     );
   }
@@ -128,6 +126,8 @@ export const SelectionSidebar = ({
     return (
       <FeatureEditor
         feature={feature}
+        allFeatures={allFeatures}
+        floors={floors}
         onUpdateProperty={(key, value) => onUpdateFeatureProperty(feature.id, key, value)}
         onUpdateMetadata={(metadata) => onUpdateFeatureMetadata(feature.id, metadata)}
         onDelete={() => onDeleteFeature(feature.id)}

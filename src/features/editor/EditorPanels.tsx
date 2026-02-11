@@ -50,7 +50,6 @@ const IMDF_TYPE_OPTIONS = [
   "kiosk",
   "section",
   "relationship",
-  "pathway",
 ] as const;
 
 export const EditorPanels = ({

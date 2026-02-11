@@ -292,6 +292,14 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       }
       const featureName = labelToString(properties["name"]);
       const buildingId = levelToBuildingId.get(floorId);
+      const originId =
+        typeof properties["origin_id"] === "string" ? properties["origin_id"] : undefined;
+      const intermediaryId =
+        typeof properties["intermediary_id"] === "string"
+          ? properties["intermediary_id"]
+          : undefined;
+      const destinationId =
+        typeof properties["destination_id"] === "string" ? properties["destination_id"] : undefined;
       features.push({
         type: "Feature",
         id: raw["id"],
@@ -308,14 +316,19 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ...(typeof properties["category"] === "string"
             ? { category: properties["category"] }
             : {}),
-          ...(typeof properties["origin_id"] === "string"
-            ? { origin_id: properties["origin_id"] }
+          ...(originId ? { origin: originId, origin_id: originId } : {}),
+          ...(intermediaryId
+            ? { intermediary: intermediaryId, intermediary_id: intermediaryId }
             : {}),
-          ...(typeof properties["intermediary_id"] === "string"
-            ? { intermediary_id: properties["intermediary_id"] }
-            : {}),
-          ...(typeof properties["destination_id"] === "string"
-            ? { destination_id: properties["destination_id"] }
+          ...(destinationId ? { destination: destinationId, destination_id: destinationId } : {}),
+          ...(originId && intermediaryId && destinationId
+            ? {
+                relation: {
+                  origin: { featureId: originId },
+                  intermediary: { featureId: intermediaryId, floorId },
+                  destination: { featureId: destinationId },
+                },
+              }
             : {}),
           ...(Array.isArray(properties["unit_ids"])
             ? {

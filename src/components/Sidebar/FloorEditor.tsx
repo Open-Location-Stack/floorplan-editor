@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
-import { importFloorGeoJson } from "../../lib/imdf/import";
 import { getImdfSchemaRule, type SupportedImdfType } from "../../lib/imdf/schema";
-import type { Building, Floor, FloorFeature, FloorOverlay } from "../../lib/types";
+import type { Floor, FloorFeature, FloorOverlay } from "../../lib/types";
 
 type FloorEditorProps = {
-  building: Building;
   floor: Floor;
   floorFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
@@ -18,7 +16,6 @@ type FloorEditorProps = {
   onOverlayRecenter: () => void;
   onOverlayToggleVisibility: () => void;
   onOverlayToggleLock: () => void;
-  onReplaceFloorFeatures: (features: FloorFeature[]) => void;
 };
 
 const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
@@ -37,7 +34,6 @@ const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
 ];
 
 export const FloorEditor = ({
-  building,
   floor,
   floorFeatures,
   overlay,
@@ -51,11 +47,8 @@ export const FloorEditor = ({
   onOverlayRecenter,
   onOverlayToggleVisibility,
   onOverlayToggleLock,
-  onReplaceFloorFeatures,
 }: FloorEditorProps) => {
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
-  const [importText, setImportText] = useState("");
-  const [importError, setImportError] = useState<string | undefined>();
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const feature of floorFeatures) {
@@ -69,6 +62,30 @@ export const FloorEditor = ({
       counts.set(type, (counts.get(type) ?? 0) + 1);
     }
     return counts;
+  }, [floorFeatures]);
+
+  const graphDiagnostics = useMemo(() => {
+    const byId = new Map(floorFeatures.map((feature) => [feature.id, feature]));
+    const issues: string[] = [];
+    const relationships = floorFeatures.filter(
+      (feature) =>
+        (typeof feature.properties.imdfType === "string"
+          ? feature.properties.imdfType
+          : feature.properties.kind) === "relationship",
+    );
+    for (const relationship of relationships) {
+      const refs = relationship.properties.relation;
+      if (!refs) {
+        issues.push(`Relationship ${relationship.id}: missing relation refs.`);
+        continue;
+      }
+      for (const ref of [refs.origin, refs.intermediary, refs.destination]) {
+        if (!byId.has(ref.featureId)) {
+          issues.push(`Relationship ${relationship.id}: ref ${ref.featureId} not found on floor.`);
+        }
+      }
+    }
+    return issues;
   }, [floorFeatures]);
 
   return (
@@ -213,37 +230,19 @@ export const FloorEditor = ({
         </details>
 
         <details className="rounded-box border border-base-300 p-3">
-          <summary className="cursor-pointer font-medium">Legacy floor JSON import</summary>
-          <div className="mt-3">
-            <textarea
-              className="textarea textarea-bordered h-24 w-full font-mono text-xs"
-              value={importText}
-              placeholder="Paste floor FeatureCollection"
-              onChange={(event) => setImportText(event.currentTarget.value)}
-            />
-            <div className="mt-2 flex gap-2">
-              <button
-                className="btn btn-sm"
-                type="button"
-                onClick={() => {
-                  const imported = importFloorGeoJson({
-                    buildingId: building.id,
-                    floorId: floor.id,
-                    raw: importText,
-                  });
-                  if (!imported.ok) {
-                    setImportError(imported.errors.join("\n"));
-                    return;
-                  }
-
-                  setImportError(undefined);
-                  onReplaceFloorFeatures(imported.features);
-                }}
-              >
-                Import legacy floor
-              </button>
-            </div>
-            {importError ? <pre className="mt-2 text-xs text-error">{importError}</pre> : null}
+          <summary className="cursor-pointer font-medium">Graph diagnostics</summary>
+          <div className="mt-3 text-sm">
+            {graphDiagnostics.length === 0 ? (
+              <div className="text-success">
+                No relationship reference issues found on this floor.
+              </div>
+            ) : (
+              <ul className="list-disc pl-4">
+                {graphDiagnostics.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
           </div>
         </details>
       </div>

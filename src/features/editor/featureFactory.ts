@@ -29,8 +29,8 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
         ],
       },
       properties: {
-        kind: "path",
-        name: "New path",
+        kind: "opening",
+        name: "New opening",
       },
     };
   }

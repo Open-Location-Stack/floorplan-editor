@@ -7,12 +7,10 @@ export type NormalizeContext = {
 };
 
 const resolveType = (feature: FloorFeature): SupportedImdfType => {
-  const rawCandidate =
+  const raw =
     typeof feature.properties.imdfType === "string"
       ? feature.properties.imdfType
       : feature.properties.kind;
-  const raw =
-    rawCandidate === "path" ? "opening" : rawCandidate === "zone" ? "section" : rawCandidate;
 
   if (typeof raw === "string" && isSupportedImdfType(raw)) {
     return raw;
@@ -31,6 +29,32 @@ export const normalizeFeature = (
 ): FloorFeature => {
   const normalizedType = resolveType(feature);
   const schema = getImdfSchemaRule(normalizedType);
+  const origin =
+    typeof feature.properties.origin === "string"
+      ? feature.properties.origin
+      : typeof feature.properties.origin_id === "string"
+        ? feature.properties.origin_id
+        : undefined;
+  const intermediary =
+    typeof feature.properties.intermediary === "string"
+      ? feature.properties.intermediary
+      : typeof feature.properties.intermediary_id === "string"
+        ? feature.properties.intermediary_id
+        : undefined;
+  const destination =
+    typeof feature.properties.destination === "string"
+      ? feature.properties.destination
+      : typeof feature.properties.destination_id === "string"
+        ? feature.properties.destination_id
+        : undefined;
+  const relation =
+    normalizedType === "relationship" && origin && intermediary && destination
+      ? {
+          origin: { featureId: origin },
+          intermediary: { featureId: intermediary, floorId: context.floorId },
+          destination: { featureId: destination },
+        }
+      : feature.properties.relation;
 
   return {
     ...feature,
@@ -45,6 +69,10 @@ export const normalizeFeature = (
       level_id: context.floorId,
       buildingId: context.buildingId,
       building_id: context.buildingId,
+      ...(origin ? { origin, origin_id: origin } : {}),
+      ...(intermediary ? { intermediary, intermediary_id: intermediary } : {}),
+      ...(destination ? { destination, destination_id: destination } : {}),
+      ...(relation ? { relation } : {}),
       name:
         typeof feature.properties.name === "string" && feature.properties.name.trim().length > 0
           ? feature.properties.name

@@ -47,11 +47,27 @@ export type ImdfFeatureType =
 
 export type ImdfLabel = Record<string, string>;
 
+export type RelationshipFeatureRef = {
+  featureId: string;
+  floorId?: string;
+};
+
+export type RelationshipRefs = {
+  origin: RelationshipFeatureRef;
+  intermediary: RelationshipFeatureRef;
+  destination: RelationshipFeatureRef;
+};
+
+export type FeatureStyle = {
+  color?: string;
+  fillColor?: string;
+  opacity?: number;
+  icon?: string;
+};
+
 export type FeatureProperties = {
   kind: string;
   name?: string;
-  connects_to?: string[];
-  pathway_type?: string;
   floorId?: string;
   buildingId?: string;
   id?: string;
@@ -76,9 +92,14 @@ export type FeatureProperties = {
   venue_id?: string;
   unit_ids?: string[];
   building_ids?: string[];
+  origin?: string;
+  intermediary?: string;
+  destination?: string;
   origin_id?: string;
   intermediary_id?: string;
   destination_id?: string;
+  relation?: RelationshipRefs;
+  style?: FeatureStyle;
   metadata?: JsonObject;
   [key: string]: JsonValue | undefined;
 };

@@ -321,27 +321,6 @@ const displayPointForGeometry = (
   return [(bbox.minLng + bbox.maxLng) / 2, (bbox.minLat + bbox.maxLat) / 2];
 };
 
-const pointInRing = (point: [number, number], ring: [number, number][]): boolean => {
-  let inside = false;
-
-  for (let left = 0, right = ring.length - 1; left < ring.length; right = left, left += 1) {
-    const a = ring[left];
-    const b = ring[right];
-    if (!a || !b) {
-      continue;
-    }
-
-    const intersects =
-      a[1] > point[1] !== b[1] > point[1] &&
-      point[0] < ((b[0] - a[0]) * (point[1] - a[1])) / (b[1] - a[1]) + a[0];
-    if (intersects) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
-};
-
 const resolveInternalType = (feature: FloorFeature): string => {
   const typeCandidate =
     typeof feature.properties.imdfType === "string"
@@ -417,10 +396,13 @@ export const exportImdfDataset = ({
     (feature) => feature.geometry.type === "Polygon" && resolveInternalType(feature) === "level",
   );
 
-  const pathSourceFeatures = normalizedFloorFeatures.filter(
+  const openingSourceFeatures = normalizedFloorFeatures.filter(
     (feature) =>
-      feature.geometry.type === "LineString" &&
-      ["path", "pathway", "opening", "relationship"].includes(resolveInternalType(feature)),
+      feature.geometry.type === "LineString" && resolveInternalType(feature) === "opening",
+  );
+  const relationshipSourceFeatures = normalizedFloorFeatures.filter(
+    (feature) =>
+      feature.geometry.type === "LineString" && resolveInternalType(feature) === "relationship",
   );
 
   const unitSourceFeatures = normalizedFloorFeatures.filter(
@@ -507,10 +489,7 @@ export const exportImdfDataset = ({
 
   const primaryLevelId = collections.level.features[0]?.id ?? resolveUuid(`level:${floor.id}`);
 
-  const exportedUnits: Array<{
-    id: string;
-    geometry: Extract<FloorFeature["geometry"], { type: "Polygon" }>;
-  }> = [];
+  const unitIdBySource = new Map<string, string>();
   for (const sourceFeature of unitSourceFeatures) {
     const geometry = normalizePolygonGeometry(sourceFeature.geometry);
     if (!geometry) {
@@ -537,29 +516,17 @@ export const exportImdfDataset = ({
       },
     });
 
-    exportedUnits.push({ id, geometry });
+    unitIdBySource.set(sourceFeature.id, id);
   }
 
-  for (const [index, sourceFeature] of pathSourceFeatures.entries()) {
+  const openingIdBySource = new Map<string, string>();
+  for (const [index, sourceFeature] of openingSourceFeatures.entries()) {
     const lineGeometry = normalizeLineGeometry(sourceFeature.geometry);
     if (!lineGeometry) {
       continue;
     }
 
     const openingId = toExportId(sourceFeature.id, "opening");
-    const relationshipId = toExportId(sourceFeature.id, "relationship");
-    const start = lineGeometry.coordinates[0];
-    const end = lineGeometry.coordinates[lineGeometry.coordinates.length - 1];
-
-    const originUnit = start
-      ? exportedUnits.find((unit) => pointInRing(start, unit.geometry.coordinates[0] ?? []))
-      : undefined;
-    const destinationUnit = end
-      ? exportedUnits.find((unit) => pointInRing(end, unit.geometry.coordinates[0] ?? []))
-      : undefined;
-
-    const originId = originUnit?.id ?? primaryLevelId;
-    const destinationId = destinationUnit?.id ?? primaryLevelId;
 
     collections.opening.features.push({
       type: "Feature",
@@ -569,18 +536,72 @@ export const exportImdfDataset = ({
       properties: {
         name: createLabel(sourceFeature.properties.name, `Opening ${index + 1}`, defaultLocale),
         level_id: primaryLevelId,
+        category:
+          typeof sourceFeature.properties.category === "string" &&
+          sourceFeature.properties.category.trim().length > 0
+            ? sourceFeature.properties.category
+            : "door",
       },
     });
+    openingIdBySource.set(sourceFeature.id, openingId);
+  }
 
+  for (const [index, sourceFeature] of relationshipSourceFeatures.entries()) {
+    const lineGeometry = normalizeLineGeometry(sourceFeature.geometry);
+    if (!lineGeometry) {
+      continue;
+    }
+
+    const relationshipId = toExportId(sourceFeature.id, "relationship");
+    const relation = sourceFeature.properties.relation;
+    const originRef =
+      relation?.origin?.featureId ??
+      (typeof sourceFeature.properties.origin === "string"
+        ? sourceFeature.properties.origin
+        : undefined) ??
+      (typeof sourceFeature.properties.origin_id === "string"
+        ? sourceFeature.properties.origin_id
+        : undefined);
+    const intermediaryRef =
+      relation?.intermediary?.featureId ??
+      (typeof sourceFeature.properties.intermediary === "string"
+        ? sourceFeature.properties.intermediary
+        : undefined) ??
+      (typeof sourceFeature.properties.intermediary_id === "string"
+        ? sourceFeature.properties.intermediary_id
+        : undefined);
+    const destinationRef =
+      relation?.destination?.featureId ??
+      (typeof sourceFeature.properties.destination === "string"
+        ? sourceFeature.properties.destination
+        : undefined) ??
+      (typeof sourceFeature.properties.destination_id === "string"
+        ? sourceFeature.properties.destination_id
+        : undefined);
+
+    const originId = originRef
+      ? (unitIdBySource.get(originRef) ?? openingIdBySource.get(originRef))
+      : undefined;
+    const intermediaryId = intermediaryRef ? openingIdBySource.get(intermediaryRef) : undefined;
+    const destinationId = destinationRef
+      ? (unitIdBySource.get(destinationRef) ?? openingIdBySource.get(destinationRef))
+      : undefined;
+    if (!originId || !intermediaryId || !destinationId) {
+      continue;
+    }
     collections.relationship.features.push({
       type: "Feature",
       id: relationshipId,
       feature_type: "relationship",
       geometry: lineGeometry,
       properties: {
-        name: createLabel(sourceFeature.properties.name, `Path ${index + 1}`, defaultLocale),
+        name: createLabel(
+          sourceFeature.properties.name,
+          `Relationship ${index + 1}`,
+          defaultLocale,
+        ),
         origin_id: originId,
-        intermediary_id: openingId,
+        intermediary_id: intermediaryId,
         destination_id: destinationId,
       },
     });

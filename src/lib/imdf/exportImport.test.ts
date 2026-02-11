@@ -175,7 +175,7 @@ describe("imdf export/import", () => {
     }
   });
 
-  it("converts internal paths to opening + relationship and passes validator", () => {
+  it("does not convert legacy path lines to opening/relationship automatically", () => {
     const dataset = exportImdfDataset({
       building: { id: "building-1", name: "HQ Building" },
       floor: { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
@@ -199,7 +199,7 @@ describe("imdf export/import", () => {
     }
 
     expect(openingCollection.features.length).toBeGreaterThan(0);
-    expect(relationshipCollection.features.length).toBeGreaterThan(0);
+    expect(relationshipCollection.features.length).toBe(0);
 
     const validation = validateImdfDatasetFiles(dataset.files);
     expect(validation.errors).toEqual([]);

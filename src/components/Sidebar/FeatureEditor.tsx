@@ -1,4 +1,4 @@
-import type { FloorFeature, ImdfFeatureType, JsonObject } from "../../lib/types";
+import type { Floor, FloorFeature, ImdfFeatureType, JsonObject } from "../../lib/types";
 import { AmenityFeatureEditor } from "./FeatureEditors/AmenityFeatureEditor";
 import { AnchorFeatureEditor } from "./FeatureEditors/AnchorFeatureEditor";
 import { DetailFeatureEditor } from "./FeatureEditors/DetailFeatureEditor";
@@ -15,6 +15,8 @@ import { UnitFeatureEditor } from "./FeatureEditors/UnitFeatureEditor";
 
 type FeatureEditorProps = {
   feature: FloorFeature;
+  allFeatures: FloorFeature[];
+  floors: Floor[];
   onUpdateProperty: (key: string, value: string) => void;
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;
@@ -26,12 +28,6 @@ const resolveType = (feature: FloorFeature): ImdfFeatureType => {
     typeof feature.properties.imdfType === "string"
       ? feature.properties.imdfType
       : feature.properties.kind;
-  if (typeCandidate === "zone") {
-    return "section";
-  }
-  if (typeCandidate === "path") {
-    return "opening";
-  }
   return (typeCandidate as ImdfFeatureType) ?? "unit";
 };
 
@@ -54,7 +50,13 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
     case "opening":
       return <OpeningFeatureEditor {...editorProps} />;
     case "relationship":
-      return <RelationshipFeatureEditor {...editorProps} />;
+      return (
+        <RelationshipFeatureEditor
+          {...editorProps}
+          allFeatures={props.allFeatures}
+          floors={props.floors}
+        />
+      );
     case "amenity":
       return <AmenityFeatureEditor {...editorProps} />;
     case "anchor":

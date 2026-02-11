@@ -5,6 +5,7 @@ import {
   featureAreaSquareMeters,
   featureLengthMeters,
 } from "../../../lib/geometry/measurements";
+import { getCategoryOptions } from "../../../lib/imdf/categories";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
 import type { FloorFeature, ImdfFeatureType, JsonObject } from "../../../lib/types";
 
@@ -40,6 +41,7 @@ export const GenericImdfFeatureEditor = ({
   const [metadataText, setMetadataText] = useState("{}");
   const [metadataError, setMetadataError] = useState<string | undefined>();
   const spec = getFeatureSpec(type);
+  const categoryOptions = useMemo(() => getCategoryOptions(type), [type]);
 
   useEffect(() => {
     const metadata = feature.properties.metadata;
@@ -75,22 +77,50 @@ export const GenericImdfFeatureEditor = ({
           <input className="input input-bordered input-sm" type="text" value={type} readOnly />
         </label>
 
-        {spec.fields.map((field) => (
-          <label className="form-control gap-1" key={field.key}>
-            <span className="label-text">
-              {field.key}
-              {field.required ? " *" : ""}
-              {field.readOnly ? " (read only)" : ""}
-            </span>
-            <input
-              className="input input-bordered input-sm"
-              type="text"
-              value={resolveStringValue(feature, field.key)}
-              readOnly={Boolean(field.readOnly)}
-              onChange={(event) => onUpdateProperty(field.key, event.currentTarget.value)}
-            />
-          </label>
-        ))}
+        {spec.fields.map((field) => {
+          if (field.key === "category" && categoryOptions.length > 0) {
+            const currentValue = resolveStringValue(feature, field.key);
+            return (
+              <label className="form-control gap-1" key={field.key}>
+                <span className="label-text">
+                  {field.key}
+                  {field.required ? " *" : ""}
+                  {field.readOnly ? " (read only)" : ""}
+                </span>
+                <select
+                  className="select select-bordered select-sm"
+                  value={currentValue}
+                  disabled={Boolean(field.readOnly)}
+                  onChange={(event) => onUpdateProperty(field.key, event.currentTarget.value)}
+                >
+                  <option value="">Select category</option>
+                  {categoryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+
+          return (
+            <label className="form-control gap-1" key={field.key}>
+              <span className="label-text">
+                {field.key}
+                {field.required ? " *" : ""}
+                {field.readOnly ? " (read only)" : ""}
+              </span>
+              <input
+                className="input input-bordered input-sm"
+                type="text"
+                value={resolveStringValue(feature, field.key)}
+                readOnly={Boolean(field.readOnly)}
+                onChange={(event) => onUpdateProperty(field.key, event.currentTarget.value)}
+              />
+            </label>
+          );
+        })}
 
         <div className="rounded-box bg-base-200 p-3 text-sm">
           <div className="mb-2 font-medium">Metadata (JSON object)</div>

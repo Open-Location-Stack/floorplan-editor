@@ -18,6 +18,7 @@ type VertexSelectionChangeHandler = (hasSelectedVertex: boolean) => void;
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
+  setRouteOverlay: (features: FeatureCollection) => void;
   setSelection: (feature: FloorFeature | undefined) => void;
   setOverlay: (overlay: FloorOverlay | undefined) => void;
   setInteractionMode: (mode: DrawMode) => void;
@@ -44,6 +45,9 @@ type SnapSettings = {
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
+const ROUTE_SOURCE_ID = "route-overlay";
+const ROUTE_LINE_LAYER_ID = "route-overlay-line";
+const ROUTE_POINT_LAYER_ID = "route-overlay-point";
 const OVERLAY_HANDLE_SIZE = 12;
 const OVERLAY_CENTER_HANDLE_SIZE = 16;
 const OVERLAY_ROTATE_HANDLE_SIZE = 14;
@@ -55,13 +59,60 @@ const OVERLAY_ROTATE_HANDLE_OFFSET_RATIO = 0.2;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS = 1.5;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MAX_METERS = 6;
 const DEFAULT_SNAP_BASE_DISTANCE_METERS = 0.2;
-const CONNECTION_VERTEX_EPSILON_METERS = 0.02;
 const SNAP_REFERENCE_ZOOM = 17;
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 const featureTypeExpression: unknown[] = ["coalesce", ["get", "imdfType"], ["get", "kind"], ""];
 
 const drawLineColor = "#dc2626";
+const geofenceFillColorExpression: unknown[] = [
+  "coalesce",
+  ["get", "fillColor", ["get", "style", ["get", "metadata"]]],
+  ["get", "color", ["get", "style", ["get", "metadata"]]],
+  "#22c55e",
+];
+
+const pointColorExpression: unknown[] = [
+  "case",
+  ["==", featureTypeExpression, "amenity"],
+  "#0ea5e9",
+  ["==", featureTypeExpression, "anchor"],
+  "#2563eb",
+  ["==", featureTypeExpression, "detail"],
+  "#4f46e5",
+  ["==", featureTypeExpression, "fixture"],
+  "#7c3aed",
+  ["==", featureTypeExpression, "kiosk"],
+  "#d946ef",
+  ["==", featureTypeExpression, "occupant"],
+  "#ea580c",
+  "#111827",
+];
+
+const pointIconTextExpression: unknown[] = [
+  "case",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "entrance"]],
+  "↔",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "elevator"]],
+  "⇅",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "stairs"]],
+  "⇵",
+  ["all", ["==", featureTypeExpression, "opening"], ["==", ["get", "category"], "escalator"]],
+  "⇳",
+  ["==", featureTypeExpression, "amenity"],
+  "•",
+  ["==", featureTypeExpression, "anchor"],
+  "◎",
+  ["==", featureTypeExpression, "detail"],
+  "◉",
+  ["==", featureTypeExpression, "fixture"],
+  "◆",
+  ["==", featureTypeExpression, "kiosk"],
+  "⬢",
+  ["==", featureTypeExpression, "occupant"],
+  "◍",
+  "",
+];
 
 const drawPolygonFillColorExpression: unknown[] = [
   "case",
@@ -69,15 +120,15 @@ const drawPolygonFillColorExpression: unknown[] = [
   "#ffffff",
   ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
   "#e5e7eb",
-  ["==", featureTypeExpression, "zone"],
-  "#2563eb",
+  ["==", featureTypeExpression, "geofence"],
+  geofenceFillColorExpression,
   "#9ca3af",
 ];
 
 const drawPolygonFillOpacityExpression: unknown[] = [
   "case",
-  ["==", featureTypeExpression, "zone"],
-  0.4,
+  ["==", featureTypeExpression, "geofence"],
+  ["coalesce", ["get", "opacity", ["get", "style", ["get", "metadata"]]], 0.35],
   ["==", featureTypeExpression, "level"],
   1,
   ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
@@ -192,7 +243,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     ],
     paint: {
       "circle-radius": 5,
-      "circle-color": "#111827",
+      "circle-color": pointColorExpression,
     },
   },
   {
@@ -201,7 +252,39 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
     paint: {
       "circle-radius": 6,
-      "circle-color": "#111827",
+      "circle-color": pointColorExpression,
+    },
+  },
+  {
+    id: "gl-draw-point-symbol-inactive",
+    type: "symbol",
+    filter: [
+      "all",
+      ["==", "$type", "Point"],
+      ["!=", "meta", "midpoint"],
+      ["==", "active", "false"],
+      ["!=", "mode", "static"],
+    ],
+    layout: {
+      "text-field": pointIconTextExpression,
+      "text-size": 11,
+      "text-allow-overlap": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
+    },
+  },
+  {
+    id: "gl-draw-point-symbol-active",
+    type: "symbol",
+    filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
+    layout: {
+      "text-field": pointIconTextExpression,
+      "text-size": 12,
+      "text-allow-overlap": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
     },
   },
   {
@@ -270,6 +353,12 @@ const isUpdateImageSource = (
   }) => void;
 } => typeof source === "object" && source !== null && "updateImage" in source;
 
+const isGeoJsonSourceWithSetData = (
+  source: unknown,
+): source is {
+  setData: (data: FeatureCollection) => void;
+} => typeof source === "object" && source !== null && "setData" in source;
+
 const parseFeatureId = (value: unknown): string | undefined => {
   if (typeof value === "string") {
     return value;
@@ -335,55 +424,6 @@ const coordinateEquals = (left: Coordinates, right: Coordinates): boolean =>
   left[0] === right[0] && left[1] === right[1];
 
 const coordinateKey = (coordinate: Coordinates): string => `${coordinate[0]},${coordinate[1]}`;
-
-const isPathFeature = (feature: GeoJsonFeature): boolean => {
-  if (feature.geometry?.type !== "LineString") {
-    return false;
-  }
-
-  if (!feature.properties || typeof feature.properties !== "object") {
-    return false;
-  }
-
-  const properties = feature.properties as {
-    kind?: unknown;
-    imdfType?: unknown;
-  };
-
-  return (
-    properties.kind === "path" || properties.kind === "pathway" || properties.imdfType === "path"
-  );
-};
-
-const withConnectsTo = (
-  properties: FloorFeature["properties"],
-  targetId: string,
-): FloorFeature["properties"] => {
-  if (targetId.length === 0) {
-    return properties;
-  }
-
-  const selfId = typeof properties.id === "string" ? properties.id : undefined;
-  if (selfId && selfId === targetId) {
-    return properties;
-  }
-
-  const propertyBag = properties as FloorFeature["properties"] & { connects_to?: unknown };
-  const currentValue = propertyBag.connects_to;
-  const normalized = Array.isArray(currentValue)
-    ? currentValue
-        .filter((value): value is string => typeof value === "string" && value.length > 0)
-        .map((value) => value)
-    : [];
-  if (!normalized.includes(targetId)) {
-    normalized.push(targetId);
-  }
-
-  return {
-    ...properties,
-    connects_to: normalized,
-  };
-};
 
 const normalizeForkCoordinates = (
   coordinates: Coordinates[],
@@ -765,27 +805,6 @@ const distanceMetersBetween = (
   const fromLocal = toLocalMeters(from, referenceCenter);
   const toLocal = toLocalMeters(to, referenceCenter);
   return Math.hypot(fromLocal.x - toLocal.x, fromLocal.y - toLocal.y);
-};
-
-const findNearbyVertexIndex = (
-  coordinates: Coordinates[],
-  target: Coordinates,
-  referenceCenter: Coordinates,
-  maxDistanceMeters: number,
-): number | undefined => {
-  let bestIndex: number | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const [index, coordinate] of coordinates.entries()) {
-    const distance = distanceMetersBetween(coordinate, target, referenceCenter);
-    if (distance > maxDistanceMeters || distance >= bestDistance) {
-      continue;
-    }
-    bestIndex = index;
-    bestDistance = distance;
-  }
-
-  return bestIndex;
 };
 
 const getClosestPointOnSegment = (
@@ -1194,6 +1213,7 @@ export const createMapController = async (
   let isStyleReady = false;
   let isSyncingExternalState = false;
   let currentFeatures: FeatureCollection = emptyFeatureCollection();
+  let currentRouteOverlay: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentSnapEnabled = options?.snapping?.enabled ?? true;
@@ -1766,6 +1786,46 @@ export const createMapController = async (
     syncOverlayHandles();
   };
 
+  const applyRouteOverlay = () => {
+    const source = map.getSource(ROUTE_SOURCE_ID);
+    if (isGeoJsonSourceWithSetData(source)) {
+      source.setData(currentRouteOverlay);
+    } else if (!source) {
+      map.addSource(ROUTE_SOURCE_ID, {
+        type: "geojson",
+        data: currentRouteOverlay,
+      });
+    }
+
+    if (!map.getLayer(ROUTE_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: ROUTE_LINE_LAYER_ID,
+        type: "line",
+        source: ROUTE_SOURCE_ID,
+        filter: ["==", "$type", "LineString"],
+        paint: {
+          "line-color": "#1d4ed8",
+          "line-width": 5,
+          "line-opacity": 0.9,
+        },
+      });
+    }
+    if (!map.getLayer(ROUTE_POINT_LAYER_ID)) {
+      map.addLayer({
+        id: ROUTE_POINT_LAYER_ID,
+        type: "circle",
+        source: ROUTE_SOURCE_ID,
+        filter: ["==", "$type", "Point"],
+        paint: {
+          "circle-color": "#1d4ed8",
+          "circle-radius": 5,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+        },
+      });
+    }
+  };
+
   const applyPendingState = () => {
     if (!isStyleReady) {
       return;
@@ -1773,6 +1833,7 @@ export const createMapController = async (
 
     withExternalSyncGuard(() => {
       applyFeatures();
+      applyRouteOverlay();
       applyInteractionMode();
       applySelection();
       applyOverlay();
@@ -1790,9 +1851,6 @@ export const createMapController = async (
       const isForkDrawInProgress = isDrawInMode(draw, "draw_line_string");
       const forkIndex = nextFeatures.findIndex(
         (feature) => feature.id === pendingForkState?.forkFeatureId,
-      );
-      const sourceIndex = nextFeatures.findIndex(
-        (feature) => feature.id === pendingForkState?.sourceFeatureId,
       );
       const forkFeature = forkIndex >= 0 ? nextFeatures[forkIndex] : undefined;
 
@@ -1813,30 +1871,8 @@ export const createMapController = async (
           normalizedForkCoordinates.map((coordinate) => coordinateKey(coordinate)),
         ).size;
         if (distinctCoordinateCount >= 2) {
-          const normalizedForkFeature = nextFeatures[forkIndex];
-          if (!normalizedForkFeature) {
-            pendingForkState = undefined;
-          } else {
-            nextFeatures[forkIndex] = {
-              ...normalizedForkFeature,
-              properties: withConnectsTo(
-                normalizedForkFeature.properties,
-                pendingForkState.sourceFeatureId,
-              ),
-            };
-            if (sourceIndex >= 0) {
-              const sourceFeature = nextFeatures[sourceIndex];
-              if (sourceFeature) {
-                nextFeatures[sourceIndex] = {
-                  ...sourceFeature,
-                  properties: withConnectsTo(
-                    sourceFeature.properties,
-                    pendingForkState.forkFeatureId,
-                  ),
-                };
-              }
-            }
-          }
+          pendingForkState = undefined;
+        } else if (!isForkDrawInProgress) {
           pendingForkState = undefined;
         }
       } else if (!isForkDrawInProgress) {
@@ -1935,105 +1971,7 @@ export const createMapController = async (
 
         const snapped = snapCoordinates(coordinates, targets, maxDistanceMeters, center);
         const nextCoordinates = [...snapped.coordinates];
-        let hasGeometryChange = snapped.changed;
-        let nextProperties: FloorFeature["properties"] =
-          sourceFeature.properties && typeof sourceFeature.properties === "object"
-            ? (structuredClone(sourceFeature.properties) as FloorFeature["properties"])
-            : { kind: "unknown" };
-        let hasPropertiesChange = false;
-
-        if (isPathFeature(sourceFeature) && nextCoordinates.length >= 2) {
-          const endpointIndices = [0, nextCoordinates.length - 1];
-          for (const endpointIndex of endpointIndices) {
-            const endpointCandidate = snapped.candidates[endpointIndex];
-            if (
-              !endpointCandidate ||
-              endpointCandidate.targetFeatureId === featureId ||
-              endpointCandidate.targetGeometryType !== "LineString"
-            ) {
-              continue;
-            }
-
-            const targetFeature = getWorkingFeature(endpointCandidate.targetFeatureId);
-            if (
-              !targetFeature ||
-              !isPathFeature(targetFeature) ||
-              targetFeature.geometry.type !== "LineString"
-            ) {
-              continue;
-            }
-
-            const targetCoordinates = normalizeLine(targetFeature.geometry.coordinates);
-            if (!targetCoordinates || targetCoordinates.length < 2) {
-              continue;
-            }
-
-            let resolvedCoordinate = endpointCandidate.coordinate;
-            let targetCoordinatesChanged = false;
-
-            if (endpointCandidate.kind === "vertex") {
-              const vertexIndex = endpointCandidate.targetVertexIndex;
-              if (vertexIndex !== undefined && targetCoordinates[vertexIndex]) {
-                resolvedCoordinate = targetCoordinates[vertexIndex];
-              }
-            } else if (endpointCandidate.kind === "edge") {
-              const nearbyVertexIndex = findNearbyVertexIndex(
-                targetCoordinates,
-                endpointCandidate.coordinate,
-                center,
-                CONNECTION_VERTEX_EPSILON_METERS,
-              );
-              if (nearbyVertexIndex !== undefined) {
-                const nearbyVertex = targetCoordinates[nearbyVertexIndex];
-                if (nearbyVertex) {
-                  resolvedCoordinate = nearbyVertex;
-                }
-              } else {
-                const insertAt = (endpointCandidate.targetSegmentIndex ?? -1) + 1;
-                if (insertAt > 0 && insertAt < targetCoordinates.length) {
-                  targetCoordinates.splice(insertAt, 0, endpointCandidate.coordinate);
-                  targetCoordinatesChanged = true;
-                } else {
-                  continue;
-                }
-              }
-            }
-
-            if (
-              !coordinateEquals(
-                nextCoordinates[endpointIndex] ?? resolvedCoordinate,
-                resolvedCoordinate,
-              )
-            ) {
-              nextCoordinates[endpointIndex] = resolvedCoordinate;
-              hasGeometryChange = true;
-            }
-
-            const propertiesWithConnection = withConnectsTo(
-              nextProperties,
-              endpointCandidate.targetFeatureId,
-            );
-            if (
-              JSON.stringify(propertiesWithConnection.connects_to) !==
-              JSON.stringify(nextProperties.connects_to)
-            ) {
-              nextProperties = propertiesWithConnection;
-              hasPropertiesChange = true;
-            }
-
-            if (targetCoordinatesChanged) {
-              queueUpdate(endpointCandidate.targetFeatureId, {
-                ...targetFeature,
-                geometry: {
-                  type: "LineString",
-                  coordinates: targetCoordinates,
-                },
-              });
-            }
-          }
-        }
-
-        if (!hasGeometryChange && !hasPropertiesChange) {
+        if (!snapped.changed) {
           continue;
         }
 
@@ -2043,7 +1981,6 @@ export const createMapController = async (
             type: "LineString",
             coordinates: nextCoordinates,
           },
-          properties: nextProperties,
         });
         continue;
       }
@@ -2442,6 +2379,13 @@ export const createMapController = async (
   return {
     setFeatures: (features) => {
       currentFeatures = {
+        type: "FeatureCollection",
+        features: features.features.map((feature) => structuredClone(feature)),
+      };
+      applyPendingState();
+    },
+    setRouteOverlay: (features) => {
+      currentRouteOverlay = {
         type: "FeatureCollection",
         features: features.features.map((feature) => structuredClone(feature)),
       };

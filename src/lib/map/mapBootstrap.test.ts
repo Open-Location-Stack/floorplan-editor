@@ -923,9 +923,6 @@ describe("createMapController", () => {
               [5.121, 52.091],
             ],
           },
-          properties: expect.objectContaining({
-            connects_to: expect.arrayContaining(["target-path"]),
-          }),
         }),
         expect.objectContaining({
           id: "target-path",
@@ -1032,10 +1029,8 @@ describe("createMapController", () => {
     expect(source.geometry.coordinates[0]).toEqual([5.12, 52.09]);
     expect(target.geometry.coordinates).toEqual([
       [5.1195, 52.09],
-      [5.12, 52.09],
       [5.1205, 52.09],
     ]);
-    expect(source.properties.connects_to).toEqual(expect.arrayContaining(["target-path"]));
 
     map.emit("draw.update", {
       features: [{ id: "source-path" }],
@@ -1051,7 +1046,6 @@ describe("createMapController", () => {
     }
     expect(repeatedTarget.geometry.coordinates).toEqual([
       [5.1195, 52.09],
-      [5.12, 52.09],
       [5.1205, 52.09],
     ]);
 
@@ -1131,7 +1125,6 @@ describe("createMapController", () => {
     if (!source || source.geometry.type !== "LineString") {
       throw new Error("Expected source path feature");
     }
-    expect(source.properties.connects_to).toBeUndefined();
 
     controller.destroy();
   });
@@ -1292,7 +1285,6 @@ describe("createMapController", () => {
       throw new Error("Expected source and target path features");
     }
 
-    expect(source.properties.connects_to).toBeUndefined();
     expect(source.geometry.coordinates[0]).toEqual([5.12, 52.090001]);
     expect(target.geometry.coordinates).toEqual([
       [5.1195, 52.09],
@@ -2123,9 +2115,6 @@ describe("createMapController", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "path-1",
-          properties: expect.objectContaining({
-            connects_to: expect.arrayContaining([forkFeatureId]),
-          }),
         }),
         expect.objectContaining({
           id: forkFeatureId,
@@ -2135,9 +2124,6 @@ describe("createMapController", () => {
               [5.121, 52.091],
               [5.125, 52.095],
             ],
-          }),
-          properties: expect.objectContaining({
-            connects_to: expect.arrayContaining(["path-1"]),
           }),
         }),
       ]),

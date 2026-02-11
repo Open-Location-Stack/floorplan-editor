@@ -22,9 +22,12 @@ import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
+import { migrateProjectSnapshotToImdfV4 } from "./lib/imdf/migrations/v4";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
 import { clientLogger } from "./lib/logging/clientLogger";
+import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
+import { findRoute } from "./lib/navigation/router";
 import { projectRepository } from "./lib/persistence/projectRepository";
 import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSanitizer";
 import type {
@@ -34,6 +37,7 @@ import type {
   FloorFeature,
   FloorOverlay,
   GeometryType,
+  JsonValue,
   OverlayCorners,
   ThemeId,
 } from "./lib/types";
@@ -257,7 +261,7 @@ const kindForGeometry = (geometryType: GeometryType): string => {
   }
 
   if (geometryType === "LineString") {
-    return "path";
+    return "opening";
   }
 
   return "unit";
@@ -269,7 +273,7 @@ const nameForGeometry = (geometryType: GeometryType): string => {
   }
 
   if (geometryType === "LineString") {
-    return "New path";
+    return "New opening";
   }
 
   return "New polygon";
@@ -290,7 +294,7 @@ const saveEditorSnapshot = async (
   await projectRepository.saveProject({
     id: PROJECT_ID,
     name: "Main project",
-    version: 3,
+    version: 4,
     updatedAt: new Date().toISOString(),
     features,
     overlays,
@@ -327,6 +331,8 @@ function App() {
   const [projectUndoStack, setProjectUndoStack] = useState<ProjectHistoryEntry[]>([]);
   const [projectRedoStack, setProjectRedoStack] = useState<ProjectHistoryEntry[]>([]);
   const [archiveWarnings, setArchiveWarnings] = useState<string[]>([]);
+  const [routeStartFeatureId, setRouteStartFeatureId] = useState("");
+  const [routeEndFeatureId, setRouteEndFeatureId] = useState("");
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
@@ -367,7 +373,7 @@ function App() {
         return;
       }
 
-      const sanitizedProject = sanitizeProjectSnapshot(project);
+      const sanitizedProject = sanitizeProjectSnapshot(migrateProjectSnapshotToImdfV4(project));
       const loadedBuildings = sanitizedProject.buildings ?? [];
       const loadedFloors = sanitizedProject.floors ?? [];
       const primaryFloor = loadedFloors[0];
@@ -530,6 +536,72 @@ function App() {
       editorState.features.filter((feature) => feature.properties.floorId === activeFloor.id),
     );
   }, [editorState.features, activeFloor]);
+
+  const routeSelectableFeatures = useMemo(
+    () =>
+      editorState.features.filter((feature) => {
+        const type =
+          typeof feature.properties.imdfType === "string"
+            ? feature.properties.imdfType
+            : feature.properties.kind;
+        return type === "unit" || type === "opening" || type === "amenity" || type === "anchor";
+      }),
+    [editorState.features],
+  );
+
+  const navigationGraph = useMemo(
+    () => buildNavigationGraph(editorState.features),
+    [editorState.features],
+  );
+  const routeResult = useMemo(() => {
+    if (!routeStartFeatureId || !routeEndFeatureId) {
+      return undefined;
+    }
+    return findRoute(navigationGraph, routeStartFeatureId, routeEndFeatureId);
+  }, [navigationGraph, routeStartFeatureId, routeEndFeatureId]);
+
+  const routeOverlayFeatures = useMemo(() => {
+    if (!routeResult?.found || !activeFloor) {
+      return [] as FloorFeature[];
+    }
+    const featuresById = new Map(editorState.features.map((feature) => [feature.id, feature]));
+    const routeFeatures: FloorFeature[] = [];
+    for (const edgeId of routeResult.edgePath) {
+      const relationship = featuresById.get(edgeId);
+      if (
+        relationship &&
+        relationship.geometry.type === "LineString" &&
+        relationship.properties.floorId === activeFloor.id
+      ) {
+        routeFeatures.push({
+          ...relationship,
+          id: `route-edge-${relationship.id}`,
+          properties: {
+            ...relationship.properties,
+            kind: "route-edge",
+          },
+        });
+      }
+    }
+    for (const featureId of routeResult.featurePath) {
+      const nodeFeature = featuresById.get(featureId);
+      if (
+        nodeFeature &&
+        nodeFeature.geometry.type === "Point" &&
+        nodeFeature.properties.floorId === activeFloor.id
+      ) {
+        routeFeatures.push({
+          ...nodeFeature,
+          id: `route-node-${nodeFeature.id}`,
+          properties: {
+            ...nodeFeature.properties,
+            kind: "route-node",
+          },
+        });
+      }
+    }
+    return routeFeatures;
+  }, [routeResult, editorState.features, activeFloor]);
 
   const selectedFeatureForMap =
     selectedFeature && activeFloor && selectedFeature.properties.floorId === activeFloor.id
@@ -1529,6 +1601,56 @@ function App() {
                   </select>
                 </label>
               </div>
+              <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
+                <div className="mb-2 text-sm font-semibold">Blue path navigation</div>
+                <label className="form-control mb-2 gap-1">
+                  <span className="label-text text-xs">Start feature</span>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={routeStartFeatureId}
+                    onChange={(event) => setRouteStartFeatureId(event.currentTarget.value)}
+                  >
+                    <option value="">Select start</option>
+                    {routeSelectableFeatures.map((feature) => (
+                      <option key={feature.id} value={feature.id}>
+                        {feature.properties.name ?? feature.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-control gap-1">
+                  <span className="label-text text-xs">Destination feature</span>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={routeEndFeatureId}
+                    onChange={(event) => setRouteEndFeatureId(event.currentTarget.value)}
+                  >
+                    <option value="">Select destination</option>
+                    {routeSelectableFeatures.map((feature) => (
+                      <option key={feature.id} value={feature.id}>
+                        {feature.properties.name ?? feature.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-2 text-xs text-base-content/70">
+                  {routeResult
+                    ? routeResult.found
+                      ? `Route found: ${routeResult.featurePath.length} nodes`
+                      : "No route found for selected endpoints."
+                    : "Select start and destination to compute a route."}
+                </div>
+                <button
+                  className="btn btn-xs btn-ghost mt-2"
+                  type="button"
+                  onClick={() => {
+                    setRouteStartFeatureId("");
+                    setRouteEndFeatureId("");
+                  }}
+                >
+                  Clear route
+                </button>
+              </div>
               <div className="mt-auto rounded-box bg-base-200 p-3 text-sm">
                 Center: {mapView.center[0].toFixed(6)}, {mapView.center[1].toFixed(6)} | Zoom:{" "}
                 {mapView.zoom.toFixed(2)}
@@ -1640,8 +1762,8 @@ function App() {
                       <button
                         className="btn btn-sm join-item"
                         type="button"
-                        aria-label="Split selected path segment"
-                        title="Split selected path segment"
+                        aria-label="Split selected edge"
+                        title="Split selected edge"
                         onClick={splitPathSegment}
                         disabled={!canEditPathNode}
                       >
@@ -1659,8 +1781,8 @@ function App() {
                       <button
                         className="btn btn-sm join-item"
                         type="button"
-                        aria-label="Fork path from selected node"
-                        title="Fork path from selected node"
+                        aria-label="Fork edge from selected node"
+                        title="Fork edge from selected node"
                         onClick={forkPathAtNode}
                         disabled={!canEditPathNode}
                       >
@@ -1700,6 +1822,7 @@ function App() {
                     mapStyleId={mapStyleId}
                     initialView={initialMapView}
                     features={visibleFeatures}
+                    routeOverlayFeatures={routeOverlayFeatures}
                     selectedFeature={selectedFeatureForMap}
                     overlay={selectedOverlay}
                     drawMode={drawMode}
@@ -1730,6 +1853,7 @@ function App() {
               <SelectionSidebar
                 selection={selection}
                 building={resolvedSelection?.building}
+                floors={floors}
                 floor={activeFloor}
                 feature={selectedFeature}
                 allFeatures={editorState.features}
@@ -1765,7 +1889,16 @@ function App() {
                           ...feature,
                           properties: {
                             ...feature.properties,
-                            [key]: value || undefined,
+                            [key]:
+                              key === "relation" || key === "style"
+                                ? (() => {
+                                    try {
+                                      return JSON.parse(value) as JsonValue;
+                                    } catch {
+                                      return feature.properties[key];
+                                    }
+                                  })()
+                                : value || undefined,
                           },
                         },
                         {
@@ -1903,15 +2036,6 @@ function App() {
                         : overlay,
                     ),
                   );
-                }}
-                onReplaceFloorFeatures={(floorId, features) => {
-                  setEditorState((current) => {
-                    const withoutFloor = current.features.filter(
-                      (feature) => feature.properties.floorId !== floorId,
-                    );
-                    return replaceAllFeatures(current, [...withoutFloor, ...features]);
-                  });
-                  setSelection({ kind: "floor", id: floorId });
                 }}
               />
             </aside>

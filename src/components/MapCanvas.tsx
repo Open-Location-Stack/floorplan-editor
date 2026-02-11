@@ -20,6 +20,7 @@ type MapCanvasProps = {
     zoom: number;
   };
   features: FloorFeature[];
+  routeOverlayFeatures: FloorFeature[];
   selectedFeature: FloorFeature | undefined;
   overlay: FloorOverlay | undefined;
   drawMode: DrawMode;
@@ -42,6 +43,7 @@ export const MapCanvas = ({
   mapStyleId,
   initialView,
   features,
+  routeOverlayFeatures,
   selectedFeature,
   overlay,
   drawMode,
@@ -70,6 +72,7 @@ export const MapCanvas = ({
 
   const featuresRef = useRef(features);
   const selectedFeatureRef = useRef(selectedFeature);
+  const routeOverlayFeaturesRef = useRef(routeOverlayFeatures);
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
   const snapEnabledRef = useRef(snapEnabled);
@@ -106,6 +109,10 @@ export const MapCanvas = ({
   useEffect(() => {
     selectedFeatureRef.current = selectedFeature;
   }, [selectedFeature]);
+
+  useEffect(() => {
+    routeOverlayFeaturesRef.current = routeOverlayFeatures;
+  }, [routeOverlayFeatures]);
 
   useEffect(() => {
     overlayRef.current = overlay;
@@ -167,6 +174,10 @@ export const MapCanvas = ({
         type: "FeatureCollection",
         features: featuresRef.current,
       });
+      controller.setRouteOverlay({
+        type: "FeatureCollection",
+        features: routeOverlayFeaturesRef.current,
+      });
       controller.setSelection(selectedFeatureRef.current);
       controller.setOverlay(overlayRef.current);
       controller.setInteractionMode(drawModeRef.current);
@@ -196,6 +207,13 @@ export const MapCanvas = ({
       features,
     });
   }, [features]);
+
+  useEffect(() => {
+    controllerRef.current?.setRouteOverlay({
+      type: "FeatureCollection",
+      features: routeOverlayFeatures,
+    });
+  }, [routeOverlayFeatures]);
 
   useEffect(() => {
     controllerRef.current?.setSelection(selectedFeature);

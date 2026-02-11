@@ -117,7 +117,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     fields: [
       { key: "name", type: "label", required: true },
       { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: false },
+      { key: "category", type: "string", required: true },
     ],
   },
   relationship: {
