@@ -14,6 +14,12 @@ type SelectionSidebarProps = {
   allFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
+  onUpdateBuildingVenueName: (buildingId: string, name: string) => void;
+  onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
+  onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
+  onExportBuildingArchive: (buildingId: string) => void;
+  onImportBuildingArchive: (buildingId: string, file: File) => void;
+  archiveWarnings: string[];
   onDeleteBuilding: (buildingId: string) => void;
   onAddFloor: (buildingId: string) => void;
   onRenameFloor: (floorId: string, name: string) => void;
@@ -40,6 +46,12 @@ export const SelectionSidebar = ({
   allFeatures,
   overlay,
   onRenameBuilding,
+  onUpdateBuildingVenueName,
+  onUpdateBuildingVenueCategory,
+  onUpdateBuildingAddressField,
+  onExportBuildingArchive,
+  onImportBuildingArchive,
+  archiveWarnings,
   onDeleteBuilding,
   onAddFloor,
   onRenameFloor,
@@ -73,6 +85,14 @@ export const SelectionSidebar = ({
       <BuildingEditor
         building={building}
         onRenameBuilding={(name) => onRenameBuilding(building.id, name)}
+        onUpdateVenueName={(name) => onUpdateBuildingVenueName(building.id, name)}
+        onUpdateVenueCategory={(category) => onUpdateBuildingVenueCategory(building.id, category)}
+        onUpdateAddressField={(field, value) =>
+          onUpdateBuildingAddressField(building.id, field, value)
+        }
+        onExportArchive={() => onExportBuildingArchive(building.id)}
+        onImportArchive={(file) => onImportBuildingArchive(building.id, file)}
+        archiveWarnings={archiveWarnings}
         onDeleteBuilding={() => onDeleteBuilding(building.id)}
         onAddFloor={() => onAddFloor(building.id)}
       />

@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { exportImdfDatasetText } from "../../lib/imdf/export";
+import { useMemo, useState } from "react";
 import { importFloorGeoJson } from "../../lib/imdf/import";
-import type { SupportedImdfType } from "../../lib/imdf/schema";
+import { getImdfSchemaRule, type SupportedImdfType } from "../../lib/imdf/schema";
 import type { Building, Floor, FloorFeature, FloorOverlay } from "../../lib/types";
 
 type FloorEditorProps = {
@@ -22,11 +21,19 @@ type FloorEditorProps = {
   onReplaceFloorFeatures: (features: FloorFeature[]) => void;
 };
 
-const featureButtons: Array<{ type: SupportedImdfType; label: string; icon: string }> = [
-  { type: "level", label: "Draw level", icon: "L" },
-  { type: "unit", label: "Draw unit/room", icon: "U" },
-  { type: "zone", label: "Draw zone", icon: "Z" },
-  { type: "path", label: "Draw path", icon: "P" },
+const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
+  {
+    title: "Areas",
+    types: ["level", "unit", "section", "geofence"],
+  },
+  {
+    title: "Paths",
+    types: ["opening", "relationship"],
+  },
+  {
+    title: "Points",
+    types: ["amenity", "anchor", "detail", "fixture", "kiosk", "occupant"],
+  },
 ];
 
 export const FloorEditor = ({
@@ -49,7 +56,20 @@ export const FloorEditor = ({
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | undefined>();
-  const [exportText, setExportText] = useState("");
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const feature of floorFeatures) {
+      const type =
+        typeof feature.properties.imdfType === "string"
+          ? feature.properties.imdfType
+          : feature.properties.kind;
+      if (!type) {
+        continue;
+      }
+      counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+    return counts;
+  }, [floorFeatures]);
 
   return (
     <section className="card bg-base-100 shadow">
@@ -65,22 +85,42 @@ export const FloorEditor = ({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-2">
-          {featureButtons.map((button) => (
-            <button
-              key={button.type}
-              className="btn btn-sm justify-start"
-              type="button"
-              onClick={() => onCreateFeature(button.type)}
-            >
-              <span className="badge badge-outline">{button.icon}</span>
-              {button.label}
-            </button>
-          ))}
+        <div className="rounded-box border border-base-300 p-3">
+          <div className="mb-2 text-sm font-semibold">Add IMDF feature</div>
+          <div className="grid gap-2">
+            {DRAWABLE_GROUPS.map((group) => (
+              <label className="form-control" key={group.title}>
+                <span className="label-text text-xs text-base-content/60">{group.title}</span>
+                <select
+                  className="select select-bordered select-sm"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const value = event.currentTarget.value as SupportedImdfType;
+                    if (value) {
+                      onCreateFeature(value);
+                      event.currentTarget.value = "";
+                    }
+                  }}
+                >
+                  <option value="" disabled>
+                    Select feature type
+                  </option>
+                  {group.types.map((type) => {
+                    const rule = getImdfSchemaRule(type);
+                    return (
+                      <option key={type} value={type}>
+                        {rule.defaultName} ({typeCounts.get(type) ?? 0})
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-base-content/70">
+            Map toolbar draw buttons are disabled; use these controls to start geometry creation.
+          </p>
         </div>
-        <p className="text-xs text-base-content/70">
-          Sketch by clicking vertices on the map and double-clicking to finish.
-        </p>
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onCloneFloor}>
@@ -172,59 +212,40 @@ export const FloorEditor = ({
           </div>
         </details>
 
-        <div className="rounded-box border border-base-300 p-3">
-          <div className="mb-2 text-sm font-medium">Floor import + IMDF package export</div>
-          <textarea
-            className="textarea textarea-bordered h-24 w-full font-mono text-xs"
-            value={importText}
-            placeholder="Paste floor FeatureCollection"
-            onChange={(event) => setImportText(event.currentTarget.value)}
-          />
-          <div className="mt-2 flex gap-2">
-            <button
-              className="btn btn-sm"
-              type="button"
-              onClick={() => {
-                const imported = importFloorGeoJson({
-                  buildingId: building.id,
-                  floorId: floor.id,
-                  raw: importText,
-                });
+        <details className="rounded-box border border-base-300 p-3">
+          <summary className="cursor-pointer font-medium">Legacy floor JSON import</summary>
+          <div className="mt-3">
+            <textarea
+              className="textarea textarea-bordered h-24 w-full font-mono text-xs"
+              value={importText}
+              placeholder="Paste floor FeatureCollection"
+              onChange={(event) => setImportText(event.currentTarget.value)}
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                className="btn btn-sm"
+                type="button"
+                onClick={() => {
+                  const imported = importFloorGeoJson({
+                    buildingId: building.id,
+                    floorId: floor.id,
+                    raw: importText,
+                  });
+                  if (!imported.ok) {
+                    setImportError(imported.errors.join("\n"));
+                    return;
+                  }
 
-                if (!imported.ok) {
-                  setImportError(imported.errors.join("\n"));
-                  return;
-                }
-
-                setImportError(undefined);
-                onReplaceFloorFeatures(imported.features);
-              }}
-            >
-              Import floor
-            </button>
-            <button
-              className="btn btn-sm btn-outline"
-              type="button"
-              onClick={() => {
-                setExportText(
-                  exportImdfDatasetText({
-                    building,
-                    floor,
-                    features: floorFeatures,
-                  }),
-                );
-              }}
-            >
-              Export IMDF
-            </button>
+                  setImportError(undefined);
+                  onReplaceFloorFeatures(imported.features);
+                }}
+              >
+                Import legacy floor
+              </button>
+            </div>
+            {importError ? <pre className="mt-2 text-xs text-error">{importError}</pre> : null}
           </div>
-          {importError ? <pre className="mt-2 text-xs text-error">{importError}</pre> : null}
-          <textarea
-            className="textarea textarea-bordered mt-2 h-24 w-full font-mono text-xs"
-            readOnly
-            value={exportText}
-          />
-        </div>
+        </details>
       </div>
     </section>
   );

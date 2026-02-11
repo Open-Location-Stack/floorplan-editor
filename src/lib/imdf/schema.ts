@@ -1,45 +1,41 @@
-export const IMDF_SUPPORTED_TYPES = ["level", "unit", "zone", "path"] as const;
+import type { GeometryType, ImdfFeatureType } from "../types";
+import {
+  FLOOR_FEATURE_TYPES,
+  getFeatureSpec,
+  IMDF_FEATURE_TYPES,
+  type ImdfFeatureSpec,
+  isImdfFeatureType,
+} from "./featureCatalog";
 
-export type SupportedImdfType = (typeof IMDF_SUPPORTED_TYPES)[number];
+export const IMDF_SUPPORTED_TYPES = FLOOR_FEATURE_TYPES;
 
-export type GeometryTemplateType = "Polygon" | "LineString";
+export type SupportedImdfType = (typeof FLOOR_FEATURE_TYPES)[number];
+
+export type GeometryTemplateType = GeometryType;
 
 export type ImdfSchemaRule = {
-  type: SupportedImdfType;
+  type: ImdfFeatureType;
   geometryType: GeometryTemplateType;
   defaultName: string;
   sortOrder: number;
 };
 
-const IMDF_SCHEMA_RULES: Record<SupportedImdfType, ImdfSchemaRule> = {
-  level: {
-    type: "level",
-    geometryType: "Polygon",
-    defaultName: "Level",
-    sortOrder: 1,
-  },
-  zone: {
-    type: "zone",
-    geometryType: "Polygon",
-    defaultName: "Zone",
-    sortOrder: 2,
-  },
-  unit: {
-    type: "unit",
-    geometryType: "Polygon",
-    defaultName: "Unit",
-    sortOrder: 3,
-  },
-  path: {
-    type: "path",
-    geometryType: "LineString",
-    defaultName: "Path",
-    sortOrder: 4,
-  },
+export const getImdfSchemaRule = (type: ImdfFeatureType): ImdfSchemaRule => {
+  const spec = getFeatureSpec(type);
+  return {
+    type: spec.type,
+    geometryType: spec.geometryType,
+    defaultName: spec.defaultName,
+    sortOrder: spec.sortOrder,
+  };
 };
 
-export const getImdfSchemaRule = (type: SupportedImdfType): ImdfSchemaRule =>
-  IMDF_SCHEMA_RULES[type];
+export const getImdfFeatureSpec = (type: ImdfFeatureType): ImdfFeatureSpec => getFeatureSpec(type);
+
+export const getAllImdfFeatureTypes = (): ImdfFeatureType[] => [...IMDF_FEATURE_TYPES];
 
 export const isSupportedImdfType = (value: string): value is SupportedImdfType =>
-  IMDF_SUPPORTED_TYPES.includes(value as SupportedImdfType);
+  (IMDF_SUPPORTED_TYPES as readonly string[]).includes(value);
+
+export const isKnownImdfType = (value: string): value is ImdfFeatureType =>
+  isImdfFeatureType(value);

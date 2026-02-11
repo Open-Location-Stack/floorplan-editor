@@ -61,7 +61,7 @@ test("app loads without triggering error boundary", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /draw line/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /select mode/i })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
@@ -162,7 +162,7 @@ test("critical journey: edit building details and survive reload", async ({ page
   const buildingPanel = page.locator("section").filter({
     has: page.getByRole("heading", { name: /^building$/i }),
   });
-  const buildingName = buildingPanel.getByRole("textbox");
+  const buildingName = buildingPanel.getByLabel("Name");
   await buildingName.fill("Journey Building");
   await expect(buildingName).toHaveValue("Journey Building");
 
@@ -172,7 +172,10 @@ test("critical journey: edit building details and survive reload", async ({ page
   await page.reload();
 
   await page.getByRole("button", { name: "Journey Building" }).click();
-  await expect(buildingPanel.getByRole("textbox")).toHaveValue("Journey Building");
+  const reloadedPanel = page.locator("section").filter({
+    has: page.getByRole("heading", { name: /^building$/i }),
+  });
+  await expect(reloadedPanel.getByLabel("Name")).toHaveValue("Journey Building");
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });

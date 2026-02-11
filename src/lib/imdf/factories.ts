@@ -33,33 +33,55 @@ export const createImdfFeature = ({
   const id = createId();
 
   const baseFeature: FloorFeature =
-    schema.geometryType === "LineString"
+    schema.geometryType === "Point"
       ? {
           type: "Feature",
           id,
           geometry: {
-            type: "LineString",
-            coordinates: lineAroundCenter(center),
+            type: "Point",
+            coordinates: center,
           },
           properties: {
             kind: type,
             name: schema.defaultName,
           },
         }
-      : {
-          type: "Feature",
-          id,
-          geometry: {
-            type: "Polygon",
-            coordinates: polygonAroundCenter(center),
-          },
-          properties: {
-            kind: type,
-            name: schema.defaultName,
-          },
-        };
+      : schema.geometryType === "LineString"
+        ? {
+            type: "Feature",
+            id,
+            geometry: {
+              type: "LineString",
+              coordinates: lineAroundCenter(center),
+            },
+            properties: {
+              kind: type,
+              name: schema.defaultName,
+            },
+          }
+        : {
+            type: "Feature",
+            id,
+            geometry: {
+              type: "Polygon",
+              coordinates: polygonAroundCenter(center),
+            },
+            properties: {
+              kind: type,
+              name: schema.defaultName,
+            },
+          };
 
-  return normalizeFeature(baseFeature, context);
+  const normalized = normalizeFeature(baseFeature, context);
+  if (normalized.properties.category === undefined) {
+    if (type === "unit") {
+      normalized.properties.category = "unspecified";
+    }
+    if (type === "amenity") {
+      normalized.properties.category = "amenity";
+    }
+  }
+  return normalized;
 };
 
 export const cloneImdfFeature = (

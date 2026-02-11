@@ -3,10 +3,19 @@ import { normalizeFeature } from "./normalize";
 import { sortOrderForFeatureType } from "./renderRules";
 
 export const IMDF_DATASET_TYPES = [
+  "address",
+  "amenity",
+  "anchor",
+  "detail",
+  "fixture",
+  "geofence",
+  "kiosk",
   "venue",
   "building",
   "footprint",
   "level",
+  "occupant",
+  "section",
   "unit",
   "opening",
   "relationship",
@@ -343,10 +352,19 @@ const resolveInternalType = (feature: FloorFeature): string => {
 };
 
 const buildEmptyCollections = (): Record<ImdfDatasetType, ImdfFeatureCollection> => ({
+  address: { type: "FeatureCollection", features: [] },
+  amenity: { type: "FeatureCollection", features: [] },
+  anchor: { type: "FeatureCollection", features: [] },
+  detail: { type: "FeatureCollection", features: [] },
+  fixture: { type: "FeatureCollection", features: [] },
+  geofence: { type: "FeatureCollection", features: [] },
+  kiosk: { type: "FeatureCollection", features: [] },
   venue: { type: "FeatureCollection", features: [] },
   building: { type: "FeatureCollection", features: [] },
   footprint: { type: "FeatureCollection", features: [] },
   level: { type: "FeatureCollection", features: [] },
+  occupant: { type: "FeatureCollection", features: [] },
+  section: { type: "FeatureCollection", features: [] },
   unit: { type: "FeatureCollection", features: [] },
   opening: { type: "FeatureCollection", features: [] },
   relationship: { type: "FeatureCollection", features: [] },
@@ -402,7 +420,7 @@ export const exportImdfDataset = ({
   const pathSourceFeatures = normalizedFloorFeatures.filter(
     (feature) =>
       feature.geometry.type === "LineString" &&
-      ["path", "pathway"].includes(resolveInternalType(feature)),
+      ["path", "pathway", "opening", "relationship"].includes(resolveInternalType(feature)),
   );
 
   const unitSourceFeatures = normalizedFloorFeatures.filter(

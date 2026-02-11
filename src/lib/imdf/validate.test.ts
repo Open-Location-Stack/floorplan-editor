@@ -104,6 +104,6 @@ describe("validateImdfDatasetFiles", () => {
       "unit.geojson": { type: "FeatureCollection", features: [] },
     });
 
-    expect(result.errors.some((error) => error.includes("labels object"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("label object"))).toBe(true);
   });
 });

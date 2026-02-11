@@ -17,9 +17,9 @@ describe("imdf factories", () => {
     expect(feature.properties.floorId).toBe("f1");
   });
 
-  it("creates line feature for path", () => {
+  it("creates line feature for opening", () => {
     const feature = createImdfFeature({
-      type: "path",
+      type: "opening",
       center: [5, 52],
       context: {
         buildingId: "b1",
@@ -28,7 +28,7 @@ describe("imdf factories", () => {
     });
 
     expect(feature.geometry.type).toBe("LineString");
-    expect(feature.properties.kind).toBe("path");
+    expect(feature.properties.kind).toBe("opening");
   });
 
   it("clones with new id and shifted coordinates", () => {

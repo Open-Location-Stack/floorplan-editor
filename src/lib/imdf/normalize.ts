@@ -7,17 +7,19 @@ export type NormalizeContext = {
 };
 
 const resolveType = (feature: FloorFeature): SupportedImdfType => {
-  const raw =
+  const rawCandidate =
     typeof feature.properties.imdfType === "string"
       ? feature.properties.imdfType
       : feature.properties.kind;
+  const raw =
+    rawCandidate === "path" ? "opening" : rawCandidate === "zone" ? "section" : rawCandidate;
 
   if (typeof raw === "string" && isSupportedImdfType(raw)) {
     return raw;
   }
 
   if (feature.geometry.type === "LineString") {
-    return "path";
+    return "opening";
   }
 
   return "unit";
@@ -38,6 +40,7 @@ export const normalizeFeature = (
       imdf_id: String(feature.id),
       kind: normalizedType,
       imdfType: normalizedType,
+      imdf_feature_type: normalizedType,
       floorId: context.floorId,
       level_id: context.floorId,
       buildingId: context.buildingId,

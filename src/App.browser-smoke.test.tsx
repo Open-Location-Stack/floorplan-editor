@@ -472,7 +472,9 @@ describe("App browser smoke", () => {
     expect(screen.getByTestId("mock-map-feature-ids")).not.toHaveTextContent("shape-first");
     expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-1");
 
-    fireEvent.click(screen.getByRole("button", { name: /draw line/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
+      target: { value: "opening" },
+    });
     expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
 
     fireEvent.click(screen.getByRole("button", { name: "First Floor" }));
@@ -593,14 +595,16 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /draw line/i })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: /paths/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /draw line/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
+      target: { value: "opening" },
+    });
     fireEvent.click(screen.getByTestId("mock-map-select-feature"));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /feature/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /unit/i })).toBeInTheDocument();
       expect(screen.getByDisplayValue(/test unit/i)).toBeInTheDocument();
     });
   });
@@ -680,10 +684,12 @@ describe("App browser smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: /add building/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /draw path/i })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: /paths/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /draw path/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
+      target: { value: "opening" },
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
@@ -714,8 +720,8 @@ describe("App browser smoke", () => {
         [5.201, 52.201],
         [5.202, 52.202],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("path");
-      expect(latestSnapshot.features[0]?.properties.name).toBe("Path");
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
+      expect(latestSnapshot.features[0]?.properties.name).toBe("Opening");
     });
   });
 
@@ -728,10 +734,12 @@ describe("App browser smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: /add building/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /draw zone/i })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: /areas/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /draw zone/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /areas/i }), {
+      target: { value: "section" },
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("polygon");
@@ -765,8 +773,8 @@ describe("App browser smoke", () => {
           [5.3, 52.3],
         ],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("zone");
-      expect(latestSnapshot.features[0]?.properties.name).toBe("Zone");
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("section");
+      expect(latestSnapshot.features[0]?.properties.name).toBe("Section");
     });
   });
 

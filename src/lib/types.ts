@@ -27,6 +27,26 @@ export type JsonObject = {
   [key: string]: JsonValue;
 };
 
+export type ImdfFeatureType =
+  | "address"
+  | "amenity"
+  | "anchor"
+  | "building"
+  | "detail"
+  | "fixture"
+  | "footprint"
+  | "geofence"
+  | "kiosk"
+  | "level"
+  | "occupant"
+  | "opening"
+  | "relationship"
+  | "section"
+  | "unit"
+  | "venue";
+
+export type ImdfLabel = Record<string, string>;
+
 export type FeatureProperties = {
   kind: string;
   name?: string;
@@ -44,6 +64,21 @@ export type FeatureProperties = {
   externalId?: string;
   imdfType?: string;
   imdfClass?: string;
+  imdf_feature_type?: ImdfFeatureType;
+  short_name?: ImdfLabel;
+  display_point?: Coordinates;
+  ordinal?: number;
+  outdoor?: boolean;
+  website?: string;
+  phone?: string;
+  hours?: string;
+  address_id?: string;
+  venue_id?: string;
+  unit_ids?: string[];
+  building_ids?: string[];
+  origin_id?: string;
+  intermediary_id?: string;
+  destination_id?: string;
   metadata?: JsonObject;
   [key: string]: JsonValue | undefined;
 };
@@ -83,6 +118,25 @@ export type Building = {
   id: string;
   name: string;
   location?: Coordinates;
+  imdf?: {
+    venue?: {
+      id?: string;
+      name?: ImdfLabel;
+      category?: string;
+    };
+    address?: {
+      id?: string;
+      address?: string;
+      locality?: string;
+      province?: string;
+      country?: string;
+      postal_code?: string;
+      unit?: string;
+      floor?: string;
+      region?: string;
+      neighborhood?: string;
+    };
+  };
 };
 
 export type Floor = {

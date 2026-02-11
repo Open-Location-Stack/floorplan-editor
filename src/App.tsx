@@ -18,6 +18,8 @@ import { firstValidSelection, resolveSelection, type Selection } from "./lib/edi
 import { cloneFloorWithReferences } from "./lib/floorClone";
 import { type OpenCageSearchResult, searchOpenCage } from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
+import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
+import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { normalizeFeature } from "./lib/imdf/normalize";
@@ -197,6 +199,58 @@ const geometryCenter = (geometry: FloorFeature["geometry"]): Coordinates | undef
   return [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
 };
 
+const polygonCentroid = (
+  geometry: Extract<FloorFeature["geometry"], { type: "Polygon" }>,
+): Coordinates | undefined => {
+  const ring = geometry.coordinates[0];
+  if (!ring || ring.length < 4) {
+    return undefined;
+  }
+  let twiceArea = 0;
+  let centroidLng = 0;
+  let centroidLat = 0;
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    const current = ring[index];
+    const next = ring[index + 1];
+    if (!current || !next) {
+      continue;
+    }
+    const cross = current[0] * next[1] - next[0] * current[1];
+    twiceArea += cross;
+    centroidLng += (current[0] + next[0]) * cross;
+    centroidLat += (current[1] + next[1]) * cross;
+  }
+  if (Math.abs(twiceArea) < 1e-12) {
+    return geometryCenter(geometry);
+  }
+  return [centroidLng / (3 * twiceArea), centroidLat / (3 * twiceArea)];
+};
+
+const polygonArea = (geometry: Extract<FloorFeature["geometry"], { type: "Polygon" }>): number => {
+  const ring = geometry.coordinates[0] ?? [];
+  let area = 0;
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    const current = ring[index];
+    const next = ring[index + 1];
+    if (!current || !next) {
+      continue;
+    }
+    area += current[0] * next[1] - next[0] * current[1];
+  }
+  return Math.abs(area / 2);
+};
+
+const downloadBlob = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 const kindForGeometry = (geometryType: GeometryType): string => {
   if (geometryType === "Point") {
     return "amenity";
@@ -272,6 +326,7 @@ function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
   const [projectUndoStack, setProjectUndoStack] = useState<ProjectHistoryEntry[]>([]);
   const [projectRedoStack, setProjectRedoStack] = useState<ProjectHistoryEntry[]>([]);
+  const [archiveWarnings, setArchiveWarnings] = useState<string[]>([]);
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
@@ -414,6 +469,57 @@ function App() {
     () => overlays.find((overlay) => overlay.floorId === activeFloor?.id),
     [overlays, activeFloor?.id],
   );
+
+  useEffect(() => {
+    setBuildings((current) => {
+      let changed = false;
+      const next = current.map((building) => {
+        const floorIds = floors
+          .filter((floor) => floor.buildingId === building.id)
+          .map((floor) => floor.id);
+        const levelPolygons = editorState.features
+          .filter((feature) => floorIds.includes(feature.properties.floorId ?? ""))
+          .filter(
+            (feature) =>
+              feature.geometry.type === "Polygon" &&
+              (feature.properties.imdfType === "level" || feature.properties.kind === "level"),
+          )
+          .map(
+            (feature) => feature.geometry as Extract<FloorFeature["geometry"], { type: "Polygon" }>,
+          );
+        if (levelPolygons.length === 0) {
+          return building;
+        }
+        let totalWeight = 0;
+        let weightedLng = 0;
+        let weightedLat = 0;
+        for (const polygon of levelPolygons) {
+          const center = polygonCentroid(polygon);
+          if (!center) {
+            continue;
+          }
+          const weight = Math.max(polygonArea(polygon), 1e-8);
+          totalWeight += weight;
+          weightedLng += center[0] * weight;
+          weightedLat += center[1] * weight;
+        }
+        if (totalWeight === 0) {
+          return building;
+        }
+        const location: Coordinates = [weightedLng / totalWeight, weightedLat / totalWeight];
+        if (
+          building.location &&
+          Math.abs(building.location[0] - location[0]) < 1e-10 &&
+          Math.abs(building.location[1] - location[1]) < 1e-10
+        ) {
+          return building;
+        }
+        changed = true;
+        return { ...building, location };
+      });
+      return changed ? next : current;
+    });
+  }, [editorState.features, floors]);
 
   const visibleFeatures = useMemo(() => {
     if (!activeFloor) {
@@ -1052,6 +1158,124 @@ function App() {
     [applyProjectMutation],
   );
 
+  const onUpdateBuildingVenueName = useCallback(
+    (buildingId: string, name: string) => {
+      applyProjectMutation("Building venue updated", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? {
+                  ...building,
+                  imdf: {
+                    ...building.imdf,
+                    venue: {
+                      ...building.imdf?.venue,
+                      name: { ...(building.imdf?.venue?.name ?? {}), en: name },
+                    },
+                  },
+                }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onUpdateBuildingVenueCategory = useCallback(
+    (buildingId: string, category: string) => {
+      applyProjectMutation("Building venue category updated", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? {
+                  ...building,
+                  imdf: {
+                    ...building.imdf,
+                    venue: {
+                      ...building.imdf?.venue,
+                      category,
+                    },
+                  },
+                }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onUpdateBuildingAddressField = useCallback(
+    (buildingId: string, field: string, value: string) => {
+      applyProjectMutation("Building address updated", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? {
+                  ...building,
+                  imdf: {
+                    ...building.imdf,
+                    address: {
+                      ...building.imdf?.address,
+                      [field]: value,
+                    },
+                  },
+                }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onExportBuildingArchive = useCallback(
+    async (buildingId: string) => {
+      const building = buildings.find((current) => current.id === buildingId);
+      if (!building) {
+        return;
+      }
+      const result = await exportBuildingImdfZip({
+        building,
+        floors,
+        features: editorState.features,
+        overlays,
+      });
+      setArchiveWarnings(result.warnings);
+      downloadBlob(result.blob, `${building.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
+    },
+    [buildings, editorState.features, floors, overlays],
+  );
+
+  const onImportBuildingArchive = useCallback(
+    async (_buildingId: string, file: File) => {
+      const imported = await importImdfArchiveZip(file);
+      if (!imported.ok) {
+        setArchiveWarnings([...imported.errors, ...imported.warnings]);
+        return;
+      }
+      setArchiveWarnings(imported.value.warnings);
+      applyProjectMutation("IMDF archive imported", () => {
+        const upsertById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
+          const byId = new Map(current.map((item) => [item.id, item]));
+          for (const item of incoming) {
+            byId.set(item.id, item);
+          }
+          return [...byId.values()];
+        };
+
+        setBuildings((current) => upsertById(current, imported.value.buildings));
+        setFloors((current) => upsertById(current, imported.value.floors));
+        setOverlays((current) => upsertById(current, imported.value.overlays));
+        setEditorState((current) =>
+          replaceAllFeatures(current, upsertById(current.features, imported.value.features)),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
   const onRenameFloor = useCallback(
     (floorId: string, name: string) => {
       applyProjectMutation("Floor renamed", () => {
@@ -1144,6 +1368,11 @@ function App() {
   const onCreateFeature = useCallback(
     (type: SupportedImdfType) => {
       const schema = getImdfSchemaRule(type);
+      if (schema.geometryType === "Point") {
+        startDrawMode("point");
+        setPendingDrawFeatureType(type);
+        return;
+      }
       if (schema.geometryType === "LineString") {
         startDrawMode("line");
         setPendingDrawFeatureType(type);
@@ -1333,50 +1562,6 @@ function App() {
                         </svg>
                       </button>
                       <button
-                        className={`btn btn-sm join-item ${drawMode === "point" ? "btn-primary" : ""}`}
-                        type="button"
-                        aria-label="Draw point"
-                        title="Draw point"
-                        onClick={() => startDrawMode("point")}
-                      >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <circle cx="12" cy="12" r="4" fill="currentColor" />
-                        </svg>
-                      </button>
-                      <button
-                        className={`btn btn-sm join-item ${drawMode === "line" ? "btn-primary" : ""}`}
-                        type="button"
-                        aria-label="Draw line"
-                        title="Draw line"
-                        onClick={() => startDrawMode("line")}
-                      >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M4 18 20 6"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        className={`btn btn-sm join-item ${drawMode === "polygon" ? "btn-primary" : ""}`}
-                        type="button"
-                        aria-label="Draw polygon"
-                        title="Draw polygon"
-                        onClick={() => startDrawMode("polygon")}
-                      >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M6 6h8l4 6-6 6H5l1-12Z"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      <button
                         className={`btn btn-sm join-item ${snapEnabled ? "btn-secondary" : ""}`}
                         type="button"
                         aria-label="Toggle snap to geometry"
@@ -1550,6 +1735,12 @@ function App() {
                 allFeatures={editorState.features}
                 overlay={selectedOverlay}
                 onRenameBuilding={onRenameBuilding}
+                onUpdateBuildingVenueName={onUpdateBuildingVenueName}
+                onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
+                onUpdateBuildingAddressField={onUpdateBuildingAddressField}
+                onExportBuildingArchive={onExportBuildingArchive}
+                onImportBuildingArchive={onImportBuildingArchive}
+                archiveWarnings={archiveWarnings}
                 onDeleteBuilding={onDeleteBuilding}
                 onAddFloor={onAddFloor}
                 onRenameFloor={onRenameFloor}
