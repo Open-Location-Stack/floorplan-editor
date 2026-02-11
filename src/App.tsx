@@ -946,15 +946,15 @@ function App() {
       }
 
       setSelection(nextSelection);
+      cancelDrawMode();
       if (nextSelection.kind === "feature") {
         setEditorState((current) => selectFeature(current, nextSelection.id));
-        setDrawMode("select");
         return;
       }
 
       setEditorState((current) => selectFeature(current, undefined));
     },
-    [buildingCenter, editorState.features, floorCenter, relocateMap],
+    [buildingCenter, cancelDrawMode, editorState.features, floorCenter, relocateMap],
   );
 
   const onAddBuilding = useCallback(() => {

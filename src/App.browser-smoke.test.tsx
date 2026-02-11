@@ -6,6 +6,8 @@ const MockMapCanvas = ({
   mapStyleId,
   initialView,
   relocationRequest,
+  features,
+  overlay,
   onViewStateChange,
   onFeatureSelectionChange,
   onInteractionModeChange,
@@ -23,6 +25,12 @@ const MockMapCanvas = ({
     center: [number, number];
     zoom?: number;
     requestVersion: number;
+  };
+  features: Array<{
+    id: string;
+  }>;
+  overlay?: {
+    floorId: string;
   };
   onViewStateChange: (center: [number, number], zoom: number) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
@@ -76,6 +84,10 @@ const MockMapCanvas = ({
     <div data-testid="map-canvas">
       <div data-testid="mock-map-mode">{drawMode}</div>
       <div data-testid="mock-map-style">{mapStyleId}</div>
+      <div data-testid="mock-map-feature-ids">
+        {features.map((feature) => feature.id).join(",")}
+      </div>
+      <div data-testid="mock-map-overlay-floor">{overlay?.floorId ?? "none"}</div>
       <button
         type="button"
         data-testid="mock-map-select-feature"
@@ -363,6 +375,118 @@ describe("App browser smoke", () => {
     await waitFor(() => {
       expect(screen.getByText(/Center: 5\.125000, 52\.095000/i)).toBeInTheDocument();
     });
+  });
+
+  it("keeps only selected floor features and overlay active when selecting from tree", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "floor activation",
+      version: 3,
+      updatedAt: "2026-02-10T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building", location: [1, 2] }],
+      floors: [
+        { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
+        { id: "floor-2", buildingId: "building-1", name: "First Floor" },
+      ],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-ground",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.13, 52.09],
+                [5.13, 52.1],
+                [5.12, 52.1],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Ground Room" },
+        },
+        {
+          type: "Feature",
+          id: "shape-first",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.14, 52.09],
+                [5.15, 52.09],
+                [5.15, 52.1],
+                [5.14, 52.1],
+                [5.14, 52.09],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-2", name: "First Room" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "ground.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.119, 52.101],
+            topRight: [5.131, 52.101],
+            bottomRight: [5.131, 52.089],
+            bottomLeft: [5.119, 52.089],
+          },
+          updatedAt: "2026-02-10T00:00:00.000Z",
+        },
+        {
+          id: "overlay-2",
+          floorId: "floor-2",
+          imageName: "first.png",
+          imageDataUrl: "data:image/png;base64,def",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.139, 52.101],
+            topRight: [5.151, 52.101],
+            bottomRight: [5.151, 52.089],
+            bottomLeft: [5.139, 52.089],
+          },
+          updatedAt: "2026-02-10T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Ground Floor" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "First Floor" })).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("mock-map-feature-ids")).toHaveTextContent("shape-ground");
+    expect(screen.getByTestId("mock-map-feature-ids")).not.toHaveTextContent("shape-first");
+    expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-1");
+
+    fireEvent.click(screen.getByRole("button", { name: /draw line/i }));
+    expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
+
+    fireEvent.click(screen.getByRole("button", { name: "First Floor" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("select");
+    });
+    expect(screen.getByTestId("mock-map-feature-ids")).toHaveTextContent("shape-first");
+    expect(screen.getByTestId("mock-map-feature-ids")).not.toHaveTextContent("shape-ground");
+    expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-2");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ground Room" }));
+    expect(screen.getByTestId("mock-map-feature-ids")).toHaveTextContent("shape-ground");
+    expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-1");
   });
 
   it("renders when matchMedia is unavailable", async () => {
