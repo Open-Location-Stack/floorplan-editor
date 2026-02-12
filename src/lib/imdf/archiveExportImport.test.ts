@@ -321,9 +321,9 @@ describe("imdf archive export/import", () => {
       overlays: [],
     });
 
-    expect(warnings.some((warning) => warning.includes("kiosk") && warning.includes("anchor_id"))).toBe(
-      true,
-    );
+    expect(
+      warnings.some((warning) => warning.includes("kiosk") && warning.includes("anchor_id")),
+    ).toBe(true);
 
     const imported = await importImdfArchiveZip(
       new File([blob], "kiosk-skip.imdf.zip", { type: "application/zip" }),

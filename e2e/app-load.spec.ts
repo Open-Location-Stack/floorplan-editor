@@ -54,19 +54,32 @@ const observePageErrors = (page: Page) => {
   return pageErrors;
 };
 
+const observeOpenCageRequests = (page: Page) => {
+  const openCageRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("api.opencagedata.com")) {
+      openCageRequests.push(request.url());
+    }
+  });
+  return openCageRequests;
+};
+
 test("app loads without triggering error boundary", async ({ page }) => {
   const pageErrors = observePageErrors(page);
+  const openCageRequests = observeOpenCageRequests(page);
 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /select mode/i })).toBeVisible();
+  expect(openCageRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
 
 test("app loads with persisted overlay data", async ({ page }) => {
   const pageErrors = observePageErrors(page);
+  const openCageRequests = observeOpenCageRequests(page);
 
   await page.goto("/");
 
@@ -100,11 +113,13 @@ test("app loads with persisted overlay data", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
+  expect(openCageRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
 
 test("app loads with malformed persisted snapshot", async ({ page }) => {
   const pageErrors = observePageErrors(page);
+  const openCageRequests = observeOpenCageRequests(page);
 
   await page.goto("/");
 
@@ -148,11 +163,13 @@ test("app loads with malformed persisted snapshot", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
+  expect(openCageRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
 
 test("critical journey: edit building details and survive reload", async ({ page }) => {
   const pageErrors = observePageErrors(page);
+  const openCageRequests = observeOpenCageRequests(page);
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /formation floor plan editor/i })).toBeVisible();
@@ -181,5 +198,6 @@ test("critical journey: edit building details and survive reload", async ({ page
   });
   await expect(reloadedPanel.getByLabel("Name")).toHaveValue("Journey Building");
   await expect(page.getByText(/something went wrong\. please reload the editor\./i)).toHaveCount(0);
+  expect(openCageRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
