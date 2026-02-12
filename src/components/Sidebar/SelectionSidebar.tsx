@@ -31,6 +31,7 @@ type SelectionSidebarProps = {
   onAddBuilding: (venueId: string) => void;
   onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
   onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
+  onReverseGeocodeBuildingAddress: (buildingId: string) => void;
   onExportBuildingArchive: (buildingId: string) => void;
   onImportBuildingArchive: (buildingId: string, file: File) => void;
   archiveWarnings: string[];
@@ -68,6 +69,7 @@ export const SelectionSidebar = ({
   onAddBuilding,
   onUpdateBuildingVenueCategory,
   onUpdateBuildingAddressField,
+  onReverseGeocodeBuildingAddress,
   onExportBuildingArchive,
   onImportBuildingArchive,
   archiveWarnings,
@@ -132,6 +134,7 @@ export const SelectionSidebar = ({
         onUpdateAddressField={(field, value) =>
           onUpdateBuildingAddressField(building.id, field, value)
         }
+        onReverseGeocodeAddress={() => onReverseGeocodeBuildingAddress(building.id)}
         onExportArchive={() => onExportBuildingArchive(building.id)}
         onImportArchive={(file) => onImportBuildingArchive(building.id, file)}
         archiveWarnings={archiveWarnings}

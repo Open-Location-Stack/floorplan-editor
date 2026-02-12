@@ -16,7 +16,11 @@ import {
 } from "./lib/editor/editorModel";
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
 import { cloneFloorWithReferences } from "./lib/floorClone";
-import { type OpenCageSearchResult, searchOpenCage } from "./lib/geocoding/openCage";
+import {
+  reverseGeocodeOpenCage,
+  type OpenCageSearchResult,
+  searchOpenCage,
+} from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
 import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
@@ -1548,6 +1552,85 @@ function App() {
     [applyProjectMutation],
   );
 
+  const onReverseGeocodeBuildingAddress = useCallback(
+    async (buildingId: string) => {
+      if (!openCageApiKey) {
+        return;
+      }
+
+      const building = buildings.find((current) => current.id === buildingId);
+      if (!building) {
+        return;
+      }
+
+      const centroid = buildingCenter(buildingId) ?? building.location;
+      if (!centroid) {
+        return;
+      }
+
+      try {
+        const result = await reverseGeocodeOpenCage(centroid, openCageApiKey);
+        if (!result) {
+          return;
+        }
+
+        const nextAddressFields = {
+          address: result.address ?? "",
+          locality: result.locality ?? "",
+          province: result.province ?? "",
+          postal_code: result.postal_code ?? "",
+          country: result.country ?? "",
+        };
+        const existingAddress = building.imdf?.address;
+        const requiresConfirmation = (
+          Object.entries(nextAddressFields) as Array<[keyof typeof nextAddressFields, string]>
+        ).some(([field, value]) => {
+          const current = existingAddress?.[field];
+          return typeof current === "string" && current.trim().length > 0 && current !== value;
+        });
+
+        const applyAddressUpdate = () => {
+          applyProjectMutation("Building address reverse geocoded", () => {
+            setBuildings((current) =>
+              current.map((candidate) =>
+                candidate.id === buildingId
+                  ? {
+                      ...candidate,
+                      imdf: {
+                        ...candidate.imdf,
+                        address: {
+                          ...candidate.imdf?.address,
+                          ...nextAddressFields,
+                        },
+                      },
+                    }
+                  : candidate,
+              ),
+            );
+          });
+        };
+
+        if (requiresConfirmation) {
+          requestProjectConfirmation({
+            title: "Replace building address?",
+            message: "Reverse geocoding found new address values. Replace existing address fields?",
+            confirmLabel: "Replace",
+            apply: applyAddressUpdate,
+          });
+          return;
+        }
+
+        applyAddressUpdate();
+      } catch (error: unknown) {
+        clientLogger.error("geocoding.opencage_reverse_failed", {
+          error,
+          buildingId,
+        });
+      }
+    },
+    [openCageApiKey, buildings, buildingCenter, applyProjectMutation, requestProjectConfirmation],
+  );
+
   const onExportBuildingArchive = useCallback(
     async (buildingId: string) => {
       const building = buildings.find((current) => current.id === buildingId);
@@ -2142,6 +2225,7 @@ function App() {
                 onAddBuilding={onAddBuilding}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}
+                onReverseGeocodeBuildingAddress={onReverseGeocodeBuildingAddress}
                 onExportBuildingArchive={onExportBuildingArchive}
                 onImportBuildingArchive={onImportBuildingArchive}
                 archiveWarnings={archiveWarnings}

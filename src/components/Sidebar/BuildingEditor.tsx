@@ -7,6 +7,7 @@ type BuildingEditorProps = {
   onRenameBuilding: (name: string) => void;
   onUpdateVenueCategory: (category: string) => void;
   onUpdateAddressField: (field: string, value: string) => void;
+  onReverseGeocodeAddress: () => void;
   onExportArchive: () => void;
   onImportArchive: (file: File) => void;
   onDeleteBuilding: () => void;
@@ -20,6 +21,7 @@ export const BuildingEditor = ({
   onRenameBuilding,
   onUpdateVenueCategory,
   onUpdateAddressField,
+  onReverseGeocodeAddress,
   onExportArchive,
   onImportArchive,
   onDeleteBuilding,
@@ -98,6 +100,9 @@ export const BuildingEditor = ({
               placeholder="Country code"
               onChange={(event) => onUpdateAddressField("country", event.currentTarget.value)}
             />
+            <button className="btn btn-sm btn-outline" type="button" onClick={onReverseGeocodeAddress}>
+              Reverse geocode with OpenCage
+            </button>
           </div>
         </div>
 

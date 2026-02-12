@@ -10,6 +10,7 @@ type OpenCageResultEntry = {
     lat?: unknown;
     lng?: unknown;
   };
+  components?: Record<string, unknown>;
 };
 
 type OpenCageResponse = {
@@ -20,6 +21,15 @@ export type OpenCageSearchResult = {
   id: string;
   formatted: string;
   coordinates: Coordinates;
+};
+
+export type OpenCageReverseGeocodeResult = {
+  formatted: string;
+  address?: string;
+  locality?: string;
+  province?: string;
+  postal_code?: string;
+  country?: string;
 };
 
 const toFiniteNumber = (value: unknown): number | undefined =>
@@ -93,4 +103,82 @@ export const searchOpenCage = async (
       };
     })
     .filter((entry): entry is OpenCageSearchResult => Boolean(entry));
+};
+
+export const reverseGeocodeOpenCage = async (
+  coordinates: Coordinates,
+  apiKey: string,
+  options: {
+    signal?: AbortSignal;
+  } = {},
+): Promise<OpenCageReverseGeocodeResult | undefined> => {
+  const trimmedApiKey = apiKey.trim();
+  if (!trimmedApiKey) {
+    throw new Error("Missing OpenCage API key.");
+  }
+
+  const params = new URLSearchParams({
+    q: `${coordinates[1]},${coordinates[0]}`,
+    key: trimmedApiKey,
+    no_annotations: "1",
+    limit: "1",
+  });
+
+  const requestInit: RequestInit = {};
+  if (options.signal) {
+    requestInit.signal = options.signal;
+  }
+
+  const response = await fetch(`${OPENCAGE_BASE_URL}?${params.toString()}`, requestInit);
+  if (!response.ok) {
+    throw new Error(`OpenCage reverse geocode failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as OpenCageResponse;
+  const first = Array.isArray(payload.results) ? payload.results[0] : undefined;
+  if (!first || typeof first.formatted !== "string" || first.formatted.trim().length === 0) {
+    return undefined;
+  }
+
+  const components =
+    first.components && typeof first.components === "object" ? first.components : undefined;
+  const road = typeof components?.road === "string" ? components.road.trim() : "";
+  const houseNumber =
+    typeof components?.house_number === "string" ? components.house_number.trim() : "";
+  const address = [road, houseNumber].filter((part) => part.length > 0).join(" ");
+  const localityCandidates = [
+    components?.city,
+    components?.town,
+    components?.village,
+    components?.hamlet,
+    components?.suburb,
+  ];
+  const locality = localityCandidates.find(
+    (candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  const province =
+    typeof components?.state === "string" && components.state.trim().length > 0
+      ? components.state.trim()
+      : typeof components?.province === "string" && components.province.trim().length > 0
+        ? components.province.trim()
+        : typeof components?.region === "string" && components.region.trim().length > 0
+          ? components.region.trim()
+          : undefined;
+  const postalCode =
+    typeof components?.postcode === "string" && components.postcode.trim().length > 0
+      ? components.postcode.trim()
+      : undefined;
+  const country =
+    typeof components?.country_code === "string" && components.country_code.trim().length > 0
+      ? components.country_code.toUpperCase()
+      : undefined;
+
+  return {
+    formatted: first.formatted,
+    address: address || undefined,
+    locality: locality?.trim(),
+    province,
+    postal_code: postalCode,
+    country,
+  };
 };

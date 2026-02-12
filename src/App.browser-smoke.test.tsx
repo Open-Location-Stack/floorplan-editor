@@ -392,6 +392,90 @@ const addVenueAndBuilding = async (): Promise<void> => {
     });
   });
 
+  it("reverse geocodes building address via OpenCage with confirmation", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [
+        {
+          id: "building-1",
+          name: "Building 1",
+          location: [4.892222, 52.373056],
+        },
+      ],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [],
+      overlays: [],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                formatted: "Dam 1, 1012 JS Amsterdam, Netherlands",
+                components: {
+                  road: "Dam",
+                  house_number: "1",
+                  city: "Amsterdam",
+                  state: "North Holland",
+                  postcode: "1012 JS",
+                  country_code: "nl",
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      ),
+    );
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Building 1" }));
+    fireEvent.change(screen.getByPlaceholderText("Street address"), {
+      target: { value: "Old street 1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /reverse geocode with opencage/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Replace" }));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        buildings?: Array<{
+          id: string;
+          imdf?: {
+            address?: {
+              address?: string;
+              locality?: string;
+              province?: string;
+              postal_code?: string;
+              country?: string;
+            };
+          };
+        }>;
+      };
+      const updated = latestSnapshot.buildings?.find((building) => building.id === "building-1");
+      expect(updated?.imdf?.address).toMatchObject({
+        address: "Dam 1",
+        locality: "Amsterdam",
+        province: "North Holland",
+        postal_code: "1012 JS",
+        country: "NL",
+      });
+    });
+  });
+
   it("searches addresses and recenters the map when selecting a result", async () => {
     mockRepository.loadProject.mockResolvedValue(undefined);
     vi.stubGlobal(

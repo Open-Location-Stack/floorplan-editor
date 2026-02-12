@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchOpenCage } from "./openCage";
+import { reverseGeocodeOpenCage, searchOpenCage } from "./openCage";
 
 describe("searchOpenCage", () => {
   beforeEach(() => {
@@ -103,6 +103,69 @@ describe("searchOpenCage", () => {
 
     await expect(searchOpenCage("query", "bad-key")).rejects.toThrow(
       "OpenCage request failed with status 401.",
+    );
+  });
+});
+
+describe("reverseGeocodeOpenCage", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns mapped address fields from reverse geocoding", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              formatted: "Dam 1, 1012 JS Amsterdam, Netherlands",
+              components: {
+                road: "Dam",
+                house_number: "1",
+                city: "Amsterdam",
+                state: "North Holland",
+                postcode: "1012 JS",
+                country_code: "nl",
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    const result = await reverseGeocodeOpenCage([4.892222, 52.373056], "my-key");
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://api.opencagedata.com/geocode/v1/json?q=52.373056%2C4.892222&key=my-key&no_annotations=1&limit=1",
+      ),
+      {},
+    );
+    expect(result).toEqual({
+      formatted: "Dam 1, 1012 JS Amsterdam, Netherlands",
+      address: "Dam 1",
+      locality: "Amsterdam",
+      province: "North Holland",
+      postal_code: "1012 JS",
+      country: "NL",
+    });
+  });
+
+  it("throws on non-ok reverse geocode response", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("not allowed", { status: 403 }));
+
+    await expect(reverseGeocodeOpenCage([4.3, 52.1], "bad-key")).rejects.toThrow(
+      "OpenCage reverse geocode failed with status 403.",
     );
   });
 });
