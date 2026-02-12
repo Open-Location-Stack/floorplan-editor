@@ -715,6 +715,8 @@ describe("App browser smoke", () => {
     expect(featureLockSwitch).not.toBeChecked();
     fireEvent.click(featureLockSwitch);
     expect(featureLockSwitch).toBeChecked();
+    expect(screen.getByText("Debug feature JSON")).toBeInTheDocument();
+    expect(screen.getByText(/"id": "shape-1"/)).toBeInTheDocument();
   });
 
   it("applies draw-driven deletes from keyboard", async () => {
