@@ -100,7 +100,11 @@ export const BuildingEditor = ({
               placeholder="Country code"
               onChange={(event) => onUpdateAddressField("country", event.currentTarget.value)}
             />
-            <button className="btn btn-sm btn-outline" type="button" onClick={onReverseGeocodeAddress}>
+            <button
+              className="btn btn-sm btn-outline"
+              type="button"
+              onClick={onReverseGeocodeAddress}
+            >
               Reverse geocode with OpenCage
             </button>
           </div>

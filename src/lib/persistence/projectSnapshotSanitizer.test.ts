@@ -120,7 +120,7 @@ describe("sanitizeProjectSnapshot", () => {
           updatedAt: "2026-02-06T00:00:00.000Z",
         },
       ],
-    });
+    } as never);
 
     expect(sanitized.overlays[0]?.opacity).toBe(30);
   });

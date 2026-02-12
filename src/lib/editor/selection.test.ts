@@ -36,7 +36,7 @@ describe("selection", () => {
       },
     );
 
-    expect(resolved?.building.id).toBe("b1");
+    expect(resolved?.building?.id).toBe("b1");
     expect(resolved?.floor?.id).toBe("f1");
     expect(resolved?.feature?.id).toBe("shape-1");
   });

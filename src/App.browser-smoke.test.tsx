@@ -232,13 +232,13 @@ const mockMatchMedia = () => ({
 });
 
 describe("App browser smoke", () => {
-const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
+  const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
 
-const addVenueAndBuilding = async (): Promise<void> => {
-  fireEvent.click(screen.getByRole("button", { name: /add venue/i }));
-  await screen.findByRole("heading", { name: /venue/i });
-  fireEvent.click(screen.getByRole("button", { name: /add building/i }));
-};
+  const addVenueAndBuilding = async (): Promise<void> => {
+    fireEvent.click(screen.getByRole("button", { name: /add venue/i }));
+    await screen.findByRole("heading", { name: /venue/i });
+    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+  };
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -974,7 +974,9 @@ const addVenueAndBuilding = async (): Promise<void> => {
     const { container } = render(<App />);
     await screen.findByRole("button", { name: /upload image/i });
 
-    const fileInput = container.querySelector('input[type="file"][accept="image/png,image/jpeg,image/webp"]');
+    const fileInput = container.querySelector(
+      'input[type="file"][accept="image/png,image/jpeg,image/webp"]',
+    );
     if (!(fileInput instanceof HTMLInputElement)) {
       throw new Error("Expected bitmap upload input");
     }
@@ -1062,7 +1064,9 @@ const addVenueAndBuilding = async (): Promise<void> => {
       name: /lock level bitmap geometry/i,
     });
     expect(bitmapLockSwitch).toBeChecked();
-    expect(screen.queryByRole("checkbox", { name: /lock feature geometry/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /lock feature geometry/i }),
+    ).not.toBeInTheDocument();
 
     await waitFor(() => {
       const saveCalls = mockRepository.saveProject.mock.calls;

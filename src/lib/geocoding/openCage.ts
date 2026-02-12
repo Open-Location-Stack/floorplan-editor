@@ -10,7 +10,20 @@ type OpenCageResultEntry = {
     lat?: unknown;
     lng?: unknown;
   };
-  components?: Record<string, unknown>;
+  components?: {
+    road?: unknown;
+    house_number?: unknown;
+    city?: unknown;
+    town?: unknown;
+    village?: unknown;
+    hamlet?: unknown;
+    suburb?: unknown;
+    state?: unknown;
+    province?: unknown;
+    region?: unknown;
+    postcode?: unknown;
+    country_code?: unknown;
+  };
 };
 
 type OpenCageResponse = {
@@ -154,7 +167,8 @@ export const reverseGeocodeOpenCage = async (
     components?.suburb,
   ];
   const locality = localityCandidates.find(
-    (candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
+    (candidate): candidate is string =>
+      typeof candidate === "string" && candidate.trim().length > 0,
   );
   const province =
     typeof components?.state === "string" && components.state.trim().length > 0
@@ -173,12 +187,23 @@ export const reverseGeocodeOpenCage = async (
       ? components.country_code.toUpperCase()
       : undefined;
 
-  return {
+  const result: OpenCageReverseGeocodeResult = {
     formatted: first.formatted,
-    address: address || undefined,
-    locality: locality?.trim(),
-    province,
-    postal_code: postalCode,
-    country,
   };
+  if (address) {
+    result.address = address;
+  }
+  if (locality?.trim()) {
+    result.locality = locality.trim();
+  }
+  if (province) {
+    result.province = province;
+  }
+  if (postalCode) {
+    result.postal_code = postalCode;
+  }
+  if (country) {
+    result.country = country;
+  }
+  return result;
 };

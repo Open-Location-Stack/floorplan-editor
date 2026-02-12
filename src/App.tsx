@@ -17,8 +17,8 @@ import {
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
 import { cloneFloorWithReferences } from "./lib/floorClone";
 import {
-  reverseGeocodeOpenCage,
   type OpenCageSearchResult,
+  reverseGeocodeOpenCage,
   searchOpenCage,
 } from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
@@ -917,13 +917,13 @@ function App() {
             (typeof mergedProperties.imdfType === "string" && mergedProperties.imdfType) ||
             (typeof mergedProperties.kind === "string" && mergedProperties.kind) ||
             (shouldApplyPendingTemplate ? pendingSchema?.type : undefined);
-          const isNewPath = !existing && feature.geometry.type === "LineString" && featureType === "opening";
-          const resolvedName =
-            isNewPath
-              ? `Path ${nextPathNumber++}`
-              : typeof mergedProperties.name === "string" && mergedProperties.name
-                ? mergedProperties.name
-                : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
+          const isNewPath =
+            !existing && feature.geometry.type === "LineString" && featureType === "opening";
+          const resolvedName = isNewPath
+            ? `Path ${nextPathNumber++}`
+            : typeof mergedProperties.name === "string" && mergedProperties.name
+              ? mergedProperties.name
+              : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
 
           return normalizeFeature(
             {
@@ -1497,7 +1497,9 @@ function App() {
     (venueId: string, name: string) => {
       applyProjectMutation("Venue renamed", () => {
         setVenues((current) =>
-          current.map((venue) => (venue.id === venueId ? { ...venue, name: name || "Untitled venue" } : venue)),
+          current.map((venue) =>
+            venue.id === venueId ? { ...venue, name: name || "Untitled venue" } : venue,
+          ),
         );
       });
     },
