@@ -6,6 +6,7 @@ type FloorEditorProps = {
   floor: Floor;
   floorFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
+  overlayLocked: boolean;
   validationWarnings: string[];
   onRenameFloor: (name: string) => void;
   onCloneFloor: () => void;
@@ -37,6 +38,7 @@ export const FloorEditor = ({
   floor,
   floorFeatures,
   overlay,
+  overlayLocked,
   validationWarnings,
   onRenameFloor,
   onCloneFloor,
@@ -210,15 +212,21 @@ export const FloorEditor = ({
               >
                 {overlay?.visible === false ? "Show image" : "Hide image"}
               </button>
-              <button
-                className="btn btn-xs"
-                type="button"
-                disabled={!overlay}
-                onClick={onOverlayToggleLock}
-              >
-                {overlay?.locked ? "Edit" : "Stop editing"}
-              </button>
             </div>
+            <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+              <span className="label-text flex items-center gap-2">
+                <span aria-hidden="true">{overlayLocked ? "🔒" : "🔓"}</span>
+                Lock bitmap geometry
+              </span>
+              <input
+                type="checkbox"
+                className="toggle toggle-sm"
+                checked={overlayLocked}
+                onChange={onOverlayToggleLock}
+                disabled={!overlay}
+                aria-label="Lock floor bitmap geometry"
+              />
+            </label>
           </div>
         </details>
 

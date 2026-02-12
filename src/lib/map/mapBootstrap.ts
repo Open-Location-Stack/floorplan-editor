@@ -20,6 +20,7 @@ type MapClickHandler = (coordinate: Coordinates) => void;
 
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
+  setLockedFeatureIds: (featureIds: string[]) => void;
   setRouteOverlay: (features: FeatureCollection) => void;
   setSelection: (feature: FloorFeature | undefined) => void;
   setOverlay: (overlay: FloorOverlay | undefined) => void;
@@ -1380,6 +1381,7 @@ export const createMapController = async (
   let isStyleReady = false;
   let isSyncingExternalState = false;
   let currentFeatures: FeatureCollection = emptyFeatureCollection();
+  let currentLockedFeatureIds = new Set<string>();
   let currentRouteOverlay: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
@@ -1702,6 +1704,13 @@ export const createMapController = async (
 
   const applySelection = () => {
     if (currentInteractionMode !== "select") {
+      return;
+    }
+
+    if (currentSelectedFeatureId && currentLockedFeatureIds.has(currentSelectedFeatureId)) {
+      draw.changeMode("simple_select", {
+        featureIds: [],
+      });
       return;
     }
 
@@ -2118,10 +2127,25 @@ export const createMapController = async (
   };
 
   const emitFeaturesChange = () => {
-    const nextFeatures = draw
+    let nextFeatures = draw
       .getAll()
       .features.map((feature) => normalizeDrawFeature(feature))
       .filter((feature): feature is FloorFeature => Boolean(feature));
+
+    if (currentLockedFeatureIds.size > 0) {
+      const persistedById = new Map(
+        currentFeatures.features.map((feature) => [feature.id, feature]),
+      );
+      const nextById = new Map(nextFeatures.map((feature) => [feature.id, feature]));
+      for (const lockedFeatureId of currentLockedFeatureIds) {
+        const persisted = persistedById.get(lockedFeatureId);
+        if (!persisted) {
+          continue;
+        }
+        nextById.set(lockedFeatureId, persisted);
+      }
+      nextFeatures = Array.from(nextById.values());
+    }
 
     if (pendingForkState) {
       const isForkDrawInProgress = isDrawInMode(draw, "draw_line_string");
@@ -2490,6 +2514,18 @@ export const createMapController = async (
     }
 
     const selectedFeatureId = parseFeatureId(event.features?.[0]?.id);
+    if (selectedFeatureId && currentLockedFeatureIds.has(selectedFeatureId)) {
+      withExternalSyncGuard(() => {
+        draw.changeMode("simple_select", {
+          featureIds: [],
+        });
+      });
+      currentSelectedFeatureId = undefined;
+      handlers.onFeatureSelectionChange(undefined);
+      emitVertexSelectionChange();
+      return;
+    }
+
     if (
       lastSelectedLineVertex &&
       selectedFeatureId &&
@@ -2543,6 +2579,9 @@ export const createMapController = async (
 
     const featureId = getRenderableFeatureIdAtPoint(renderedHits);
     if (!featureId) {
+      return;
+    }
+    if (currentLockedFeatureIds.has(featureId)) {
       return;
     }
 
@@ -2662,6 +2701,13 @@ export const createMapController = async (
       };
       applyPendingState();
     },
+    setLockedFeatureIds: (featureIds) => {
+      currentLockedFeatureIds = new Set(featureIds);
+      if (currentSelectedFeatureId && currentLockedFeatureIds.has(currentSelectedFeatureId)) {
+        currentSelectedFeatureId = undefined;
+      }
+      applyPendingState();
+    },
     setRouteOverlay: (features) => {
       currentRouteOverlay = {
         type: "FeatureCollection",
@@ -2705,6 +2751,20 @@ export const createMapController = async (
         return;
       }
 
+      const selectedIds = draw.getSelectedIds();
+      if (selectedIds.length === 0) {
+        draw.trash();
+        return;
+      }
+      const deletableFeatureIds = selectedIds.filter((id) => !currentLockedFeatureIds.has(id));
+      if (deletableFeatureIds.length === 0) {
+        return;
+      }
+      withExternalSyncGuard(() => {
+        draw.changeMode("simple_select", {
+          featureIds: deletableFeatureIds,
+        });
+      });
       draw.trash();
     },
     deleteVertex: () => {

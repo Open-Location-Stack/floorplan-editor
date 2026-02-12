@@ -7,6 +7,7 @@ const MockMapCanvas = ({
   initialView,
   relocationRequest,
   features,
+  lockedFeatureIds: _lockedFeatureIds,
   overlay,
   onViewStateChange,
   onFeatureSelectionChange,
@@ -31,6 +32,7 @@ const MockMapCanvas = ({
   features: Array<{
     id: string;
   }>;
+  lockedFeatureIds: string[];
   overlay?: {
     floorId: string;
   };
@@ -647,6 +649,72 @@ describe("App browser smoke", () => {
 
     fireEvent.click(snapToggle);
     expect(snapToggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows lock switches for floor bitmap and feature geometry", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "floor.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 80,
+          visible: true,
+          corners: {
+            topLeft: [5.12, 52.091],
+            topRight: [5.123, 52.091],
+            bottomRight: [5.123, 52.089],
+            bottomLeft: [5.12, 52.089],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const bitmapLockSwitch = await screen.findByRole("checkbox", {
+      name: /lock floor bitmap geometry/i,
+    });
+    expect(bitmapLockSwitch).not.toBeChecked();
+    fireEvent.click(bitmapLockSwitch);
+    expect(bitmapLockSwitch).toBeChecked();
+
+    fireEvent.click(screen.getByTestId("mock-map-select-feature"));
+
+    const featureLockSwitch = await screen.findByRole("checkbox", {
+      name: /lock feature geometry/i,
+    });
+    expect(featureLockSwitch).not.toBeChecked();
+    fireEvent.click(featureLockSwitch);
+    expect(featureLockSwitch).toBeChecked();
   });
 
   it("applies draw-driven deletes from keyboard", async () => {

@@ -2765,6 +2765,104 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("does not enter direct_select when clicking a locked feature", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures(polygonFeatureCollection());
+    map.emit("load");
+    controller.setLockedFeatureIds(["shape-1"]);
+    controller.setInteractionMode("select");
+    onFeatureSelectionChange.mockClear();
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "shape-1",
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 10, y: 12 },
+    });
+
+    expect(draw.mode).not.toBe("direct_select");
+    expect(onFeatureSelectionChange).not.toHaveBeenCalledWith("shape-1");
+
+    controller.destroy();
+  });
+
+  it("clears draw selection when a locked feature is selected", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures(polygonFeatureCollection());
+    map.emit("load");
+    controller.setLockedFeatureIds(["shape-1"]);
+    onFeatureSelectionChange.mockClear();
+
+    map.emit("draw.selectionchange", {
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [],
+          },
+          properties: {},
+        },
+      ],
+    });
+
+    expect(draw.changeMode).toHaveBeenCalledWith("simple_select", {
+      featureIds: [],
+    });
+    expect(onFeatureSelectionChange).toHaveBeenCalledWith(undefined);
+
+    controller.destroy();
+  });
+
   it("preserves direct_select during draw-driven state sync", async () => {
     let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
     const collection = polygonFeatureCollection();

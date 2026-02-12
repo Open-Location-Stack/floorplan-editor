@@ -391,7 +391,6 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           imageDataUrl: toDataUrl(bytes, imagePath),
           opacity: typeof properties["opacity"] === "number" ? properties["opacity"] : 70,
           visible: properties["visible"] !== false,
-          locked: Boolean(properties["locked"]),
           corners: { topLeft, topRight, bottomRight, bottomLeft },
           updatedAt: new Date().toISOString(),
         });

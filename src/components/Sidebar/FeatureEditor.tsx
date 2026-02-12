@@ -20,6 +20,8 @@ type FeatureEditorProps = {
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;
   onClone: () => void;
+  locked: boolean;
+  onToggleLock: () => void;
 };
 
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {

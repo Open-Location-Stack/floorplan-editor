@@ -12,6 +12,8 @@ type SelectionSidebarProps = {
   floors: Floor[];
   floor: Floor | undefined;
   feature: FloorFeature | undefined;
+  featureLocked: boolean;
+  overlayLocked: boolean;
   allFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
@@ -31,6 +33,7 @@ type SelectionSidebarProps = {
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
   onDeleteFeature: (featureId: string) => void;
   onCloneFeature: (featureId: string) => void;
+  onFeatureToggleLock: (featureId: string) => void;
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
   onOverlayRecenter: () => void;
@@ -44,6 +47,8 @@ export const SelectionSidebar = ({
   floors,
   floor,
   feature,
+  featureLocked,
+  overlayLocked,
   allFeatures,
   overlay,
   onRenameBuilding,
@@ -63,6 +68,7 @@ export const SelectionSidebar = ({
   onUpdateFeatureMetadata,
   onDeleteFeature,
   onCloneFeature,
+  onFeatureToggleLock,
   onOverlayUpload,
   onOverlayOpacityChange,
   onOverlayRecenter,
@@ -118,6 +124,7 @@ export const SelectionSidebar = ({
         onOverlayRecenter={onOverlayRecenter}
         onOverlayToggleVisibility={onOverlayToggleVisibility}
         onOverlayToggleLock={onOverlayToggleLock}
+        overlayLocked={overlayLocked}
       />
     );
   }
@@ -132,6 +139,8 @@ export const SelectionSidebar = ({
         onUpdateMetadata={(metadata) => onUpdateFeatureMetadata(feature.id, metadata)}
         onDelete={() => onDeleteFeature(feature.id)}
         onClone={() => onCloneFeature(feature.id)}
+        locked={featureLocked}
+        onToggleLock={() => onFeatureToggleLock(feature.id)}
       />
     );
   }

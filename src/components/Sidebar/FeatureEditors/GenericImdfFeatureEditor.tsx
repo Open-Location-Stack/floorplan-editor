@@ -12,10 +12,12 @@ import type { FloorFeature, ImdfFeatureType, JsonObject } from "../../../lib/typ
 export type ImdfFeatureEditorProps = {
   feature: FloorFeature;
   type: ImdfFeatureType;
+  locked: boolean;
   onUpdateProperty: (key: string, value: string) => void;
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;
   onClone: () => void;
+  onToggleLock: () => void;
 };
 
 const resolveStringValue = (feature: FloorFeature, key: string): string => {
@@ -33,10 +35,12 @@ const resolveStringValue = (feature: FloorFeature, key: string): string => {
 export const GenericImdfFeatureEditor = ({
   feature,
   type,
+  locked,
   onUpdateProperty,
   onUpdateMetadata,
   onDelete,
   onClone,
+  onToggleLock,
 }: ImdfFeatureEditorProps) => {
   const [metadataText, setMetadataText] = useState("{}");
   const [metadataError, setMetadataError] = useState<string | undefined>();
@@ -62,6 +66,19 @@ export const GenericImdfFeatureEditor = ({
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
         <h2 className="card-title text-lg">{spec.defaultName}</h2>
+        <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+          <span className="label-text flex items-center gap-2">
+            <span aria-hidden="true">{locked ? "🔒" : "🔓"}</span>
+            Lock geometry
+          </span>
+          <input
+            type="checkbox"
+            className="toggle toggle-sm"
+            checked={locked}
+            onChange={onToggleLock}
+            aria-label="Lock feature geometry"
+          />
+        </label>
 
         <label className="form-control gap-1">
           <span className="label-text">Feature ID (read only)</span>

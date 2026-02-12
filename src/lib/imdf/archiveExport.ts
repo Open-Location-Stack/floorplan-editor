@@ -578,7 +578,6 @@ export const buildImdfArchivePayload = ({
         image_name: overlay.imageName,
         opacity: overlay.opacity,
         visible: overlay.visible !== false,
-        locked: Boolean(overlay.locked),
         corners: overlay.corners,
       },
     });

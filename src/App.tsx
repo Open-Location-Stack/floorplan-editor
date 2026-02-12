@@ -318,6 +318,8 @@ function App() {
   const [theme, setTheme] = useState<ThemeId>(() => getInitialTheme());
   const [editorState, setEditorState] = useState<EditorState>(() => createInitialEditorState());
   const [overlays, setOverlays] = useState<FloorOverlay[]>([]);
+  const [lockedFeatureIds, setLockedFeatureIds] = useState<string[]>([]);
+  const [lockedOverlayFloorIds, setLockedOverlayFloorIds] = useState<string[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
@@ -356,6 +358,11 @@ function App() {
 
   const runtimeConfig = getRuntimeConfig();
   const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
+  const lockedFeatureIdsSet = useMemo(() => new Set(lockedFeatureIds), [lockedFeatureIds]);
+  const lockedOverlayFloorIdsSet = useMemo(
+    () => new Set(lockedOverlayFloorIds),
+    [lockedOverlayFloorIds],
+  );
 
   const resolvedSelection = useMemo(
     () =>
@@ -423,6 +430,8 @@ function App() {
 
       setEditorState(createInitialEditorState(migratedFeatures));
       setOverlays(sanitizedProject.overlays);
+      setLockedFeatureIds([]);
+      setLockedOverlayFloorIds([]);
       setBuildings(loadedBuildings);
       setFloors(loadedFloors);
       setSelection(
@@ -495,6 +504,15 @@ function App() {
     () => overlays.find((overlay) => overlay.floorId === activeFloor?.id),
     [overlays, activeFloor?.id],
   );
+  const selectedOverlayForMap = useMemo(() => {
+    if (!selectedOverlay) {
+      return undefined;
+    }
+    return {
+      ...selectedOverlay,
+      locked: lockedOverlayFloorIdsSet.has(selectedOverlay.floorId),
+    };
+  }, [selectedOverlay, lockedOverlayFloorIdsSet]);
 
   useEffect(() => {
     setBuildings((current) => {
@@ -776,6 +794,9 @@ function App() {
 
         const nextVisible = featuresFromMap.map((feature) => {
           const existing = currentVisibleById.get(feature.id);
+          if (lockedFeatureIdsSet.has(feature.id) && existing) {
+            return existing;
+          }
           const shouldApplyPendingTemplate =
             !existing && pendingSchema && pendingSchema.geometryType === feature.geometry.type;
           if (shouldApplyPendingTemplate) {
@@ -816,6 +837,16 @@ function App() {
           );
         });
 
+        for (const existing of currentVisible) {
+          if (!lockedFeatureIdsSet.has(existing.id)) {
+            continue;
+          }
+          if (nextVisible.some((feature) => feature.id === existing.id)) {
+            continue;
+          }
+          nextVisible.push(existing);
+        }
+
         if (areFeatureListsEqual(currentVisible, nextVisible)) {
           return current;
         }
@@ -837,14 +868,13 @@ function App() {
         setPendingDrawFeatureType(undefined);
       }
     },
-    [activeFloor, activeBuilding, pendingDrawFeatureType],
+    [activeFloor, activeBuilding, pendingDrawFeatureType, lockedFeatureIdsSet],
   );
 
   const onDrawSelectionChange = useCallback(
     (featureId: string | undefined) => {
-      setEditorState((current) => selectFeature(current, featureId));
-
       if (!featureId) {
+        setEditorState((current) => selectFeature(current, undefined));
         if (activeFloor) {
           setSelection({ kind: "floor", id: activeFloor.id });
         }
@@ -853,13 +883,22 @@ function App() {
 
       const feature = editorState.features.find((current) => current.id === featureId);
       if (!feature) {
+        setEditorState((current) => selectFeature(current, undefined));
+        return;
+      }
+      if (lockedFeatureIdsSet.has(feature.id)) {
+        setEditorState((current) => selectFeature(current, undefined));
+        if (activeFloor) {
+          setSelection({ kind: "floor", id: activeFloor.id });
+        }
         return;
       }
 
+      setEditorState((current) => selectFeature(current, featureId));
       setSelection({ kind: "feature", id: featureId });
       setDrawMode("select");
     },
-    [editorState.features, activeFloor],
+    [editorState.features, activeFloor, lockedFeatureIdsSet],
   );
 
   const onInteractionModeChange = useCallback((mode: DrawMode) => {
@@ -1013,7 +1052,7 @@ function App() {
 
       setOverlays((current) =>
         current.map((overlay) => {
-          if (overlay.floorId !== activeFloor.id || overlay.locked) {
+          if (overlay.floorId !== activeFloor.id || lockedOverlayFloorIdsSet.has(overlay.floorId)) {
             return overlay;
           }
 
@@ -1021,7 +1060,7 @@ function App() {
         }),
       );
     },
-    [activeFloor],
+    [activeFloor, lockedOverlayFloorIdsSet],
   );
 
   const onOverlayInteractionStart = useCallback(() => {
@@ -1172,7 +1211,6 @@ function App() {
             imageDataUrl: dataUrl,
             opacity: selectedOverlay?.opacity ?? 70,
             visible: selectedOverlay?.visible ?? true,
-            locked: false,
             corners: cornersAroundView(mapView.center, mapView.zoom),
             updatedAt: new Date().toISOString(),
           };
@@ -1260,6 +1298,14 @@ function App() {
             setFloors(nextFloors);
             setOverlays((current) =>
               current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
+            );
+            setLockedOverlayFloorIds((current) =>
+              current.filter((floorId) => !floorsToDelete.includes(floorId)),
+            );
+            setLockedFeatureIds((current) =>
+              current.filter((featureId) =>
+                nextFeatures.some((feature) => feature.id === featureId),
+              ),
             );
             setEditorState((current) =>
               replaceAllFeatures(selectFeature(current, undefined), nextFeatures),
@@ -1454,12 +1500,20 @@ function App() {
         apply: () =>
           applyProjectMutation("Floor deleted", () => {
             const nextFloors = floors.filter((current) => current.id !== floorId);
+            const nextFeatures = editorState.features.filter(
+              (feature) => feature.properties.floorId !== floorId,
+            );
             setFloors(nextFloors);
             setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
+            setLockedOverlayFloorIds((current) =>
+              current.filter((currentFloorId) => currentFloorId !== floorId),
+            );
             setEditorState((current) =>
-              replaceAllFeatures(
-                selectFeature(current, undefined),
-                current.features.filter((feature) => feature.properties.floorId !== floorId),
+              replaceAllFeatures(selectFeature(current, undefined), nextFeatures),
+            );
+            setLockedFeatureIds((current) =>
+              current.filter((featureId) =>
+                nextFeatures.some((feature) => feature.id === featureId),
               ),
             );
 
@@ -1474,7 +1528,7 @@ function App() {
           }),
       });
     },
-    [floors, applyProjectMutation, requestProjectConfirmation],
+    [floors, editorState.features, applyProjectMutation, requestProjectConfirmation],
   );
 
   const onCloneFloor = useCallback(
@@ -1902,9 +1956,10 @@ function App() {
                     mapStyleId={mapStyleId}
                     initialView={initialMapView}
                     features={visibleFeatures}
+                    lockedFeatureIds={lockedFeatureIds}
                     routeOverlayFeatures={routeOverlayFeatures}
                     selectedFeature={selectedFeatureForMap}
-                    overlay={selectedOverlay}
+                    overlay={selectedOverlayForMap}
                     drawMode={drawMode}
                     routePickEnabled={routePickEnabled && drawMode === "select"}
                     snapEnabled={snapEnabled}
@@ -1935,7 +1990,18 @@ function App() {
                 floor={activeFloor}
                 feature={selectedFeature}
                 allFeatures={editorState.features}
-                overlay={selectedOverlay}
+                overlay={selectedOverlayForMap}
+                featureLocked={Boolean(
+                  selectedFeature && lockedFeatureIdsSet.has(selectedFeature.id),
+                )}
+                overlayLocked={Boolean(activeFloor && lockedOverlayFloorIdsSet.has(activeFloor.id))}
+                onFeatureToggleLock={(featureId) => {
+                  setLockedFeatureIds((current) =>
+                    current.includes(featureId)
+                      ? current.filter((currentId) => currentId !== featureId)
+                      : [...current, featureId],
+                  );
+                }}
                 onRenameBuilding={onRenameBuilding}
                 onUpdateBuildingVenueName={onUpdateBuildingVenueName}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
@@ -2021,6 +2087,9 @@ function App() {
                             current.features.filter((feature) => feature.id !== featureId),
                           ),
                         );
+                        setLockedFeatureIds((current) =>
+                          current.filter((currentFeatureId) => currentFeatureId !== featureId),
+                        );
 
                         if (deletedFeature?.properties.floorId) {
                           setSelection({ kind: "floor", id: deletedFeature.properties.floorId });
@@ -2103,16 +2172,10 @@ function App() {
                     return;
                   }
 
-                  setOverlays((current) =>
-                    current.map((overlay) =>
-                      overlay.floorId === activeFloor.id
-                        ? {
-                            ...overlay,
-                            locked: !overlay.locked,
-                            updatedAt: new Date().toISOString(),
-                          }
-                        : overlay,
-                    ),
+                  setLockedOverlayFloorIds((current) =>
+                    current.includes(activeFloor.id)
+                      ? current.filter((floorId) => floorId !== activeFloor.id)
+                      : [...current, activeFloor.id],
                   );
                 }}
               />
