@@ -1795,6 +1795,67 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("does not delete incomplete polygon drafts during draw-driven state sync", async () => {
+    let controller: Awaited<ReturnType<typeof createMapController>> | undefined;
+
+    controller = await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
+      onFeaturesChange: (features) => {
+        controller?.setFeatures({
+          type: "FeatureCollection",
+          features,
+        });
+      },
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    controller.setInteractionMode("polygon");
+
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "draft-polygon",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    draw.delete.mockClear();
+    draw.add.mockClear();
+
+    map.emit("draw.update", {});
+
+    expect(draw.delete).not.toHaveBeenCalled();
+    expect(draw.add).not.toHaveBeenCalled();
+
+    controller.destroy();
+  });
+
   it("emits selection and mode changes from draw", async () => {
     const onFeatureSelectionChange = vi.fn();
     const onInteractionModeChange = vi.fn();

@@ -1747,8 +1747,12 @@ export const createMapController = async (
     !currentOverlay?.locked;
 
   const applyFeatures = () => {
-    if (isDrawInMode(draw, "draw_line_string")) {
-      // Keep in-progress line edits (including fork branches) under Draw's control until drawing ends.
+    if (
+      isDrawInMode(draw, "draw_point") ||
+      isDrawInMode(draw, "draw_line_string") ||
+      isDrawInMode(draw, "draw_polygon")
+    ) {
+      // Keep in-progress sketch edits under Draw's control until drawing ends.
       return;
     }
 
