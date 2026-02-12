@@ -85,6 +85,22 @@ export type ImdfDatasetValidationResult = {
   warnings: string[];
 };
 
+const REQUIRED_IMDF_DATASET_FILES = [
+  "manifest.json",
+  "venue.geojson",
+  "building.geojson",
+  "footprint.geojson",
+  "level.geojson",
+  "unit.geojson",
+];
+
+const parseImdfFeatureTypeFromFilename = (filename: string): ImdfFeatureType | undefined => {
+  if (!filename.endsWith(".geojson")) {
+    return undefined;
+  }
+  return readImdfType(filename.slice(0, -".geojson".length));
+};
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const isUuid = (value: unknown): value is string =>
@@ -214,14 +230,10 @@ export const validateImdfDatasetFiles = (
 ): ImdfDatasetValidationResult => {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const requiredFiles = [
-    "manifest.json",
-    ...IMDF_STANDARD_DATASET_TYPES.map((type) => `${type}.geojson`),
-  ];
   const knownIds = new Set<string>();
   const refs: Array<{ source: string; target: string; field: string }> = [];
 
-  for (const file of requiredFiles) {
+  for (const file of REQUIRED_IMDF_DATASET_FILES) {
     if (!(file in files)) {
       errors.push(`Missing required IMDF file: ${file}.`);
     }
@@ -246,16 +258,18 @@ export const validateImdfDatasetFiles = (
       );
       for (const type of IMDF_STANDARD_DATASET_TYPES) {
         const fileName = `${type}.geojson`;
-        if (!names.has(fileName)) {
+        if (fileName in files && !names.has(fileName)) {
           warnings.push(`manifest.json does not list ${fileName}.`);
         }
       }
     }
   }
 
-  for (const type of IMDF_STANDARD_DATASET_TYPES) {
-    const filename = `${type}.geojson`;
-    const rawCollection = files[filename];
+  for (const [filename, rawCollection] of Object.entries(files)) {
+    const type = parseImdfFeatureTypeFromFilename(filename);
+    if (!type) {
+      continue;
+    }
     if (!isRecord(rawCollection) || rawCollection["type"] !== "FeatureCollection") {
       errors.push(`${filename} must be a FeatureCollection.`);
       continue;

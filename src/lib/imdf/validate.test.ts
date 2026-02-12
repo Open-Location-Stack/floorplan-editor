@@ -155,6 +155,28 @@ describe("validateImdfDatasetFiles", () => {
     expect(result.errors.some((error) => error.includes("venue.geojson"))).toBe(true);
   });
 
+  it("accepts datasets that omit optional collection files", () => {
+    const result = validateImdfDatasetFiles({
+      "manifest.json": {
+        version: "1.0.0",
+        files: [
+          { name: "venue.geojson" },
+          { name: "building.geojson" },
+          { name: "footprint.geojson" },
+          { name: "level.geojson" },
+          { name: "unit.geojson" },
+        ],
+      },
+      "venue.geojson": { type: "FeatureCollection", features: [] },
+      "building.geojson": { type: "FeatureCollection", features: [] },
+      "footprint.geojson": { type: "FeatureCollection", features: [] },
+      "level.geojson": { type: "FeatureCollection", features: [] },
+      "unit.geojson": { type: "FeatureCollection", features: [] },
+    });
+
+    expect(result.errors).toEqual([]);
+  });
+
   it("fails when labels are strings instead of label objects", () => {
     const result = validateImdfDatasetFiles({
       "manifest.json": {
