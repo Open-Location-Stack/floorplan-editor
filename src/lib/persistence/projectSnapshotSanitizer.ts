@@ -253,7 +253,7 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
     return undefined;
   }
 
-  const opacityCandidate = isFiniteNumber(raw.opacity) ? raw.opacity : 70;
+  const opacityCandidate = isFiniteNumber(raw.opacity) ? raw.opacity : 30;
   const opacity = Math.max(0, Math.min(100, Math.round(opacityCandidate)));
 
   return {

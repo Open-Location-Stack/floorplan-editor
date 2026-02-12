@@ -1313,7 +1313,7 @@ function App() {
             floorId: activeFloor.id,
             imageName: file.name,
             imageDataUrl: dataUrl,
-            opacity: selectedOverlay?.opacity ?? 70,
+            opacity: selectedOverlay?.opacity ?? 30,
             visible: selectedOverlay?.visible ?? true,
             corners: cornersAroundView(mapView.center, mapView.zoom),
             updatedAt: new Date().toISOString(),

@@ -136,19 +136,19 @@ export const FloorEditor = ({
                 onClick={onOverlayRecenter}
                 disabled={!overlay}
               >
-                Recenter
+                Reset orientation
               </button>
             </div>
 
             <label className="label-text" htmlFor="overlay-opacity">
-              Opacity: {overlay?.opacity ?? 70}%
+              Opacity: {overlay?.opacity ?? 30}%
             </label>
             <input
               type="range"
               id="overlay-opacity"
               min={0}
               max={100}
-              value={overlay?.opacity ?? 70}
+              value={overlay?.opacity ?? 30}
               className="range range-sm"
               onChange={(event) => onOverlayOpacityChange(Number(event.currentTarget.value))}
               disabled={!overlay}

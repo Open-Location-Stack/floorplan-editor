@@ -95,4 +95,33 @@ describe("sanitizeProjectSnapshot", () => {
     expect(sanitized.buildings).toHaveLength(0);
     expect(sanitized.floors).toHaveLength(0);
   });
+
+  it("uses 30 as default overlay opacity when missing", () => {
+    const sanitized = sanitizeProjectSnapshot({
+      id: "p3",
+      name: "project",
+      version: 3,
+      updatedAt: "2026-02-06T00:00:00.000Z",
+      buildings: [{ id: "b1", name: "Building A" }],
+      floors: [{ id: "f1", buildingId: "b1", name: "Floor A" }],
+      features: [],
+      overlays: [
+        {
+          id: "overlay-default-opacity",
+          floorId: "f1",
+          imageName: "x.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          corners: {
+            topLeft: [0, 0],
+            topRight: [1, 0],
+            bottomRight: [1, -1],
+            bottomLeft: [0, -1],
+          },
+          updatedAt: "2026-02-06T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(sanitized.overlays[0]?.opacity).toBe(30);
+  });
 });

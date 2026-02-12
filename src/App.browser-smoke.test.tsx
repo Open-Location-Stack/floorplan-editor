@@ -811,6 +811,39 @@ const addVenueAndBuilding = async (): Promise<void> => {
     });
   });
 
+  it("defaults bitmap opacity to 30% when missing in persisted overlay", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "floor.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          visible: true,
+          corners: {
+            topLeft: [5.12, 52.091],
+            topRight: [5.123, 52.091],
+            bottomRight: [5.123, 52.089],
+            bottomLeft: [5.12, 52.089],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    expect(await screen.findByText("Opacity: 30%")).toBeInTheDocument();
+  });
+
   it("restores persisted lock state from snapshots", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
