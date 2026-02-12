@@ -131,6 +131,50 @@ const MockMapCanvas = ({
       </button>
       <button
         type="button"
+        data-testid="mock-map-create-forked-line-feature"
+        onClick={() => {
+          onFeaturesChange([
+            {
+              type: "Feature",
+              id: "path-draft-1",
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [5.2, 52.2],
+                  [5.201, 52.201],
+                ],
+              },
+              properties: {
+                kind: "opening",
+                imdfType: "opening",
+                name: { en: "Path 1" },
+              },
+            },
+            {
+              type: "Feature",
+              id: "path-draft-2",
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [5.201, 52.201],
+                  [5.202, 52.202],
+                ],
+              },
+              properties: {
+                kind: "opening",
+                imdfType: "opening",
+                name: { en: "Path 1" },
+              },
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("path-draft-2");
+        }}
+      >
+        create forked line feature
+      </button>
+      <button
+        type="button"
         data-testid="mock-map-create-polygon-feature"
         onClick={() => {
           onFeaturesChange([
@@ -933,7 +977,42 @@ const addVenueAndBuilding = async (): Promise<void> => {
         [5.202, 52.202],
       ]);
       expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
-      expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Opening" });
+      expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Path 1" });
+    });
+  });
+
+  it("assigns incrementing path names for newly forked paths", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await addVenueAndBuilding();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
+    fireEvent.click(screen.getByTestId("mock-map-create-forked-line-feature"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          properties: {
+            name?: { en?: string };
+          };
+        }>;
+      };
+      expect(latestSnapshot.features).toHaveLength(2);
+      const namesById = Object.fromEntries(
+        latestSnapshot.features.map((feature) => [feature.id, feature.properties.name]),
+      );
+      expect(namesById["path-draft-1"]).toEqual({ en: "Path 1" });
+      expect(namesById["path-draft-2"]).toEqual({ en: "Path 2" });
     });
   });
 

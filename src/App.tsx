@@ -290,6 +290,51 @@ const nameForGeometry = (geometryType: GeometryType): string => {
   return "New polygon";
 };
 
+const PATH_NAME_PATTERN = /^Path (\d+)$/;
+
+const readFeatureName = (feature: FloorFeature): string | undefined => {
+  const name = feature.properties.name;
+  if (typeof name === "string" && name.trim().length > 0) {
+    return name.trim();
+  }
+  if (name && typeof name === "object" && !Array.isArray(name)) {
+    const english = (name as { en?: unknown }).en;
+    if (typeof english === "string" && english.trim().length > 0) {
+      return english.trim();
+    }
+  }
+  return undefined;
+};
+
+const nextPathNumberForFloor = (features: FloorFeature[], floorId: string): number => {
+  let max = 0;
+  for (const feature of features) {
+    if (feature.properties.floorId !== floorId) {
+      continue;
+    }
+    const type =
+      typeof feature.properties.imdfType === "string"
+        ? feature.properties.imdfType
+        : feature.properties.kind;
+    if (type !== "opening") {
+      continue;
+    }
+    const name = readFeatureName(feature);
+    if (!name) {
+      continue;
+    }
+    const match = PATH_NAME_PATTERN.exec(name);
+    if (!match) {
+      continue;
+    }
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) {
+      max = Math.max(max, parsed);
+    }
+  }
+  return max + 1;
+};
+
 const isFeatureOnFloor = (feature: FloorFeature, floorId: string): boolean =>
   feature.properties.floorId === floorId || !feature.properties.floorId;
 
@@ -837,6 +882,7 @@ function App() {
       let consumedPendingTemplate = false;
 
       setEditorState((current) => {
+        let nextPathNumber = nextPathNumberForFloor(current.features, activeFloor.id);
         const currentVisible = current.features.filter((feature) =>
           isFeatureOnFloor(feature, activeFloor.id),
         );
@@ -863,6 +909,17 @@ function App() {
                 }
               : {}),
           };
+          const featureType =
+            (typeof mergedProperties.imdfType === "string" && mergedProperties.imdfType) ||
+            (typeof mergedProperties.kind === "string" && mergedProperties.kind) ||
+            (shouldApplyPendingTemplate ? pendingSchema?.type : undefined);
+          const isNewPath = !existing && feature.geometry.type === "LineString" && featureType === "opening";
+          const resolvedName =
+            isNewPath
+              ? `Path ${nextPathNumber++}`
+              : typeof mergedProperties.name === "string" && mergedProperties.name
+                ? mergedProperties.name
+                : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
 
           return normalizeFeature(
             {
@@ -874,10 +931,7 @@ function App() {
                   typeof mergedProperties.kind === "string" && mergedProperties.kind
                     ? mergedProperties.kind
                     : kindForGeometry(feature.geometry.type),
-                name:
-                  typeof mergedProperties.name === "string" && mergedProperties.name
-                    ? mergedProperties.name
-                    : (existing?.properties.name ?? nameForGeometry(feature.geometry.type)),
+                name: resolvedName,
               },
             },
             {
