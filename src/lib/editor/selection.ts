@@ -18,7 +18,7 @@ export type SelectionContext = {
 export type ResolvedSelection = {
   selection: Selection;
   venue: Venue | undefined;
-  building: Building;
+  building: Building | undefined;
   level: Level | undefined;
   floor: Level | undefined;
   feature: FloorFeature | undefined;
@@ -116,10 +116,9 @@ const resolveFromVenue = (
     return undefined;
   }
   const building = context.buildings.find((current) => current.venueId === venue.id);
-  if (!building) {
-    return undefined;
-  }
-  const level = readLevels(context).find((current) => current.buildingId === building.id);
+  const level = building
+    ? readLevels(context).find((current) => current.buildingId === building.id)
+    : undefined;
 
   return {
     selection,
@@ -166,7 +165,7 @@ export const firstValidSelection = (context: SelectionContext): Selection | unde
 
   const building = context.buildings.find((current) => current.venueId === venue.id);
   if (!building) {
-    return undefined;
+    return { kind: "venue", id: venue.id };
   }
   const level = readLevels(context).find((current) => current.buildingId === building.id);
   if (level) {

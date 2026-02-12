@@ -28,6 +28,7 @@ type SelectionSidebarProps = {
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
   onRenameVenue: (venueId: string, name: string) => void;
+  onAddBuilding: (venueId: string) => void;
   onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
   onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
   onExportBuildingArchive: (buildingId: string) => void;
@@ -64,6 +65,7 @@ export const SelectionSidebar = ({
   overlay,
   onRenameBuilding,
   onRenameVenue,
+  onAddBuilding,
   onUpdateBuildingVenueCategory,
   onUpdateBuildingAddressField,
   onExportBuildingArchive,
@@ -100,7 +102,13 @@ export const SelectionSidebar = ({
   }
 
   if (selection.kind === "venue" && venue) {
-    return <VenueEditor venue={venue} onRenameVenue={(name) => onRenameVenue(venue.id, name)} />;
+    return (
+      <VenueEditor
+        venue={venue}
+        onRenameVenue={(name) => onRenameVenue(venue.id, name)}
+        onAddBuilding={() => onAddBuilding(venue.id)}
+      />
+    );
   }
 
   if (!building) {

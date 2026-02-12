@@ -188,7 +188,13 @@ const mockMatchMedia = () => ({
 });
 
 describe("App browser smoke", () => {
-  const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
+const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
+
+const addVenueAndBuilding = async (): Promise<void> => {
+  fireEvent.click(screen.getByRole("button", { name: /add venue/i }));
+  await screen.findByRole("heading", { name: /venue/i });
+  fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+};
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -258,7 +264,7 @@ describe("App browser smoke", () => {
     });
   });
 
-  it("starts with no default building until add building is clicked", async () => {
+  it("starts with no default building until a venue and building are added", async () => {
     mockRepository.loadProject.mockResolvedValue(undefined);
 
     const { default: App } = await import("./App");
@@ -268,7 +274,7 @@ describe("App browser smoke", () => {
       expect(screen.getByText("No venues.")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+    await addVenueAndBuilding();
 
     await waitFor(() => {
       const saveCalls = mockRepository.saveProject.mock.calls;
@@ -889,7 +895,7 @@ describe("App browser smoke", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+    await addVenueAndBuilding();
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
@@ -937,7 +943,7 @@ describe("App browser smoke", () => {
     const { default: App } = await import("./App");
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /add building/i }));
+    await addVenueAndBuilding();
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /section/i })).toBeInTheDocument();

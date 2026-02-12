@@ -1305,32 +1305,45 @@ function App() {
     [buildingCenter, buildings, cancelDrawMode, editorState.features, floorCenter, relocateMap],
   );
 
-  const onAddBuilding = useCallback(() => {
-    const venueId = activeVenue?.id ?? venues[0]?.id ?? createId();
-    const buildingId = createId();
-    const floorId = createId();
-    const building: Building = {
-      id: buildingId,
-      venueId,
-      name: `Building ${buildings.length + 1}`,
-      location: mapView.center,
-    };
-    const floor: Floor = {
-      id: floorId,
-      buildingId,
-      name: "Ground Floor",
-    };
+  const onAddBuilding = useCallback(
+    (venueId: string) => {
+      const resolvedVenueId = venueId || activeVenue?.id || venues[0]?.id || createId();
+      const buildingCount = buildings.filter(
+        (current) => (current.venueId ?? resolvedVenueId) === resolvedVenueId,
+      ).length;
+      const buildingId = createId();
+      const floorId = createId();
+      const building: Building = {
+        id: buildingId,
+        venueId: resolvedVenueId,
+        name: `Building ${buildingCount + 1}`,
+        location: mapView.center,
+      };
+      const floor: Floor = {
+        id: floorId,
+        buildingId,
+        name: "Ground Floor",
+      };
 
-    applyProjectMutation("Building added", () => {
-      if (venues.length === 0) {
-        setVenues([{ id: venueId, name: "Main Venue" }]);
-      }
-      setBuildings((current) => [...current, building]);
-      setFloors((current) => [...current, floor]);
-      setSelection({ kind: "level", id: floorId });
+      applyProjectMutation("Building added", () => {
+        setBuildings((current) => [...current, building]);
+        setFloors((current) => [...current, floor]);
+        setSelection({ kind: "level", id: floorId });
+        setEditorState((current) => selectFeature(current, undefined));
+      });
+    },
+    [activeVenue?.id, applyProjectMutation, buildings, mapView.center, venues],
+  );
+
+  const onAddVenue = useCallback(() => {
+    const venueId = createId();
+    const venueName = `Venue ${venues.length + 1}`;
+    applyProjectMutation("Venue added", () => {
+      setVenues((current) => [...current, { id: venueId, name: venueName }]);
+      setSelection({ kind: "venue", id: venueId });
       setEditorState((current) => selectFeature(current, undefined));
     });
-  }, [activeVenue?.id, applyProjectMutation, buildings.length, mapView.center, venues]);
+  }, [applyProjectMutation, venues.length]);
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {
@@ -1769,11 +1782,6 @@ function App() {
 
           <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
             <aside className="flex flex-col xl:min-h-0 xl:overflow-y-auto xl:pr-1">
-              <div className="mb-3 flex gap-2">
-                <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
-                  Add building
-                </button>
-              </div>
               <BuildingsTree
                 venues={venues}
                 buildings={buildings}
@@ -1782,6 +1790,11 @@ function App() {
                 selection={selection}
                 onSelect={selectNode}
               />
+              <div className="mt-3 flex gap-2">
+                <button className="btn btn-sm btn-outline" type="button" onClick={onAddVenue}>
+                  Add venue
+                </button>
+              </div>
               <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
                 <label className="form-control">
                   <div className="label px-0 pb-1">
@@ -2072,6 +2085,7 @@ function App() {
                 }}
                 onRenameBuilding={onRenameBuilding}
                 onRenameVenue={onRenameVenue}
+                onAddBuilding={onAddBuilding}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}
                 onExportBuildingArchive={onExportBuildingArchive}

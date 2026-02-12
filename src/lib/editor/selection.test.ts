@@ -63,4 +63,29 @@ describe("selection", () => {
 
     expect(selection).toEqual({ kind: "level", id: "f1" });
   });
+
+  it("keeps venue selection valid when it has no buildings", () => {
+    const resolved = resolveSelection(
+      { kind: "venue", id: "venue-1" },
+      {
+        venues: [{ id: "venue-1", name: "Main Venue" }],
+        buildings: [],
+        floors: [],
+        features: [],
+      },
+    );
+
+    expect(resolved?.venue?.id).toBe("venue-1");
+    expect(resolved?.building).toBeUndefined();
+    expect(
+      firstValidSelection({
+        venues: [{ id: "venue-1", name: "Main Venue" }],
+        buildings: [],
+        features: [],
+      }),
+    ).toEqual({
+      kind: "venue",
+      id: "venue-1",
+    });
+  });
 });
