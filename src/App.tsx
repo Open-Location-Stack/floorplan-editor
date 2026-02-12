@@ -21,13 +21,24 @@ import {
   searchOpenCage,
 } from "./lib/geocoding/openCage";
 import { createId } from "./lib/id";
-import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
+import {
+  exportBuildingImdfZip,
+  exportProjectImdfZip,
+  exportVenueImdfZip,
+} from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
+import {
+  detectImportConflicts,
+  hasImportConflicts,
+  type ImportConflictSummary,
+  type ImportEntityData,
+  mergeImportedDataReplaceConflicts,
+} from "./lib/importExport/importConflict";
 import { cloneLevelWithReferences } from "./lib/levelClone";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
@@ -85,6 +96,11 @@ const DEFAULT_MAP_VIEW = {
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LocationSearchStatus = "idle" | "loading" | "error";
+type ArchiveNoticeLevel = "error" | "warning" | "info";
+type ArchiveNotice = {
+  level: ArchiveNoticeLevel;
+  message: string;
+};
 
 type ProjectSnapshot = {
   editorState: EditorState;
@@ -113,6 +129,27 @@ type MapRelocationRequest = {
   zoom?: number;
   requestVersion: number;
 };
+
+const importEntityDataFromState = (
+  venues: Venue[],
+  buildings: Building[],
+  levels: Level[],
+  features: FloorFeature[],
+  overlays: FloorOverlay[],
+): ImportEntityData => ({
+  venues,
+  buildings,
+  floors: levels,
+  features,
+  overlays,
+});
+
+const countImportConflicts = (summary: ImportConflictSummary): number =>
+  summary.venueIds.length +
+  summary.buildingIds.length +
+  summary.levelIds.length +
+  summary.featureIds.length +
+  summary.overlayIds.length;
 
 const isCoordinateTuple = (value: unknown): value is Coordinates =>
   Array.isArray(value) &&
@@ -401,7 +438,7 @@ function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
   const [projectUndoStack, setProjectUndoStack] = useState<ProjectHistoryEntry[]>([]);
   const [projectRedoStack, setProjectRedoStack] = useState<ProjectHistoryEntry[]>([]);
-  const [archiveWarnings, setArchiveWarnings] = useState<string[]>([]);
+  const [archiveNotices, setArchiveNotices] = useState<ArchiveNotice[]>([]);
   const [routePickEnabled, setRoutePickEnabled] = useState(false);
   const [routeStartCoordinate, setRouteStartCoordinate] = useState<Coordinates>();
   const [routeEndCoordinate, setRouteEndCoordinate] = useState<Coordinates>();
@@ -414,6 +451,7 @@ function App() {
   const projectRedoStackRef = useRef<ProjectHistoryEntry[]>([]);
   const overlayInteractionSnapshotRef = useRef<ProjectSnapshot | undefined>(undefined);
   const overlayInteractionChangedRef = useRef(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const runtimeConfig = getRuntimeConfig();
   const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
@@ -1645,50 +1683,282 @@ function App() {
         features: editorState.features,
         overlays,
       });
-      setArchiveWarnings(result.warnings);
+      setArchiveNotices([
+        ...result.warnings.map((warning) => ({
+          level: "warning" as const,
+          message: warning,
+        })),
+        {
+          level: "info",
+          message: `Exported building "${building.name}".`,
+        },
+      ]);
       downloadBlob(result.blob, `${building.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
     },
     [buildings, editorState.features, levels, overlays],
   );
 
-  const onImportBuildingArchive = useCallback(
-    async (_buildingId: string, file: File) => {
-      const imported = await importImdfArchiveZip(file);
-      if (!imported.ok) {
-        setArchiveWarnings([...imported.errors, ...imported.warnings]);
+  const onExportVenueArchive = useCallback(
+    async (venueId: string) => {
+      const venue = venues.find((current) => current.id === venueId);
+      if (!venue) {
         return;
       }
-      setArchiveWarnings(imported.value.warnings);
-      applyProjectMutation("IMDF archive imported", () => {
-        const fallbackVenueId = activeVenue?.id ?? venues[0]?.id ?? "venue-default";
-        const upsertById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
-          const byId = new Map(current.map((item) => [item.id, item]));
-          for (const item of incoming) {
-            byId.set(item.id, item);
-          }
-          return [...byId.values()];
+      const result = await exportVenueImdfZip({
+        venue,
+        buildings,
+        floors: levels,
+        features: editorState.features,
+        overlays,
+      });
+      setArchiveNotices([
+        ...result.warnings.map((warning) => ({
+          level: "warning" as const,
+          message: warning,
+        })),
+        {
+          level: "info",
+          message: `Exported venue "${venue.name}".`,
+        },
+      ]);
+      downloadBlob(result.blob, `${venue.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
+    },
+    [venues, buildings, editorState.features, levels, overlays],
+  );
+
+  const onExportProjectArchive = useCallback(async () => {
+    const result = await exportProjectImdfZip({
+      venues,
+      buildings,
+      floors: levels,
+      features: editorState.features,
+      overlays,
+    });
+    setArchiveNotices([
+      ...result.warnings.map((warning) => ({
+        level: "warning" as const,
+        message: warning,
+      })),
+      {
+        level: "info",
+        message: "Exported project archive.",
+      },
+    ]);
+    downloadBlob(result.blob, "project.imdf.zip");
+  }, [venues, buildings, editorState.features, levels, overlays]);
+
+  const onImportArchives = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) {
+        return;
+      }
+
+      const notices: ArchiveNotice[] = [];
+      try {
+        let incoming: ImportEntityData = importEntityDataFromState([], [], [], [], []);
+        let importedArchiveCount = 0;
+
+        const seenIncomingIds = {
+          venue: new Set<string>(),
+          building: new Set<string>(),
+          level: new Set<string>(),
+          feature: new Set<string>(),
+          overlay: new Set<string>(),
         };
 
-        setVenues((current) =>
-          current.length > 0 ? current : [{ id: fallbackVenueId, name: "Main Venue" }],
-        );
-        setBuildings((current) =>
-          upsertById(
-            current,
-            imported.value.buildings.map((building) => ({
-              ...building,
-              venueId: building.venueId ?? fallbackVenueId,
+        for (const file of files) {
+          let imported: Awaited<ReturnType<typeof importImdfArchiveZip>>;
+          try {
+            imported = await importImdfArchiveZip(file);
+          } catch (error: unknown) {
+            clientLogger.error("imdf.import_failed", {
+              error,
+              fileName: file.name,
+            });
+            notices.push({
+              level: "error",
+              message: `${file.name}: import failed. The archive may be invalid or unsupported.`,
+            });
+            continue;
+          }
+
+          if (!imported.ok) {
+            notices.push(
+              ...imported.errors.map((message) => ({
+                level: "error" as const,
+                message: `${file.name}: ${message}`,
+              })),
+            );
+            notices.push(
+              ...imported.warnings.map((message) => ({
+                level: "warning" as const,
+                message: `${file.name}: ${message}`,
+              })),
+            );
+            continue;
+          }
+
+          importedArchiveCount += 1;
+          const payload: ImportEntityData = {
+            venues: imported.value.venues,
+            buildings: imported.value.buildings,
+            floors: imported.value.floors,
+            features: imported.value.features,
+            overlays: imported.value.overlays,
+          };
+
+          const checkIncomingDuplicates = <T extends { id: string }>(
+            label: string,
+            items: T[],
+            seen: Set<string>,
+          ) => {
+            for (const item of items) {
+              if (seen.has(item.id)) {
+                notices.push({
+                  level: "warning",
+                  message: `${file.name}: duplicate ${label} id "${item.id}" overrides previous import data.`,
+                });
+              }
+              seen.add(item.id);
+            }
+          };
+
+          checkIncomingDuplicates("venue", payload.venues, seenIncomingIds.venue);
+          checkIncomingDuplicates("building", payload.buildings, seenIncomingIds.building);
+          checkIncomingDuplicates("level", payload.floors, seenIncomingIds.level);
+          checkIncomingDuplicates("feature", payload.features, seenIncomingIds.feature);
+          checkIncomingDuplicates("overlay", payload.overlays, seenIncomingIds.overlay);
+
+          incoming = mergeImportedDataReplaceConflicts(incoming, payload);
+          notices.push(
+            ...imported.value.warnings.map((message) => ({
+              level: "warning" as const,
+              message: `${file.name}: ${message}`,
             })),
-          ),
+          );
+        }
+
+        if (importedArchiveCount === 0) {
+          setArchiveNotices(
+            notices.length > 0
+              ? notices
+              : [
+                  {
+                    level: "error",
+                    message: "No archives were imported.",
+                  },
+                ],
+          );
+          return;
+        }
+
+        notices.push({
+          level: "info",
+          message: `Parsed ${importedArchiveCount} archive${importedArchiveCount === 1 ? "" : "s"}: ${incoming.venues.length} venues, ${incoming.buildings.length} buildings, ${incoming.floors.length} levels, ${incoming.features.length} features.`,
+        });
+
+        const currentData = importEntityDataFromState(
+          venues,
+          buildings,
+          levels,
+          editorState.features,
+          overlays,
         );
-        setLevels((current) => upsertById(current, imported.value.floors));
-        setOverlays((current) => upsertById(current, imported.value.overlays));
-        setEditorState((current) =>
-          replaceAllFeatures(current, upsertById(current.features, imported.value.features)),
-        );
-      });
+        const conflicts = detectImportConflicts(currentData, incoming);
+        const applyImport = () => {
+          applyProjectMutation("IMDF archives imported", () => {
+            const merged = mergeImportedDataReplaceConflicts(currentData, incoming);
+            const sanitized = sanitizeProjectSnapshot({
+              id: PROJECT_ID,
+              name: "Main project",
+              version: PROJECT_SCHEMA_VERSION,
+              updatedAt: new Date().toISOString(),
+              features: merged.features,
+              overlays: merged.overlays,
+              lockedFeatureIds,
+              lockedOverlayFloorIds,
+              venues: merged.venues,
+              buildings: merged.buildings,
+              levels: merged.floors,
+              floors: merged.floors,
+            });
+            setVenues(sanitized.venues ?? []);
+            setBuildings(sanitized.buildings ?? []);
+            setLevels(sanitized.levels ?? []);
+            setOverlays(sanitized.overlays);
+            setEditorState((current) => replaceAllFeatures(current, sanitized.features));
+            setSelection((currentSelection) => {
+              if (!currentSelection) {
+                return firstValidSelection({
+                  venues: sanitized.venues ?? [],
+                  buildings: sanitized.buildings ?? [],
+                  levels: sanitized.levels ?? [],
+                  features: sanitized.features,
+                });
+              }
+              const stillValid = resolveSelection(currentSelection, {
+                venues: sanitized.venues ?? [],
+                buildings: sanitized.buildings ?? [],
+                levels: sanitized.levels ?? [],
+                features: sanitized.features,
+              });
+              if (stillValid) {
+                return currentSelection;
+              }
+              return firstValidSelection({
+                venues: sanitized.venues ?? [],
+                buildings: sanitized.buildings ?? [],
+                levels: sanitized.levels ?? [],
+                features: sanitized.features,
+              });
+            });
+          });
+          setArchiveNotices([
+            ...notices,
+            {
+              level: "info",
+              message: "Imported archives applied.",
+            },
+          ]);
+        };
+
+        if (!hasImportConflicts(conflicts)) {
+          applyImport();
+          return;
+        }
+
+        setArchiveNotices(notices);
+        requestProjectConfirmation({
+          title: "Replace conflicting imported IDs?",
+          message:
+            `Conflicts found (${countImportConflicts(conflicts)} ids): ` +
+            `${conflicts.venueIds.length} venues, ${conflicts.buildingIds.length} buildings, ` +
+            `${conflicts.levelIds.length} levels, ${conflicts.featureIds.length} features, ` +
+            `${conflicts.overlayIds.length} overlays. Conflicting IDs will be replaced and non-conflicting records will be appended.`,
+          confirmLabel: "Replace conflicts",
+          apply: applyImport,
+        });
+      } catch (error: unknown) {
+        clientLogger.error("imdf.import_unexpected_failure", { error });
+        setArchiveNotices([
+          {
+            level: "error",
+            message: "Import failed unexpectedly. Please try another archive.",
+          },
+        ]);
+      }
     },
-    [activeVenue?.id, applyProjectMutation, venues],
+    [
+      venues,
+      buildings,
+      levels,
+      editorState.features,
+      overlays,
+      applyProjectMutation,
+      lockedFeatureIds,
+      lockedOverlayFloorIds,
+      requestProjectConfirmation,
+    ],
   );
 
   const onRenameLevel = useCallback(
@@ -2040,6 +2310,13 @@ function App() {
                   </div>
                 ) : null}
               </div>
+              <button
+                className="btn btn-sm btn-outline"
+                type="button"
+                onClick={onExportProjectArchive}
+              >
+                Export project
+              </button>
               <span className="badge badge-outline">{saveStatus}</span>
               <label className="swap swap-rotate rounded-box bg-base-200 p-2">
                 <input
@@ -2065,7 +2342,73 @@ function App() {
                 features={editorState.features}
                 selection={selection}
                 onSelect={selectNode}
+                onExportVenueArchive={onExportVenueArchive}
+                onExportBuildingArchive={onExportBuildingArchive}
               />
+              <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Import archives</div>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    type="button"
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    Import ZIP(s)
+                  </button>
+                  <input
+                    ref={importInputRef}
+                    className="hidden"
+                    type="file"
+                    accept=".zip,.imdf.zip,application/zip"
+                    multiple
+                    aria-label="Import ZIP archives"
+                    onClick={(event) => {
+                      event.currentTarget.value = "";
+                    }}
+                    onChange={(event) => {
+                      const selected = Array.from(event.currentTarget.files ?? []);
+                      if (selected.length === 0) {
+                        setArchiveNotices([
+                          {
+                            level: "error",
+                            message: "No archive selected.",
+                          },
+                        ]);
+                        return;
+                      }
+                      setArchiveNotices([
+                        {
+                          level: "info",
+                          message: `Importing ${selected.length} archive${selected.length === 1 ? "" : "s"}...`,
+                        },
+                      ]);
+                      void onImportArchives(selected);
+                    }}
+                  />
+                </div>
+                {archiveNotices.length === 0 ? (
+                  <p className="text-xs text-base-content/70">
+                    Import one or more IMDF archives. Conflicts are confirmed before replacement.
+                  </p>
+                ) : (
+                  <ul className="space-y-1 text-xs">
+                    {archiveNotices.map((notice, index) => (
+                      <li
+                        key={`${notice.level}-${notice.message}-${index}`}
+                        className={
+                          notice.level === "error"
+                            ? "text-error"
+                            : notice.level === "warning"
+                              ? "text-warning"
+                              : "text-base-content/70"
+                        }
+                      >
+                        {notice.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <div className="mt-3 flex gap-2">
                 <button className="btn btn-sm btn-outline" type="button" onClick={onAddVenue}>
                   Add venue
@@ -2365,9 +2708,6 @@ function App() {
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}
                 onReverseGeocodeBuildingAddress={onReverseGeocodeBuildingAddress}
-                onExportBuildingArchive={onExportBuildingArchive}
-                onImportBuildingArchive={onImportBuildingArchive}
-                archiveWarnings={archiveWarnings}
                 onDeleteBuilding={onDeleteBuilding}
                 onAddLevel={onAddLevel}
                 onRenameLevel={onRenameLevel}

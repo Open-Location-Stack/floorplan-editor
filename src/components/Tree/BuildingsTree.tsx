@@ -13,6 +13,8 @@ type BuildingsTreeProps = {
   features: FloorFeature[];
   selection: Selection | undefined;
   onSelect: (selection: Selection) => void;
+  onExportVenueArchive: (venueId: string) => void;
+  onExportBuildingArchive: (buildingId: string) => void;
 };
 
 const featureLabel = (feature: FloorFeature): string => {
@@ -36,6 +38,8 @@ export const BuildingsTree = ({
   features,
   selection,
   onSelect,
+  onExportVenueArchive,
+  onExportBuildingArchive,
 }: BuildingsTreeProps) => {
   const [expandedVenues, setExpandedVenues] = useState<Record<string, boolean>>({});
   const [expandedBuildings, setExpandedBuildings] = useState<Record<string, boolean>>({});
@@ -139,6 +143,19 @@ export const BuildingsTree = ({
                 }))
               }
               onSelect={() => onSelect({ kind: "venue", id: venue.id })}
+              actions={
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  aria-label="Export venue archive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onExportVenueArchive(venue.id);
+                  }}
+                >
+                  Export
+                </button>
+              }
             />
             {venueExpanded
               ? venueBuildings.map((building) => {
@@ -159,6 +176,19 @@ export const BuildingsTree = ({
                           }))
                         }
                         onSelect={() => onSelect({ kind: "building", id: building.id })}
+                        actions={
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            aria-label="Export building archive"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onExportBuildingArchive(building.id);
+                            }}
+                          >
+                            Export
+                          </button>
+                        }
                       />
                       {buildingExpanded
                         ? buildingLevels.map((level) => {

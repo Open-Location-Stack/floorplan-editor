@@ -1,7 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import JSZip from "jszip";
-import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay } from "../types";
-import { readImdfType } from "./featureCatalog";
+import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay, Venue } from "../types";
+import { getFeatureSpec, readImdfType } from "./featureCatalog";
 import { getImdfSchemaRule } from "./schema";
 
 export const IMDF_STANDARD_DATASET_TYPES = [
@@ -340,6 +340,7 @@ export const buildImdfArchivePayload = ({
   const featureUuidById = new Map(
     featuresInBuilding.map((feature) => [feature.id, resolveUuid(feature.id)]),
   );
+  const exportedFeatureIds = new Set<string>();
   const levelByFloor = new Map<string, string>();
   const buildingId = resolveUuid(building.id);
   const venueId = resolveUuid(building.imdf?.venue?.id ?? `venue:${building.id}`);
@@ -461,6 +462,7 @@ export const buildImdfArchivePayload = ({
       continue;
     }
     const spec = getImdfSchemaRule(mappedType);
+    const featureSpec = getFeatureSpec(mappedType);
     const floorId = feature.properties["floorId"];
     const levelId = typeof floorId === "string" ? levelByFloor.get(floorId) : undefined;
     if (!levelId && spec.type !== "relationship") {
@@ -527,6 +529,21 @@ export const buildImdfArchivePayload = ({
       baseProperties["destination_id"] =
         featureUuidById.get(destinationId) ?? resolveUuid(destinationId);
     }
+    for (const field of featureSpec.fields) {
+      if (baseProperties[field.key] === undefined && field.defaultValue !== undefined) {
+        baseProperties[field.key] = field.defaultValue;
+      }
+    }
+    const missingRequiredFields = featureSpec.fields
+      .filter((field) => field.required)
+      .map((field) => field.key)
+      .filter((key) => baseProperties[key] === undefined);
+    if (missingRequiredFields.length > 0) {
+      warnings.push(
+        `Feature ${feature.id} skipped: missing required ${mappedType} properties (${missingRequiredFields.join(", ")}).`,
+      );
+      continue;
+    }
 
     let geometry: FloorFeature["geometry"] | null = null;
     if (spec.geometryType === "Polygon") {
@@ -560,9 +577,13 @@ export const buildImdfArchivePayload = ({
       geometry,
       properties: baseProperties,
     });
+    exportedFeatureIds.add(feature.id);
   }
 
   for (const feature of featuresInBuilding) {
+    if (!exportedFeatureIds.has(feature.id)) {
+      continue;
+    }
     const mappedType =
       readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
     if (!mappedType || mappedType === "level" || mappedType === "relationship") {
@@ -710,6 +731,169 @@ export const buildImdfArchivePayload = ({
   };
 };
 
+type MultiBuildingBuildInput = {
+  buildings: Building[];
+  floors: Floor[];
+  features: FloorFeature[];
+  overlays: FloorOverlay[];
+  defaultLocale?: string;
+};
+
+type VenueBuildInput = {
+  venue: Venue;
+  buildings: Building[];
+  floors: Floor[];
+  features: FloorFeature[];
+  overlays: FloorOverlay[];
+  defaultLocale?: string;
+};
+
+type ProjectBuildInput = {
+  venues: Venue[];
+  buildings: Building[];
+  floors: Floor[];
+  features: FloorFeature[];
+  overlays: FloorOverlay[];
+  defaultLocale?: string;
+};
+
+const readCollection = (files: Record<string, unknown>, name: string): ImdfFeatureCollection => {
+  const raw = files[name];
+  if (!raw || typeof raw !== "object") {
+    return { type: "FeatureCollection", features: [] };
+  }
+  const collection = raw as {
+    type?: unknown;
+    features?: unknown;
+  };
+  if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) {
+    return { type: "FeatureCollection", features: [] };
+  }
+  return {
+    type: "FeatureCollection",
+    features: collection.features.filter(
+      (feature): feature is ImdfFeature =>
+        Boolean(feature) &&
+        typeof feature === "object" &&
+        typeof (feature as { id?: unknown }).id === "string",
+    ),
+  };
+};
+
+const readExtensionFeatures = (
+  files: Record<string, unknown>,
+  name: string,
+): Record<string, unknown>[] => {
+  const raw = files[name];
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  const collection = raw as {
+    type?: unknown;
+    features?: unknown;
+  };
+  if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) {
+    return [];
+  }
+  return collection.features.filter(
+    (feature): feature is Record<string, unknown> =>
+      Boolean(feature) &&
+      typeof feature === "object" &&
+      typeof (feature as { id?: unknown }).id === "string",
+  );
+};
+
+const mergeArchivePayloads = (payloads: ImdfArchivePayload[]): ImdfArchivePayload => {
+  const warnings: string[] = [];
+  const collections = Object.fromEntries(
+    IMDF_STANDARD_DATASET_TYPES.map((type) => [type, new Map<string, ImdfFeature>()]),
+  ) as Record<ImdfStandardDatasetType, Map<string, ImdfFeature>>;
+  const imageFeatures = new Map<string, Record<string, unknown>>();
+  const centroidFeatures = new Map<string, Record<string, unknown>>();
+  const imagePayloadsByPath = new Map<string, Uint8Array>();
+
+  for (const payload of payloads) {
+    warnings.push(...payload.warnings);
+    for (const type of IMDF_STANDARD_DATASET_TYPES) {
+      const collection = readCollection(payload.files, `${type}.geojson`);
+      for (const feature of collection.features) {
+        collections[type].set(feature.id, feature);
+      }
+    }
+    for (const feature of readExtensionFeatures(payload.files, "formation_image.geojson")) {
+      imageFeatures.set(feature["id"] as string, feature);
+    }
+    for (const feature of readExtensionFeatures(payload.files, "formation_centroid.geojson")) {
+      centroidFeatures.set(feature["id"] as string, feature);
+    }
+    const assets = payload.files["formation_assets.json"] as
+      | {
+          imagePayloads?: Array<{ path: string; bytes: Uint8Array }>;
+        }
+      | undefined;
+    for (const asset of assets?.imagePayloads ?? []) {
+      if (typeof asset.path !== "string" || !(asset.bytes instanceof Uint8Array)) {
+        continue;
+      }
+      imagePayloadsByPath.set(asset.path, asset.bytes);
+    }
+  }
+
+  const files: Record<string, unknown> = {};
+  for (const type of IMDF_STANDARD_DATASET_TYPES) {
+    files[`${type}.geojson`] = {
+      type: "FeatureCollection",
+      features: [...collections[type].values()].sort((a, b) => a.id.localeCompare(b.id)),
+    };
+  }
+
+  const sortedImageFeatures = [...imageFeatures.values()].sort((left, right) =>
+    (left["id"] as string).localeCompare(right["id"] as string),
+  );
+  const sortedCentroidFeatures = [...centroidFeatures.values()].sort((left, right) =>
+    (left["id"] as string).localeCompare(right["id"] as string),
+  );
+  const imagePayloads = [...imagePayloadsByPath.entries()]
+    .map(([path, bytes]) => ({ path, bytes }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+
+  files["formation_image.geojson"] = {
+    type: "FeatureCollection",
+    features: sortedImageFeatures,
+  };
+  files["formation_centroid.geojson"] = {
+    type: "FeatureCollection",
+    features: sortedCentroidFeatures,
+  };
+
+  const manifest: ImdfManifest = {
+    version: "1.0.0",
+    generated_at: new Date().toISOString(),
+    generator: "formation-floorplan-editor",
+    files: IMDF_STANDARD_DATASET_TYPES.map((type) => ({
+      name: `${type}.geojson`,
+      feature_type: type,
+      count: (
+        files[`${type}.geojson`] as {
+          features: unknown[];
+        }
+      ).features.length,
+    })),
+  };
+
+  files["manifest.json"] = manifest;
+  files["formation_assets.json"] = {
+    images: imagePayloads.map((entry) => entry.path),
+    imagePayloads,
+  };
+
+  return {
+    manifest,
+    files,
+    warnings,
+  };
+};
+
 const stableSortKeys = (input: unknown): unknown => {
   if (Array.isArray(input)) {
     return input.map(stableSortKeys);
@@ -725,10 +909,9 @@ const stableSortKeys = (input: unknown): unknown => {
     }, {});
 };
 
-export const exportBuildingImdfZip = async (
-  input: BuildInput,
+const buildZipFromPayload = async (
+  payload: ImdfArchivePayload,
 ): Promise<{ blob: Blob; warnings: string[] }> => {
-  const payload = buildImdfArchivePayload(input);
   const zip = new JSZip();
   for (const [filename, content] of Object.entries(payload.files)) {
     if (filename === "formation_assets.json") {
@@ -747,4 +930,83 @@ export const exportBuildingImdfZip = async (
   }
   const blob = await zip.generateAsync({ type: "blob" });
   return { blob, warnings: payload.warnings };
+};
+
+const exportMultiBuildingImdfZip = async (
+  input: MultiBuildingBuildInput,
+): Promise<{ blob: Blob; warnings: string[] }> => {
+  const payloads = input.buildings.map((building) =>
+    buildImdfArchivePayload({
+      building,
+      floors: input.floors,
+      features: input.features,
+      overlays: input.overlays,
+      ...(input.defaultLocale ? { defaultLocale: input.defaultLocale } : {}),
+    }),
+  );
+  const payload = mergeArchivePayloads(payloads);
+  return buildZipFromPayload(payload);
+};
+
+export const exportBuildingImdfZip = async (
+  input: BuildInput,
+): Promise<{ blob: Blob; warnings: string[] }> => {
+  const payload = buildImdfArchivePayload(input);
+  return buildZipFromPayload(payload);
+};
+
+export const exportVenueImdfZip = async (
+  input: VenueBuildInput,
+): Promise<{ blob: Blob; warnings: string[] }> => {
+  const buildings = input.buildings
+    .filter((building) => (building.venueId ?? input.venue.id) === input.venue.id)
+    .map((building) => ({
+      ...building,
+      venueId: input.venue.id,
+      imdf: {
+        ...building.imdf,
+        venue: {
+          ...building.imdf?.venue,
+          id: input.venue.id,
+          name: building.imdf?.venue?.name ?? { en: input.venue.name },
+        },
+      },
+    }));
+  return exportMultiBuildingImdfZip({
+    buildings,
+    floors: input.floors,
+    features: input.features,
+    overlays: input.overlays,
+    ...(input.defaultLocale ? { defaultLocale: input.defaultLocale } : {}),
+  });
+};
+
+export const exportProjectImdfZip = async (
+  input: ProjectBuildInput,
+): Promise<{ blob: Blob; warnings: string[] }> => {
+  const buildings = input.buildings.map((building) => {
+    const fallbackVenueId = building.venueId ?? `venue:${building.id}`;
+    const resolvedVenue = input.venues.find((venue) => venue.id === fallbackVenueId);
+    const venueId = resolvedVenue?.id ?? fallbackVenueId;
+    const venueName = building.imdf?.venue?.name ?? { en: resolvedVenue?.name ?? "Venue" };
+    return {
+      ...building,
+      venueId,
+      imdf: {
+        ...building.imdf,
+        venue: {
+          ...building.imdf?.venue,
+          id: venueId,
+          name: venueName,
+        },
+      },
+    };
+  });
+  return exportMultiBuildingImdfZip({
+    buildings,
+    floors: input.floors,
+    features: input.features,
+    overlays: input.overlays,
+    ...(input.defaultLocale ? { defaultLocale: input.defaultLocale } : {}),
+  });
 };

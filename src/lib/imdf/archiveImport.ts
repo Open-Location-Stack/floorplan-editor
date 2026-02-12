@@ -1,7 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import JSZip from "jszip";
 import { createId } from "../id";
-import type { Building, Floor, FloorFeature, FloorOverlay, ImdfFeatureType } from "../types";
+import type { Building, Floor, FloorFeature, FloorOverlay, ImdfFeatureType, Venue } from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
 import { validateImdfDatasetFiles } from "./validate";
 
@@ -102,6 +102,7 @@ const readCollection = (files: Record<string, unknown>, name: string): RawFeatur
 };
 
 export type ImportedArchiveData = {
+  venues: Venue[];
   buildings: Building[];
   floors: Floor[];
   features: FloorFeature[];
@@ -151,6 +152,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   }
 
   const warnings = [...validation.warnings];
+  const venuesById = new Map<string, Venue>();
   const buildingsById = new Map<string, Building>();
   const floorsById = new Map<string, Floor>();
   const features: FloorFeature[] = [];
@@ -160,6 +162,17 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   const addressFeatures = readCollection(files, "address.geojson");
   const buildingFeatures = readCollection(files, "building.geojson");
   const levelFeatures = readCollection(files, "level.geojson");
+
+  for (const venueFeature of venueFeatures) {
+    if (typeof venueFeature["id"] !== "string") {
+      continue;
+    }
+    const properties = isRecord(venueFeature.properties) ? venueFeature.properties : {};
+    venuesById.set(venueFeature["id"], {
+      id: venueFeature["id"],
+      name: labelToString(properties["name"]) ?? "Imported venue",
+    });
+  }
 
   for (const buildingFeature of buildingFeatures) {
     if (typeof buildingFeature["id"] !== "string") {
@@ -171,13 +184,15 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       typeof properties["address_id"] === "string" ? properties["address_id"] : undefined;
     const venue = venueFeatures.find((candidate) => candidate["id"] === venueId);
     const address = addressFeatures.find((candidate) => candidate["id"] === addressId);
+    const resolvedVenueId =
+      venueId ?? (typeof venue?.["id"] === "string" ? venue["id"] : undefined);
 
     const venueProperties = isRecord(venue?.properties) ? venue.properties : {};
     const addressProperties = isRecord(address?.properties) ? address.properties : {};
     const imdf: Building["imdf"] = {};
-    if (venue) {
+    if (resolvedVenueId) {
       imdf.venue = {
-        ...(typeof venue["id"] === "string" ? { id: venue["id"] } : {}),
+        id: resolvedVenueId,
         ...(isRecord(venueProperties["name"])
           ? { name: venueProperties["name"] as Record<string, string> }
           : {}),
@@ -185,6 +200,12 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ? { category: venueProperties["category"] }
           : {}),
       };
+      if (!venuesById.has(resolvedVenueId)) {
+        venuesById.set(resolvedVenueId, {
+          id: resolvedVenueId,
+          name: labelToString(venueProperties["name"]) ?? "Imported venue",
+        });
+      }
     }
     if (address) {
       imdf.address = {
@@ -209,6 +230,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
 
     buildingsById.set(buildingFeature["id"], {
       id: buildingFeature["id"],
+      ...(resolvedVenueId ? { venueId: resolvedVenueId } : {}),
       name: labelToString(properties["name"]) ?? "Imported building",
       imdf,
     });
@@ -460,6 +482,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   return {
     ok: true,
     value: {
+      venues: [...venuesById.values()],
       buildings: [...buildingsById.values()],
       floors: [...floorsById.values()],
       features,

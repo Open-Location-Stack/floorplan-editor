@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import type { Building, Venue } from "../../lib/types";
 
 type BuildingEditorProps = {
@@ -8,11 +7,8 @@ type BuildingEditorProps = {
   onUpdateVenueCategory: (category: string) => void;
   onUpdateAddressField: (field: string, value: string) => void;
   onReverseGeocodeAddress: () => void;
-  onExportArchive: () => void;
-  onImportArchive: (file: File) => void;
   onDeleteBuilding: () => void;
   onAddLevel: () => void;
-  archiveWarnings: string[];
 };
 
 export const BuildingEditor = ({
@@ -22,13 +18,9 @@ export const BuildingEditor = ({
   onUpdateVenueCategory,
   onUpdateAddressField,
   onReverseGeocodeAddress,
-  onExportArchive,
-  onImportArchive,
   onDeleteBuilding,
   onAddLevel,
-  archiveWarnings,
 }: BuildingEditorProps) => {
-  const importInputRef = useRef<HTMLInputElement>(null);
   const venueCategory = building.imdf?.venue?.category ?? "";
   const address = building.imdf?.address;
 
@@ -108,42 +100,6 @@ export const BuildingEditor = ({
               Reverse geocode with OpenCage
             </button>
           </div>
-        </div>
-
-        <div className="rounded-box border border-base-300 p-3">
-          <div className="mb-2 text-sm font-semibold">IMDF Archive</div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn btn-sm" type="button" onClick={onExportArchive}>
-              Export ZIP
-            </button>
-            <button
-              className="btn btn-sm btn-outline"
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-            >
-              Import ZIP
-            </button>
-            <input
-              ref={importInputRef}
-              className="hidden"
-              type="file"
-              accept=".zip,.imdf.zip,application/zip"
-              onChange={(event) => {
-                const selected = event.currentTarget.files?.[0];
-                if (selected) {
-                  onImportArchive(selected);
-                }
-                event.currentTarget.value = "";
-              }}
-            />
-          </div>
-          {archiveWarnings.length > 0 ? (
-            <ul className="mt-2 list-disc pl-5 text-xs text-warning">
-              {archiveWarnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          ) : null}
         </div>
 
         <div className="flex gap-2">

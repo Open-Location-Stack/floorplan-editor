@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildImdfArchivePayload,
   exportBuildingImdfZip,
+  exportProjectImdfZip,
+  exportVenueImdfZip,
   IMDF_STANDARD_DATASET_TYPES,
 } from "./archiveExport";
 import { importImdfArchiveZip } from "./archiveImport";
@@ -102,10 +104,234 @@ describe("imdf archive export/import", () => {
     if (!imported.ok) {
       return;
     }
+    expect(imported.value.venues.length).toBeGreaterThan(0);
     expect(imported.value.buildings.length).toBeGreaterThan(0);
     expect(imported.value.floors.length).toBeGreaterThan(0);
     expect(imported.value.features.some((feature) => feature.properties.imdfType === "level")).toBe(
       true,
     );
+  });
+
+  it("exports and imports a venue archive with multiple buildings", async () => {
+    const { blob } = await exportVenueImdfZip({
+      venue: {
+        id: "venue-1",
+        name: "Campus A",
+      },
+      buildings: [
+        { id: "building-1", venueId: "venue-1", name: "North Tower" },
+        { id: "building-2", venueId: "venue-1", name: "South Tower" },
+      ],
+      floors: [
+        { id: "level-1", buildingId: "building-1", name: "Ground Floor" },
+        { id: "level-2", buildingId: "building-2", name: "Ground Floor" },
+      ],
+      features: [
+        {
+          type: "Feature",
+          id: "level-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-1",
+            level_id: "level-1",
+            buildingId: "building-1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "level-2",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.13, 52.09],
+                [5.131, 52.09],
+                [5.131, 52.091],
+                [5.13, 52.091],
+                [5.13, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-2",
+            level_id: "level-2",
+            buildingId: "building-2",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const imported = await importImdfArchiveZip(
+      new File([blob], "venue.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.value.venues).toHaveLength(1);
+    const venueId = imported.value.venues[0]?.id;
+    expect(venueId).toBeDefined();
+    expect(imported.value.buildings.every((building) => building.venueId === venueId)).toBe(true);
+    expect(imported.value.buildings).toHaveLength(2);
+  });
+
+  it("exports and imports a project archive with multiple venues", async () => {
+    const { blob } = await exportProjectImdfZip({
+      venues: [
+        { id: "venue-1", name: "Campus A" },
+        { id: "venue-2", name: "Campus B" },
+      ],
+      buildings: [
+        { id: "building-1", venueId: "venue-1", name: "Tower A" },
+        { id: "building-2", venueId: "venue-2", name: "Tower B" },
+      ],
+      floors: [
+        { id: "level-1", buildingId: "building-1", name: "Ground Floor" },
+        { id: "level-2", buildingId: "building-2", name: "Ground Floor" },
+      ],
+      features: [
+        {
+          type: "Feature",
+          id: "level-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-1",
+            level_id: "level-1",
+            buildingId: "building-1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "level-2",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.13, 52.09],
+                [5.131, 52.09],
+                [5.131, 52.091],
+                [5.13, 52.091],
+                [5.13, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-2",
+            level_id: "level-2",
+            buildingId: "building-2",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const imported = await importImdfArchiveZip(
+      new File([blob], "project.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.value.venues).toHaveLength(2);
+    const venueIds = new Set(imported.value.venues.map((venue) => venue.id));
+    expect(
+      imported.value.buildings.every((building) =>
+        Boolean(building.venueId && venueIds.has(building.venueId)),
+      ),
+    ).toBe(true);
+    expect(imported.value.buildings).toHaveLength(2);
+  });
+
+  it("skips kiosk features missing anchor_id to keep exports valid", async () => {
+    const { blob, warnings } = await exportBuildingImdfZip({
+      building: {
+        id: "building-1",
+        name: "HQ",
+      },
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "level-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-1",
+            level_id: "level-1",
+            buildingId: "building-1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "kiosk-1",
+          geometry: {
+            type: "Point",
+            coordinates: [5.1205, 52.0905],
+          },
+          properties: {
+            kind: "kiosk",
+            imdfType: "kiosk",
+            floorId: "level-1",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    expect(warnings.some((warning) => warning.includes("kiosk") && warning.includes("anchor_id"))).toBe(
+      true,
+    );
+
+    const imported = await importImdfArchiveZip(
+      new File([blob], "kiosk-skip.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.value.features.some((feature) => feature.id === "kiosk-1")).toBe(false);
   });
 });

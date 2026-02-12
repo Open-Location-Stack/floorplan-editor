@@ -220,6 +220,21 @@ vi.mock("./lib/persistence/projectRepository", () => ({
   projectRepository: mockRepository,
 }));
 
+const mockExportBuildingImdfZip = vi.fn();
+const mockExportVenueImdfZip = vi.fn();
+const mockExportProjectImdfZip = vi.fn();
+const mockImportImdfArchiveZip = vi.fn();
+
+vi.mock("./lib/imdf/archiveExport", () => ({
+  exportBuildingImdfZip: (...args: unknown[]) => mockExportBuildingImdfZip(...args),
+  exportVenueImdfZip: (...args: unknown[]) => mockExportVenueImdfZip(...args),
+  exportProjectImdfZip: (...args: unknown[]) => mockExportProjectImdfZip(...args),
+}));
+
+vi.mock("./lib/imdf/archiveImport", () => ({
+  importImdfArchiveZip: (...args: unknown[]) => mockImportImdfArchiveZip(...args),
+}));
+
 const mockMatchMedia = () => ({
   matches: false,
   media: "(prefers-color-scheme: dark)",
@@ -255,6 +270,34 @@ describe("App browser smoke", () => {
     mockRepository.loadProject.mockReset();
     mockRepository.saveProject.mockClear();
     mockRepository.deleteProject.mockClear();
+    mockExportBuildingImdfZip.mockReset();
+    mockExportVenueImdfZip.mockReset();
+    mockExportProjectImdfZip.mockReset();
+    mockImportImdfArchiveZip.mockReset();
+    mockExportBuildingImdfZip.mockResolvedValue({ blob: new Blob(), warnings: [] });
+    mockExportVenueImdfZip.mockResolvedValue({ blob: new Blob(), warnings: [] });
+    mockExportProjectImdfZip.mockResolvedValue({ blob: new Blob(), warnings: [] });
+    mockImportImdfArchiveZip.mockResolvedValue({
+      ok: true,
+      value: {
+        venues: [],
+        buildings: [],
+        floors: [],
+        features: [],
+        overlays: [],
+        warnings: [],
+      },
+    });
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:mock"),
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
     vi.stubEnv("VITE_MAPTILER_API_KEY", "fake-key");
     vi.stubEnv("VITE_OPENCAGE_API_KEY", "fake-open-cage-key");
   });
@@ -1720,6 +1763,143 @@ describe("App browser smoke", () => {
         floors: Array<{ id: string }>;
       };
       expect(latestSnapshot.floors).toHaveLength(0);
+    });
+  });
+
+  it("imports multiple archives from the left panel and appends venues", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+    mockImportImdfArchiveZip
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          venues: [{ id: "venue-1", name: "Venue A" }],
+          buildings: [{ id: "building-1", venueId: "venue-1", name: "Building A" }],
+          floors: [{ id: "level-1", buildingId: "building-1", name: "Level A" }],
+          features: [],
+          overlays: [],
+          warnings: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          venues: [{ id: "venue-2", name: "Venue B" }],
+          buildings: [{ id: "building-2", venueId: "venue-2", name: "Building B" }],
+          floors: [{ id: "level-2", buildingId: "building-2", name: "Level B" }],
+          features: [],
+          overlays: [],
+          warnings: [],
+        },
+      });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: /import zip\(s\)/i })).toBeInTheDocument();
+    const input = screen.getByLabelText("Import ZIP archives");
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["first"], "first.imdf.zip", { type: "application/zip" }),
+          new File(["second"], "second.imdf.zip", { type: "application/zip" }),
+        ],
+      },
+    });
+
+    expect(screen.getByText(/importing 2 archives/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockImportImdfArchiveZip).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Venue A" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Venue B" })).toBeInTheDocument();
+    });
+  });
+
+  it("shows an explicit notice when no archive is selected", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const input = screen.getByLabelText("Import ZIP archives");
+    fireEvent.change(input, { target: { files: [] } });
+
+    expect(screen.getByText(/no archive selected/i)).toBeInTheDocument();
+  });
+
+  it("asks confirmation for conflicting imports and replaces only conflicting ids", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "conflict project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Venue A" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building A" }],
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Level A" }],
+      features: [],
+      overlays: [],
+    });
+    mockImportImdfArchiveZip.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        venues: [{ id: "venue-1", name: "Venue A Imported" }],
+        buildings: [
+          { id: "building-1", venueId: "venue-1", name: "Building A Imported" },
+          { id: "building-2", venueId: "venue-1", name: "Building B Added" },
+        ],
+        floors: [
+          { id: "level-1", buildingId: "building-1", name: "Level A Imported" },
+          { id: "level-2", buildingId: "building-2", name: "Level B Added" },
+        ],
+        features: [],
+        overlays: [],
+        warnings: [],
+      },
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const input = await screen.findByLabelText("Import ZIP archives");
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["conflict"], "conflict.imdf.zip", { type: "application/zip" })],
+      },
+    });
+
+    expect(await screen.findByText("Replace conflicting imported IDs?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace conflicts" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Building A Imported" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Building B Added" })).toBeInTheDocument();
+    });
+  });
+
+  it("exports project, venue, and building from their scoped controls", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "export project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Venue A" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building A" }],
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Level A" }],
+      features: [],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /export project/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /export venue archive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /export building archive/i }));
+
+    await waitFor(() => {
+      expect(mockExportProjectImdfZip).toHaveBeenCalledTimes(1);
+      expect(mockExportVenueImdfZip).toHaveBeenCalledTimes(1);
+      expect(mockExportBuildingImdfZip).toHaveBeenCalledTimes(1);
     });
   });
 });
