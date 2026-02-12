@@ -804,7 +804,7 @@ describe("App browser smoke", () => {
           };
           properties: {
             kind?: string;
-            name?: string;
+            name?: { en: string };
           };
         }>;
       };
@@ -816,7 +816,7 @@ describe("App browser smoke", () => {
         [5.202, 52.202],
       ]);
       expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
-      expect(latestSnapshot.features[0]?.properties.name).toBe("Opening");
+      expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Opening" });
     });
   });
 
@@ -854,7 +854,7 @@ describe("App browser smoke", () => {
           };
           properties: {
             kind?: string;
-            name?: string;
+            name?: { en: string };
           };
         }>;
       };
@@ -869,7 +869,7 @@ describe("App browser smoke", () => {
         ],
       ]);
       expect(latestSnapshot.features[0]?.properties.kind).toBe("section");
-      expect(latestSnapshot.features[0]?.properties.name).toBe("Section");
+      expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Section" });
     });
   });
 

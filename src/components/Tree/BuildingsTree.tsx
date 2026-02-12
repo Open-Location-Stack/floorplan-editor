@@ -12,6 +12,20 @@ type BuildingsTreeProps = {
   onSelect: (selection: Selection) => void;
 };
 
+const featureLabel = (feature: FloorFeature): string => {
+  const name = feature.properties.name;
+  if (typeof name === "string" && name.trim().length > 0) {
+    return name;
+  }
+  if (name && typeof name === "object" && !Array.isArray(name)) {
+    const label = name as { en?: unknown };
+    if (typeof label.en === "string") {
+      return label.en;
+    }
+  }
+  return feature.id;
+};
+
 export const BuildingsTree = ({
   buildings,
   floors,
@@ -124,7 +138,7 @@ export const BuildingsTree = ({
                             <TreeNode
                               key={feature.id}
                               depth={2}
-                              label={feature.properties.name ?? feature.id}
+                              label={featureLabel(feature)}
                               selected={
                                 selection?.kind === "feature" && selection.id === feature.id
                               }

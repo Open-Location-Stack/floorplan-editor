@@ -27,7 +27,15 @@ export const normalizeFeature = (
   feature: FloorFeature,
   context: NormalizeContext,
 ): FloorFeature => {
-  const normalizedType = resolveType(feature);
+  const originalType =
+    typeof feature.properties.imdfType === "string"
+      ? feature.properties.imdfType
+      : feature.properties.kind;
+  const migratedType =
+    originalType === "relationship" && feature.geometry.type === "LineString"
+      ? "opening"
+      : undefined;
+  const normalizedType = migratedType ?? resolveType(feature);
   const schema = getImdfSchemaRule(normalizedType);
   const origin =
     typeof feature.properties.origin === "string"
@@ -56,7 +64,19 @@ export const normalizeFeature = (
         }
       : feature.properties.relation;
 
-  return {
+  const rawName = feature.properties.name;
+  const existingLabel =
+    typeof rawName === "object" && rawName !== null && !Array.isArray(rawName)
+      ? (rawName as { en?: unknown })
+      : undefined;
+  const normalizedName =
+    typeof existingLabel?.en === "string"
+      ? (rawName as Record<string, string>)
+      : typeof rawName === "string" && rawName.trim().length > 0
+        ? { en: rawName.trim() }
+        : { en: schema.defaultName };
+
+  const normalized: FloorFeature = {
     ...feature,
     properties: {
       ...feature.properties,
@@ -69,14 +89,43 @@ export const normalizeFeature = (
       level_id: context.floorId,
       buildingId: context.buildingId,
       building_id: context.buildingId,
+      ...(normalizedType === "level" ? { building_ids: [context.buildingId] } : {}),
       ...(origin ? { origin, origin_id: origin } : {}),
       ...(intermediary ? { intermediary, intermediary_id: intermediary } : {}),
       ...(destination ? { destination, destination_id: destination } : {}),
       ...(relation ? { relation } : {}),
-      name:
-        typeof feature.properties.name === "string" && feature.properties.name.trim().length > 0
-          ? feature.properties.name
-          : schema.defaultName,
+      name: normalizedName,
     },
   };
+
+  if (normalizedType === "level") {
+    if (typeof normalized.properties.short_name !== "object" || !normalized.properties.short_name) {
+      normalized.properties.short_name = normalizedName;
+    }
+    if (typeof normalized.properties.ordinal !== "number") {
+      normalized.properties.ordinal = 0;
+    }
+    if (typeof normalized.properties.outdoor !== "boolean") {
+      normalized.properties.outdoor = false;
+    }
+  }
+
+  if (normalizedType === "opening") {
+    if (
+      typeof normalized.properties.category !== "string" ||
+      normalized.properties.category.trim().length === 0 ||
+      normalized.properties.category === "door"
+    ) {
+      normalized.properties.category = "pedestrian";
+    }
+    if (
+      normalized.properties.door !== -1 &&
+      normalized.properties.door !== 0 &&
+      normalized.properties.door !== 1
+    ) {
+      normalized.properties.door = 0;
+    }
+  }
+
+  return normalized;
 };

@@ -93,6 +93,14 @@ const resolveUuid = (seedOrId: string): string =>
   isUuid(seedOrId) ? seedOrId.toLowerCase() : deterministicUuid(seedOrId);
 
 const createLabel = (value: unknown, fallback: string, locale: string): Record<string, string> => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const entries = Object.entries(value as Record<string, unknown>).filter(
+      ([, entry]) => typeof entry === "string" && entry.trim().length > 0,
+    );
+    if (entries.length > 0) {
+      return Object.fromEntries(entries) as Record<string, string>;
+    }
+  }
   const label = typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
   return { [locale]: label };
 };
@@ -447,7 +455,8 @@ export const buildImdfArchivePayload = ({
       mappedType === "venue" ||
       mappedType === "building" ||
       mappedType === "address" ||
-      mappedType === "footprint"
+      mappedType === "footprint" ||
+      mappedType === "relationship"
     ) {
       continue;
     }
@@ -468,7 +477,19 @@ export const buildImdfArchivePayload = ({
     if (typeof feature.properties["category"] === "string") {
       baseProperties["category"] = feature.properties["category"];
     }
-    for (const key of ["website", "phone", "hours", "unit_ids", "anchor_id", "address_id"]) {
+    for (const key of [
+      "website",
+      "phone",
+      "hours",
+      "unit_ids",
+      "anchor_id",
+      "address_id",
+      "door",
+      "accessibility",
+      "restriction",
+      "section_id",
+      "unit_id",
+    ]) {
       const value = feature.properties[key];
       if (value !== undefined) {
         baseProperties[key] = value;
@@ -538,6 +559,56 @@ export const buildImdfArchivePayload = ({
       feature_type: mappedType as ImdfStandardDatasetType,
       geometry,
       properties: baseProperties,
+    });
+  }
+
+  for (const feature of featuresInBuilding) {
+    const mappedType =
+      readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
+    if (!mappedType || mappedType === "level" || mappedType === "relationship") {
+      continue;
+    }
+    const floorId = feature.properties.floorId;
+    const levelId = typeof floorId === "string" ? levelByFloor.get(floorId) : undefined;
+    if (!levelId) {
+      continue;
+    }
+    const childId = featureUuidById.get(feature.id) ?? resolveUuid(feature.id);
+    const metadata =
+      feature.properties.metadata && typeof feature.properties.metadata === "object"
+        ? (feature.properties.metadata as {
+            imdfRelationshipParentId?: string;
+            imdfRelationshipParentType?: string;
+          })
+        : undefined;
+    const overrideParentRaw =
+      metadata && typeof metadata.imdfRelationshipParentId === "string"
+        ? metadata.imdfRelationshipParentId
+        : undefined;
+    const overrideParentType =
+      metadata && typeof metadata.imdfRelationshipParentType === "string"
+        ? metadata.imdfRelationshipParentType
+        : undefined;
+    const parentId = overrideParentRaw
+      ? (featureUuidById.get(overrideParentRaw) ??
+        levelByFloor.get(overrideParentRaw) ??
+        resolveUuid(overrideParentRaw))
+      : levelId;
+    const parentType = overrideParentRaw ? (overrideParentType ?? "unit") : "level";
+    collections.relationship.features.push({
+      type: "Feature",
+      id: resolveUuid(`contains:${parentId}:${childId}`),
+      feature_type: "relationship",
+      geometry: null,
+      properties: {
+        name: createLabel("Contains relationship", "Contains relationship", defaultLocale),
+        category: "contains",
+        direction: 1,
+        references: [
+          { id: parentId, feature_type: parentType },
+          { id: childId, feature_type: mappedType },
+        ],
+      },
     });
   }
 

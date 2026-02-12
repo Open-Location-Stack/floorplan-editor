@@ -1,7 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import type { FloorFeature, ImdfFeatureType } from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
-import { getFeatureSpec } from "./featureCatalog";
+import { getFeatureSpec, readImdfType } from "./featureCatalog";
 
 export type FloorValidationResult = {
   errors: string[];
@@ -16,61 +16,62 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
 
   for (const feature of floorFeatures) {
     const featureType =
-      typeof feature.properties.imdfType === "string"
-        ? feature.properties.imdfType
-        : feature.properties.kind;
+      readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
     if (feature.properties.level_id !== floorId) {
       errors.push(`Feature ${feature.id} is not assigned to level_id ${floorId}.`);
     }
-    if (
-      typeof feature.properties.imdfType !== "string" ||
-      feature.properties.imdfType.length === 0
-    ) {
+    if (!featureType) {
       warnings.push(`Feature ${feature.id} has no IMDF type.`);
+      continue;
     }
-    if (featureType === "opening") {
-      if (
-        typeof feature.properties.category !== "string" ||
-        feature.properties.category.trim().length === 0
-      ) {
-        errors.push(`Opening ${feature.id} is missing category.`);
-      }
-    }
-    if (featureType === "relationship") {
-      const relation = feature.properties.relation;
-      const origin =
-        relation?.origin?.featureId ??
-        (typeof feature.properties.origin === "string" ? feature.properties.origin : undefined) ??
-        (typeof feature.properties.origin_id === "string"
-          ? feature.properties.origin_id
-          : undefined);
-      const intermediary =
-        relation?.intermediary?.featureId ??
-        (typeof feature.properties.intermediary === "string"
-          ? feature.properties.intermediary
-          : undefined) ??
-        (typeof feature.properties.intermediary_id === "string"
-          ? feature.properties.intermediary_id
-          : undefined);
-      const destination =
-        relation?.destination?.featureId ??
-        (typeof feature.properties.destination === "string"
-          ? feature.properties.destination
-          : undefined) ??
-        (typeof feature.properties.destination_id === "string"
-          ? feature.properties.destination_id
-          : undefined);
-      const hasAnyRelationshipRef = Boolean(origin || intermediary || destination);
-      if (!hasAnyRelationshipRef) {
+    const spec = getFeatureSpec(featureType);
+    for (const field of spec.fields.filter((entry) => entry.required)) {
+      const value = feature.properties[field.key];
+      if (value === undefined || value === null) {
+        errors.push(`Feature ${feature.id} is missing required ${field.key}.`);
         continue;
       }
-      if (!origin || !destination) {
-        errors.push(`Relationship ${feature.id} has incomplete refs.`);
-      } else {
-        const refs = intermediary ? [origin, intermediary, destination] : [origin, destination];
-        for (const ref of refs) {
-          if (!allIds.has(ref)) {
-            errors.push(`Relationship ${feature.id} references missing feature ${ref}.`);
+      if (field.type === "string" || field.type === "uuid") {
+        if (typeof value !== "string" || value.trim().length === 0) {
+          errors.push(`Feature ${feature.id} has invalid ${field.key}.`);
+        }
+      }
+      if (field.type === "number") {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          errors.push(`Feature ${feature.id} has invalid ${field.key}.`);
+        }
+      }
+      if (field.type === "boolean" && typeof value !== "boolean") {
+        errors.push(`Feature ${feature.id} has invalid ${field.key}.`);
+      }
+      if (field.type === "label") {
+        if (
+          typeof value !== "object" ||
+          !value ||
+          Array.isArray(value) ||
+          Object.values(value).some((entry) => typeof entry !== "string")
+        ) {
+          errors.push(`Feature ${feature.id} has invalid ${field.key}.`);
+        }
+      }
+      if (field.type === "string[]" && (!Array.isArray(value) || value.length === 0)) {
+        errors.push(`Feature ${feature.id} has invalid ${field.key}.`);
+      }
+      if (field.type === "references") {
+        if (!Array.isArray(value) || value.length < 2) {
+          errors.push(`Feature ${feature.id} has invalid references.`);
+        } else {
+          for (const ref of value) {
+            if (
+              !ref ||
+              typeof ref !== "object" ||
+              !("id" in ref) ||
+              typeof ref["id"] !== "string" ||
+              !allIds.has(ref["id"])
+            ) {
+              errors.push(`Feature ${feature.id} has references to missing feature ids.`);
+              break;
+            }
           }
         }
       }
@@ -111,9 +112,9 @@ const validateGeometry = (
   context: string,
   errors: string[],
 ): void => {
-  if (featureType === "building") {
+  if (featureType === "building" || featureType === "relationship") {
     if (geometry !== null) {
-      errors.push(`${context} building geometry must be null.`);
+      errors.push(`${context} ${featureType} geometry must be null.`);
     }
     return;
   }
@@ -149,7 +150,7 @@ const validateGeometry = (
 
 const validateFieldValue = (
   key: string,
-  expected: "string" | "number" | "boolean" | "label" | "string[]" | "uuid",
+  expected: "string" | "number" | "boolean" | "label" | "string[]" | "uuid" | "references",
   value: unknown,
   context: string,
   errors: string[],
@@ -185,6 +186,21 @@ const validateFieldValue = (
       !value.every((entry) => typeof entry === "string")
     ) {
       errors.push(`${context} properties.${key} must be a non-empty string array.`);
+    }
+    return;
+  }
+  if (expected === "references") {
+    if (
+      !Array.isArray(value) ||
+      value.length < 2 ||
+      !value.every(
+        (entry) =>
+          isRecord(entry) &&
+          typeof entry["id"] === "string" &&
+          typeof entry["feature_type"] === "string",
+      )
+    ) {
+      errors.push(`${context} properties.${key} must be a references array.`);
     }
     return;
   }

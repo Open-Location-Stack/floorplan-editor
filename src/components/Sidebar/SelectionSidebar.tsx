@@ -1,7 +1,14 @@
 import type { Selection } from "../../lib/editor/selection";
 import type { SupportedImdfType } from "../../lib/imdf/schema";
 import { validateFloor } from "../../lib/imdf/validate";
-import type { Building, Floor, FloorFeature, FloorOverlay, JsonObject } from "../../lib/types";
+import type {
+  Building,
+  Floor,
+  FloorFeature,
+  FloorOverlay,
+  JsonObject,
+  JsonValue,
+} from "../../lib/types";
 import { BuildingEditor } from "./BuildingEditor";
 import { FeatureEditor } from "./FeatureEditor";
 import { FloorEditor } from "./FloorEditor";
@@ -29,7 +36,7 @@ type SelectionSidebarProps = {
   onCloneFloor: (floorId: string) => void;
   onDeleteFloor: (floorId: string) => void;
   onCreateFeature: (type: SupportedImdfType) => void;
-  onUpdateFeatureProperty: (featureId: string, key: string, value: string) => void;
+  onUpdateFeatureProperty: (featureId: string, key: string, value: JsonValue | undefined) => void;
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
   onDeleteFeature: (featureId: string) => void;
   onCloneFeature: (featureId: string) => void;

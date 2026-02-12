@@ -7,6 +7,7 @@ export type CategoryOption = {
 
 const CATEGORY_OPTIONS: Partial<Record<ImdfFeatureType, CategoryOption[]>> = {
   opening: [
+    { value: "pedestrian", label: "Pedestrian" },
     { value: "entrance", label: "Entrance" },
     { value: "door", label: "Door" },
     { value: "stairs", label: "Stairs" },

@@ -1,4 +1,4 @@
-import type { Floor, FloorFeature, ImdfFeatureType, JsonObject } from "../../lib/types";
+import type { Floor, FloorFeature, ImdfFeatureType, JsonObject, JsonValue } from "../../lib/types";
 import { AmenityFeatureEditor } from "./FeatureEditors/AmenityFeatureEditor";
 import { AnchorFeatureEditor } from "./FeatureEditors/AnchorFeatureEditor";
 import { DetailFeatureEditor } from "./FeatureEditors/DetailFeatureEditor";
@@ -16,7 +16,7 @@ type FeatureEditorProps = {
   feature: FloorFeature;
   allFeatures: FloorFeature[];
   floors: Floor[];
-  onUpdateProperty: (key: string, value: string) => void;
+  onUpdateProperty: (key: string, value: JsonValue | undefined) => void;
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;
   onClone: () => void;

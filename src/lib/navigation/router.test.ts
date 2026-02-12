@@ -81,7 +81,7 @@ describe("path graph + point routing", () => {
     expect(snapped?.coordinate[1]).toBeCloseTo(52.09, 6);
   });
 
-  it("routes across relationship line features", () => {
+  it("does not route across relationship features because paths use openings", () => {
     const features: FloorFeature[] = [
       {
         type: "Feature",
@@ -104,7 +104,6 @@ describe("path graph + point routing", () => {
 
     const graph = buildPathGraph(features);
     const route = findRouteBetweenPoints(graph, [5.1201, 52.0902], [5.1218, 52.0898]);
-    expect(route.found).toBe(true);
-    expect(route.routeCoordinates.length).toBeGreaterThanOrEqual(2);
+    expect(route.found).toBe(false);
   });
 });

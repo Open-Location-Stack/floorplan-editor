@@ -47,6 +47,11 @@ export type ImdfFeatureType =
 
 export type ImdfLabel = Record<string, string>;
 
+export type ImdfReference = {
+  id: string;
+  feature_type: string;
+};
+
 export type RelationshipFeatureRef = {
   featureId: string;
   floorId?: string;
@@ -67,7 +72,7 @@ export type FeatureStyle = {
 
 export type FeatureProperties = {
   kind: string;
-  name?: string;
+  name?: string | ImdfLabel;
   floorId?: string;
   buildingId?: string;
   id?: string;
@@ -85,6 +90,14 @@ export type FeatureProperties = {
   display_point?: Coordinates;
   ordinal?: number;
   outdoor?: boolean;
+  door?: -1 | 0 | 1;
+  direction?: -1 | 0 | 1;
+  references?: ImdfReference[];
+  restriction?: string;
+  section_id?: string;
+  unit_id?: string;
+  anchor_id?: string;
+  accessibility?: string;
   website?: string;
   phone?: string;
   hours?: string;

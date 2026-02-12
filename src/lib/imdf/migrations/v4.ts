@@ -19,6 +19,12 @@ export const migrateProjectSnapshotToImdfV4 = (snapshot: ProjectSnapshot): Proje
       return !LEGACY_TYPES.has(type ?? "");
     })
     .map((feature) => {
+      const normalizedType =
+        (typeof feature.properties.imdfType === "string"
+          ? feature.properties.imdfType
+          : feature.properties.kind) === "relationship" && feature.geometry.type === "LineString"
+          ? "opening"
+          : undefined;
       const floorId =
         typeof feature.properties.floorId === "string"
           ? feature.properties.floorId
@@ -30,6 +36,22 @@ export const migrateProjectSnapshotToImdfV4 = (snapshot: ProjectSnapshot): Proje
           ...feature,
           properties: {
             ...feature.properties,
+            ...(normalizedType
+              ? {
+                  kind: normalizedType,
+                  imdfType: normalizedType,
+                  category:
+                    typeof feature.properties.category === "string"
+                      ? feature.properties.category
+                      : "pedestrian",
+                  door:
+                    feature.properties.door === -1 ||
+                    feature.properties.door === 0 ||
+                    feature.properties.door === 1
+                      ? feature.properties.door
+                      : 0,
+                }
+              : {}),
             ...(floorId ? { floorId } : {}),
           },
         },

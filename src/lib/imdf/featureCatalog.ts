@@ -1,6 +1,22 @@
-import type { GeometryType, ImdfFeatureType } from "../types";
+import type { FeatureProperties, GeometryType, ImdfFeatureType, JsonValue } from "../types";
 
-type FeatureFieldType = "string" | "number" | "boolean" | "label" | "string[]" | "uuid";
+export type FeatureFieldType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "label"
+  | "string[]"
+  | "uuid"
+  | "references";
+
+export type EditorControlType =
+  | "text"
+  | "number"
+  | "checkbox"
+  | "label-json"
+  | "uuid-ref"
+  | "string-list"
+  | "enum";
 
 export type ImdfFeatureField = {
   key: string;
@@ -8,6 +24,13 @@ export type ImdfFeatureField = {
   required: boolean;
   readOnly?: boolean;
   derived?: boolean;
+  editorControl?: EditorControlType;
+  defaultValue?: JsonValue;
+  enumOptions?: string[];
+  derive?: (
+    properties: FeatureProperties,
+    context: { floorId?: string; buildingId?: string },
+  ) => JsonValue | undefined;
 };
 
 export type ImdfFeatureSpec = {
@@ -18,6 +41,21 @@ export type ImdfFeatureSpec = {
   floorBound: boolean;
   fields: ImdfFeatureField[];
 };
+
+const floorReferenceField = {
+  key: "level_id",
+  type: "uuid",
+  required: true,
+  readOnly: true,
+  derived: true,
+  editorControl: "uuid-ref",
+  derive: (_properties: FeatureProperties, context: { floorId?: string }) => context.floorId,
+} as const;
+
+const baseFloorFields = [
+  { key: "name", type: "label", required: true, editorControl: "label-json" },
+  floorReferenceField,
+] as const;
 
 export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
   address: {
@@ -34,7 +72,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     defaultName: "Venue",
     sortOrder: 2,
     floorBound: false,
-    fields: [{ key: "name", type: "label", required: true }],
+    fields: [{ key: "name", type: "label", required: true, editorControl: "label-json" }],
   },
   building: {
     type: "building",
@@ -43,7 +81,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 3,
     floorBound: false,
     fields: [
-      { key: "name", type: "label", required: true },
+      { key: "name", type: "label", required: true, editorControl: "label-json" },
       { key: "venue_id", type: "uuid", required: true, readOnly: true, derived: true },
       { key: "address_id", type: "uuid", required: false, readOnly: true, derived: true },
     ],
@@ -55,7 +93,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 4,
     floorBound: false,
     fields: [
-      { key: "name", type: "label", required: true },
+      { key: "name", type: "label", required: true, editorControl: "label-json" },
       { key: "building_ids", type: "string[]", required: true, readOnly: true, derived: true },
     ],
   },
@@ -66,11 +104,26 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 10,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "short_name", type: "label", required: true },
-      { key: "ordinal", type: "number", required: true },
-      { key: "outdoor", type: "boolean", required: true },
-      { key: "building_ids", type: "string[]", required: true, readOnly: true, derived: true },
+      { key: "name", type: "label", required: true, editorControl: "label-json" },
+      { key: "short_name", type: "label", required: true, editorControl: "label-json" },
+      { key: "ordinal", type: "number", required: true, editorControl: "number", defaultValue: 0 },
+      {
+        key: "outdoor",
+        type: "boolean",
+        required: true,
+        editorControl: "checkbox",
+        defaultValue: false,
+      },
+      {
+        key: "building_ids",
+        type: "string[]",
+        required: true,
+        readOnly: true,
+        derived: true,
+        editorControl: "string-list",
+        derive: (_properties: FeatureProperties, context: { buildingId?: string }) =>
+          context.buildingId ? [context.buildingId] : [],
+      },
     ],
   },
   unit: {
@@ -80,9 +133,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 11,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: true },
+      ...baseFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        defaultValue: "unspecified",
+      },
     ],
   },
   section: {
@@ -92,9 +150,9 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 12,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: false },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "text" },
+      { key: "section_id", type: "uuid", required: true, editorControl: "uuid-ref" },
     ],
   },
   geofence: {
@@ -104,8 +162,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 13,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "text" },
+      {
+        key: "restriction",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: ["none", "employees", "restricted"],
+      },
     ],
   },
   opening: {
@@ -115,9 +180,23 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 20,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: true },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "enum" },
+      {
+        key: "door",
+        type: "number",
+        required: true,
+        editorControl: "enum",
+        defaultValue: 0,
+        enumOptions: ["-1", "0", "1"],
+      },
+      {
+        key: "accessibility",
+        type: "string",
+        required: false,
+        editorControl: "enum",
+        enumOptions: ["unknown", "wheelchair", "limited", "none"],
+      },
     ],
   },
   relationship: {
@@ -127,10 +206,24 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 21,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "origin_id", type: "uuid", required: true },
-      { key: "intermediary_id", type: "uuid", required: true },
-      { key: "destination_id", type: "uuid", required: true },
+      { key: "name", type: "label", required: true, editorControl: "label-json" },
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: ["contains"],
+        defaultValue: "contains",
+      },
+      {
+        key: "direction",
+        type: "number",
+        required: true,
+        editorControl: "enum",
+        defaultValue: 1,
+        enumOptions: ["-1", "0", "1"],
+      },
+      { key: "references", type: "references", required: true, editorControl: "string-list" },
     ],
   },
   amenity: {
@@ -140,10 +233,10 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 30,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: true },
-      { key: "unit_ids", type: "string[]", required: false },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "enum" },
+      { key: "unit_ids", type: "string[]", required: false, editorControl: "string-list" },
+      { key: "anchor_id", type: "uuid", required: false, editorControl: "uuid-ref" },
     ],
   },
   anchor: {
@@ -152,7 +245,11 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     defaultName: "Anchor",
     sortOrder: 31,
     floorBound: true,
-    fields: [{ key: "name", type: "label", required: true }],
+    fields: [
+      { key: "name", type: "label", required: true, editorControl: "label-json" },
+      { key: "unit_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      { key: "address_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+    ],
   },
   detail: {
     type: "detail",
@@ -161,8 +258,8 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 32,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
+      ...baseFloorFields,
+      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
     ],
   },
   fixture: {
@@ -172,9 +269,9 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 33,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: false },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "enum" },
+      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
     ],
   },
   kiosk: {
@@ -184,8 +281,8 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 34,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
+      ...baseFloorFields,
+      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
     ],
   },
   occupant: {
@@ -195,12 +292,12 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 35,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true },
-      { key: "level_id", type: "uuid", required: true, readOnly: true, derived: true },
-      { key: "category", type: "string", required: false },
-      { key: "website", type: "string", required: false },
-      { key: "phone", type: "string", required: false },
-      { key: "hours", type: "string", required: false },
+      ...baseFloorFields,
+      { key: "category", type: "string", required: true, editorControl: "enum" },
+      { key: "website", type: "string", required: false, editorControl: "text" },
+      { key: "phone", type: "string", required: false, editorControl: "text" },
+      { key: "hours", type: "string", required: false, editorControl: "text" },
+      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
     ],
   },
 };

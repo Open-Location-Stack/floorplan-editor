@@ -52,6 +52,19 @@ const IMDF_TYPE_OPTIONS = [
   "relationship",
 ] as const;
 
+const featureNameText = (name: unknown): string => {
+  if (typeof name === "string") {
+    return name;
+  }
+  if (name && typeof name === "object" && !Array.isArray(name)) {
+    const label = name as { en?: unknown };
+    if (typeof label.en === "string") {
+      return label.en;
+    }
+  }
+  return "";
+};
+
 export const EditorPanels = ({
   buildings,
   floors,
@@ -203,7 +216,7 @@ export const EditorPanels = ({
             className="input input-bordered input-sm"
             type="text"
             placeholder="Name"
-            value={selectedFeature?.properties.name ?? ""}
+            value={featureNameText(selectedFeature?.properties.name)}
             onChange={(event) => onUpdateSelectedFeatureProperty("name", event.currentTarget.value)}
             disabled={!selectedFeature}
           />

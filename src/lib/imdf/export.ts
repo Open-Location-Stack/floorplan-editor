@@ -141,6 +141,14 @@ const resolveUuid = (seed: string): string =>
   isUuid(seed) ? seed.toLowerCase() : deterministicUuid(seed);
 
 const createLabel = (value: unknown, fallback: string, locale: string): ImdfLabel => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const entries = Object.entries(value as Record<string, unknown>).filter(
+      ([, entry]) => typeof entry === "string" && entry.trim().length > 0,
+    );
+    if (entries.length > 0) {
+      return Object.fromEntries(entries) as ImdfLabel;
+    }
+  }
   const resolved = typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
   return { [locale]: resolved };
 };
@@ -540,69 +548,50 @@ export const exportImdfDataset = ({
           typeof sourceFeature.properties.category === "string" &&
           sourceFeature.properties.category.trim().length > 0
             ? sourceFeature.properties.category
-            : "door",
+            : "pedestrian",
+        door:
+          sourceFeature.properties.door === -1 ||
+          sourceFeature.properties.door === 0 ||
+          sourceFeature.properties.door === 1
+            ? sourceFeature.properties.door
+            : 0,
       },
     });
     openingIdBySource.set(sourceFeature.id, openingId);
   }
 
-  for (const [index, sourceFeature] of relationshipSourceFeatures.entries()) {
-    const lineGeometry = normalizeLineGeometry(sourceFeature.geometry);
-    if (!lineGeometry) {
-      continue;
-    }
-
-    const relationshipId = toExportId(sourceFeature.id, "relationship");
-    const relation = sourceFeature.properties.relation;
-    const originRef =
-      relation?.origin?.featureId ??
-      (typeof sourceFeature.properties.origin === "string"
-        ? sourceFeature.properties.origin
-        : undefined) ??
-      (typeof sourceFeature.properties.origin_id === "string"
-        ? sourceFeature.properties.origin_id
-        : undefined);
-    const intermediaryRef =
-      relation?.intermediary?.featureId ??
-      (typeof sourceFeature.properties.intermediary === "string"
-        ? sourceFeature.properties.intermediary
-        : undefined) ??
-      (typeof sourceFeature.properties.intermediary_id === "string"
-        ? sourceFeature.properties.intermediary_id
-        : undefined);
-    const destinationRef =
-      relation?.destination?.featureId ??
-      (typeof sourceFeature.properties.destination === "string"
-        ? sourceFeature.properties.destination
-        : undefined) ??
-      (typeof sourceFeature.properties.destination_id === "string"
-        ? sourceFeature.properties.destination_id
-        : undefined);
-
-    const originId = originRef
-      ? (unitIdBySource.get(originRef) ?? openingIdBySource.get(originRef))
-      : undefined;
-    const intermediaryId = intermediaryRef ? openingIdBySource.get(intermediaryRef) : undefined;
-    const destinationId = destinationRef
-      ? (unitIdBySource.get(destinationRef) ?? openingIdBySource.get(destinationRef))
-      : undefined;
-    if (!originId || !intermediaryId || !destinationId) {
+  const childFeatures = [
+    ...unitSourceFeatures,
+    ...openingSourceFeatures,
+    ...relationshipSourceFeatures,
+  ];
+  for (const sourceFeature of childFeatures) {
+    const childType =
+      sourceFeature.geometry.type === "LineString"
+        ? "opening"
+        : sourceFeature.properties.kind === "unit"
+          ? "unit"
+          : "unit";
+    const childId =
+      childType === "opening"
+        ? openingIdBySource.get(sourceFeature.id)
+        : unitIdBySource.get(sourceFeature.id);
+    if (!childId) {
       continue;
     }
     collections.relationship.features.push({
       type: "Feature",
-      id: relationshipId,
+      id: toExportId(`contains:${primaryLevelId}:${childId}`, "relationship"),
       feature_type: "relationship",
-      geometry: lineGeometry,
+      geometry: null,
       properties: {
-        name: createLabel(
-          sourceFeature.properties.name,
-          `Relationship ${index + 1}`,
-          defaultLocale,
-        ),
-        origin_id: originId,
-        intermediary_id: intermediaryId,
-        destination_id: destinationId,
+        name: createLabel("Contains relationship", "Contains relationship", defaultLocale),
+        category: "contains",
+        direction: 1,
+        references: [
+          { id: primaryLevelId, feature_type: "level" },
+          { id: childId, feature_type: childType },
+        ],
       },
     });
   }

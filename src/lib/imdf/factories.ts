@@ -73,6 +73,14 @@ export const createImdfFeature = ({
           };
 
   const normalized = normalizeFeature(baseFeature, context);
+  if (type === "level") {
+    normalized.properties.ordinal = 0;
+    normalized.properties.outdoor = false;
+  }
+  if (type === "opening") {
+    normalized.properties.category = "pedestrian";
+    normalized.properties.door = 0;
+  }
   if (normalized.properties.category === undefined) {
     if (type === "unit") {
       normalized.properties.category = "unspecified";

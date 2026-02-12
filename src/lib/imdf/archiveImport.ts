@@ -315,6 +315,25 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ...(typeof properties["category"] === "string"
             ? { category: properties["category"] }
             : {}),
+          ...(properties["door"] === -1 || properties["door"] === 0 || properties["door"] === 1
+            ? { door: properties["door"] }
+            : {}),
+          ...(typeof properties["accessibility"] === "string"
+            ? { accessibility: properties["accessibility"] }
+            : {}),
+          ...(typeof properties["restriction"] === "string"
+            ? { restriction: properties["restriction"] }
+            : {}),
+          ...(typeof properties["section_id"] === "string"
+            ? { section_id: properties["section_id"] }
+            : {}),
+          ...(typeof properties["unit_id"] === "string" ? { unit_id: properties["unit_id"] } : {}),
+          ...(typeof properties["anchor_id"] === "string"
+            ? { anchor_id: properties["anchor_id"] }
+            : {}),
+          ...(typeof properties["address_id"] === "string"
+            ? { address_id: properties["address_id"] }
+            : {}),
           ...(originId ? { origin: originId, origin_id: originId } : {}),
           ...(intermediaryId
             ? { intermediary: intermediaryId, intermediary_id: intermediaryId }
@@ -342,6 +361,44 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         },
       });
     }
+  }
+
+  const relationships = readCollection(files, "relationship.geojson");
+  for (const raw of relationships) {
+    if (typeof raw["id"] !== "string") {
+      continue;
+    }
+    const properties = isRecord(raw.properties) ? raw.properties : {};
+    if (properties["category"] !== "contains" || !Array.isArray(properties["references"])) {
+      continue;
+    }
+    const refs = properties["references"].filter((entry): entry is Record<string, unknown> =>
+      isRecord(entry),
+    );
+    const parent = refs[0];
+    const child = refs[1];
+    if (
+      !parent ||
+      !child ||
+      typeof parent["id"] !== "string" ||
+      typeof child["id"] !== "string" ||
+      typeof parent["feature_type"] !== "string"
+    ) {
+      continue;
+    }
+    const childFeature = features.find((feature) => feature.id === child["id"]);
+    if (!childFeature) {
+      continue;
+    }
+    const metadata =
+      childFeature.properties.metadata && typeof childFeature.properties.metadata === "object"
+        ? childFeature.properties.metadata
+        : {};
+    childFeature.properties.metadata = {
+      ...metadata,
+      imdfRelationshipParentId: parent["id"],
+      imdfRelationshipParentType: parent["feature_type"],
+    };
   }
 
   const overlays: FloorOverlay[] = [];

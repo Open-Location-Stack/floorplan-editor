@@ -7,7 +7,7 @@ import { validateFloor, validateImdfDatasetFiles } from "./validate";
 const fixture = mixedFloorCollection as unknown as FeatureCollection;
 
 describe("validateFloor", () => {
-  it("reports missing IMDF properties", () => {
+  it("reports missing required IMDF properties as errors", () => {
     const result = validateFloor("f1", [
       {
         type: "Feature",
@@ -32,8 +32,7 @@ describe("validateFloor", () => {
       },
     ]);
 
-    expect(result.warnings.length).toBeGreaterThan(0);
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors.some((error) => error.includes("missing required"))).toBe(true);
   });
 
   it("reports missing level_id", () => {
@@ -49,7 +48,7 @@ describe("validateFloor", () => {
           ],
         },
         properties: {
-          kind: "path",
+          kind: "opening",
           floorId: "f1",
         },
       },
@@ -58,7 +57,7 @@ describe("validateFloor", () => {
     expect(result.errors).toContain("Feature shape-1 is not assigned to level_id f1.");
   });
 
-  it("accepts relationship refs with origin and destination only", () => {
+  it("accepts valid relationship references", () => {
     const result = validateFloor("f1", [
       {
         type: "Feature",
@@ -77,8 +76,11 @@ describe("validateFloor", () => {
         },
         properties: {
           kind: "unit",
+          imdfType: "unit",
           floorId: "f1",
           level_id: "f1",
+          name: { en: "Unit A" },
+          category: "room",
         },
       },
       {
@@ -98,35 +100,13 @@ describe("validateFloor", () => {
         },
         properties: {
           kind: "unit",
+          imdfType: "unit",
           floorId: "f1",
           level_id: "f1",
+          name: { en: "Unit B" },
+          category: "room",
         },
       },
-      {
-        type: "Feature",
-        id: "relationship-1",
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [0.5, 0.5],
-            [2.5, 0.5],
-          ],
-        },
-        properties: {
-          kind: "relationship",
-          floorId: "f1",
-          level_id: "f1",
-          origin_id: "unit-a",
-          destination_id: "unit-b",
-        },
-      },
-    ]);
-
-    expect(result.errors).toEqual([]);
-  });
-
-  it("does not report incomplete refs for unlinked relationship drafts", () => {
-    const result = validateFloor("f1", [
       {
         type: "Feature",
         id: "relationship-1",
@@ -139,37 +119,21 @@ describe("validateFloor", () => {
         },
         properties: {
           kind: "relationship",
+          imdfType: "relationship",
           floorId: "f1",
           level_id: "f1",
+          name: { en: "contains" },
+          category: "contains",
+          direction: 1,
+          references: [
+            { id: "unit-a", feature_type: "unit" },
+            { id: "unit-b", feature_type: "unit" },
+          ],
         },
       },
     ]);
 
     expect(result.errors).toEqual([]);
-  });
-
-  it("still reports relationship refs as incomplete when origin or destination is missing", () => {
-    const result = validateFloor("f1", [
-      {
-        type: "Feature",
-        id: "relationship-1",
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [0, 0],
-            [1, 1],
-          ],
-        },
-        properties: {
-          kind: "relationship",
-          floorId: "f1",
-          level_id: "f1",
-          origin_id: "unit-a",
-        },
-      },
-    ]);
-
-    expect(result.errors).toContain("Relationship relationship-1 has incomplete refs.");
   });
 });
 

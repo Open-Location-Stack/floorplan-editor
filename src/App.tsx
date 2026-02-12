@@ -36,7 +36,6 @@ import type {
   FloorFeature,
   FloorOverlay,
   GeometryType,
-  JsonValue,
   OverlayCorners,
   ThemeId,
 } from "./lib/types";
@@ -2033,16 +2032,7 @@ function App() {
                           ...feature,
                           properties: {
                             ...feature.properties,
-                            [key]:
-                              key === "relation" || key === "style"
-                                ? (() => {
-                                    try {
-                                      return JSON.parse(value) as JsonValue;
-                                    } catch {
-                                      return feature.properties[key];
-                                    }
-                                  })()
-                                : value || undefined,
+                            [key]: value,
                           },
                         },
                         {
