@@ -14,6 +14,7 @@ type FeatureSelectionChangeHandler = (featureId: string | undefined) => void;
 type ViewStateHandler = (center: Coordinates, zoom: number) => void;
 type InteractionModeChangeHandler = (mode: DrawMode) => void;
 type OverlayCornersChangeHandler = (corners: FloorOverlay["corners"]) => void;
+type OverlayInteractionHandler = () => void;
 type VertexSelectionChangeHandler = (hasSelectedVertex: boolean) => void;
 type MapClickHandler = (coordinate: Coordinates) => void;
 
@@ -1346,6 +1347,8 @@ export const createMapController = async (
     onViewStateChange: ViewStateHandler;
     onInteractionModeChange: InteractionModeChangeHandler;
     onOverlayCornersChange: OverlayCornersChangeHandler;
+    onOverlayInteractionStart?: OverlayInteractionHandler;
+    onOverlayInteractionEnd?: OverlayInteractionHandler;
     onVertexSelectionChange?: VertexSelectionChangeHandler;
     onMapClick?: MapClickHandler;
   },
@@ -1422,6 +1425,95 @@ export const createMapController = async (
         startAngleRadians: number;
       }
     | undefined;
+  let overlayCornersUpdateAnimationFrame: number | undefined;
+  let pendingOverlayCornersUpdate: FloorOverlay["corners"] | undefined;
+  let isOverlayInteractionActive = false;
+
+  const scheduleAnimationFrame = (callback: FrameRequestCallback): number => {
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      return globalThis.requestAnimationFrame(callback);
+    }
+
+    return globalThis.setTimeout(() => callback(Date.now()), 0);
+  };
+
+  const cancelScheduledAnimationFrame = (id: number) => {
+    if (typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(id);
+      return;
+    }
+
+    globalThis.clearTimeout(id);
+  };
+
+  const applyOverlayCornersUpdate = (nextCorners: FloorOverlay["corners"]) => {
+    if (!currentOverlay || currentOverlay.locked) {
+      return;
+    }
+
+    currentOverlay = {
+      ...currentOverlay,
+      corners: nextCorners,
+      updatedAt: new Date().toISOString(),
+    };
+    applyOverlay();
+    syncOverlayHandles();
+    handlers.onOverlayCornersChange(nextCorners);
+  };
+
+  const startOverlayInteraction = () => {
+    if (isOverlayInteractionActive) {
+      return;
+    }
+
+    isOverlayInteractionActive = true;
+    handlers.onOverlayInteractionStart?.();
+  };
+
+  const endOverlayInteraction = () => {
+    if (!isOverlayInteractionActive) {
+      return;
+    }
+
+    isOverlayInteractionActive = false;
+    handlers.onOverlayInteractionEnd?.();
+  };
+
+  const flushOverlayCornersUpdate = () => {
+    if (overlayCornersUpdateAnimationFrame !== undefined) {
+      cancelScheduledAnimationFrame(overlayCornersUpdateAnimationFrame);
+      overlayCornersUpdateAnimationFrame = undefined;
+    }
+
+    const nextCorners = pendingOverlayCornersUpdate;
+    pendingOverlayCornersUpdate = undefined;
+    if (!nextCorners) {
+      return;
+    }
+
+    applyOverlayCornersUpdate(nextCorners);
+  };
+
+  const cancelOverlayCornersUpdate = () => {
+    pendingOverlayCornersUpdate = undefined;
+    if (overlayCornersUpdateAnimationFrame !== undefined) {
+      cancelScheduledAnimationFrame(overlayCornersUpdateAnimationFrame);
+      overlayCornersUpdateAnimationFrame = undefined;
+    }
+  };
+
+  const scheduleOverlayCornersUpdate = (nextCorners: FloorOverlay["corners"]) => {
+    if (overlayCornersUpdateAnimationFrame === undefined) {
+      applyOverlayCornersUpdate(nextCorners);
+      overlayCornersUpdateAnimationFrame = scheduleAnimationFrame(() => {
+        overlayCornersUpdateAnimationFrame = undefined;
+        flushOverlayCornersUpdate();
+      });
+      return;
+    }
+
+    pendingOverlayCornersUpdate = nextCorners;
+  };
 
   const hasSelectedVertex = () => {
     try {
@@ -1708,6 +1800,7 @@ export const createMapController = async (
     overlayRotateMarker = undefined;
     overlayCenterDragStart = undefined;
     overlayRotateDragStart = undefined;
+    endOverlayInteraction();
   };
 
   const syncOverlayHandles = () => {
@@ -1740,6 +1833,7 @@ export const createMapController = async (
         .addTo(map);
 
       marker.on("dragstart", () => {
+        startOverlayInteraction();
         map.dragPan.disable();
       });
 
@@ -1753,17 +1847,12 @@ export const createMapController = async (
           handlePosition.lng,
           handlePosition.lat,
         ]);
-        currentOverlay = {
-          ...currentOverlay,
-          corners: nextCorners,
-          updatedAt: new Date().toISOString(),
-        };
-        applyOverlay();
-        syncOverlayHandles();
-        handlers.onOverlayCornersChange(nextCorners);
+        scheduleOverlayCornersUpdate(nextCorners);
       });
 
       marker.on("dragend", () => {
+        flushOverlayCornersUpdate();
+        endOverlayInteraction();
         if (currentInteractionMode === "select") {
           map.dragPan.enable();
         }
@@ -1792,6 +1881,7 @@ export const createMapController = async (
           startCenter: overlayCenter(currentOverlay.corners),
           startCorners: structuredClone(currentOverlay.corners),
         };
+        startOverlayInteraction();
         map.dragPan.disable();
       });
 
@@ -1813,18 +1903,13 @@ export const createMapController = async (
           deltaLng,
           deltaLat,
         );
-        currentOverlay = {
-          ...currentOverlay,
-          corners: nextCorners,
-          updatedAt: new Date().toISOString(),
-        };
-        applyOverlay();
-        syncOverlayHandles();
-        handlers.onOverlayCornersChange(nextCorners);
+        scheduleOverlayCornersUpdate(nextCorners);
       });
 
       overlayCenterMarker.on("dragend", () => {
+        flushOverlayCornersUpdate();
         overlayCenterDragStart = undefined;
+        endOverlayInteraction();
         if (currentInteractionMode === "select") {
           map.dragPan.enable();
         }
@@ -1857,6 +1942,7 @@ export const createMapController = async (
           rotateHandlePosition.lat,
         ]),
       };
+      startOverlayInteraction();
       map.dragPan.disable();
     });
 
@@ -1879,18 +1965,13 @@ export const createMapController = async (
         overlayRotateDragStart.startCorners,
         deltaAngleDegrees,
       );
-      currentOverlay = {
-        ...currentOverlay,
-        corners: nextCorners,
-        updatedAt: new Date().toISOString(),
-      };
-      applyOverlay();
-      syncOverlayHandles();
-      handlers.onOverlayCornersChange(nextCorners);
+      scheduleOverlayCornersUpdate(nextCorners);
     });
 
     overlayRotateMarker.on("dragend", () => {
+      flushOverlayCornersUpdate();
       overlayRotateDragStart = undefined;
+      endOverlayInteraction();
       if (currentInteractionMode === "select") {
         map.dragPan.enable();
       }
@@ -2500,14 +2581,7 @@ export const createMapController = async (
       }
 
       const nextCorners = shiftOverlayCorners(overlayDragState.startCorners, deltaLng, deltaLat);
-      currentOverlay = {
-        ...currentOverlay,
-        corners: nextCorners,
-        updatedAt: new Date().toISOString(),
-      };
-      applyOverlay();
-      syncOverlayHandles();
-      handlers.onOverlayCornersChange(nextCorners);
+      scheduleOverlayCornersUpdate(nextCorners);
       map.getCanvas().style.cursor = "grabbing";
       return;
     }
@@ -2548,6 +2622,7 @@ export const createMapController = async (
       startCorners: structuredClone(currentOverlay.corners),
       hasMoved: false,
     };
+    startOverlayInteraction();
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
   });
@@ -2557,8 +2632,10 @@ export const createMapController = async (
       return;
     }
 
+    flushOverlayCornersUpdate();
     suppressNextClick = overlayDragState.hasMoved;
     overlayDragState = undefined;
+    endOverlayInteraction();
     if (currentInteractionMode === "select") {
       map.dragPan.enable();
     }
@@ -2593,6 +2670,10 @@ export const createMapController = async (
       applyPendingState();
     },
     setOverlay: (overlay) => {
+      cancelOverlayCornersUpdate();
+      if (!overlay) {
+        endOverlayInteraction();
+      }
       currentOverlay = overlay;
       applyPendingState();
     },
@@ -2758,6 +2839,8 @@ export const createMapController = async (
     },
     resize: () => map.resize(),
     destroy: () => {
+      cancelOverlayCornersUpdate();
+      endOverlayInteraction();
       removeOverlayHandles();
       map.remove();
     },

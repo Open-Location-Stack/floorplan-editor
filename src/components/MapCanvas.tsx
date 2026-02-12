@@ -36,6 +36,8 @@ type MapCanvasProps = {
   onViewStateChange: (center: Coordinates, zoom: number) => void;
   onInteractionModeChange: (mode: DrawMode) => void;
   onOverlayCornersChange: (corners: OverlayCorners) => void;
+  onOverlayInteractionStart: () => void;
+  onOverlayInteractionEnd: () => void;
   onVertexSelectionChange: (hasSelectedVertex: boolean) => void;
   onMapClick: (coordinate: Coordinates) => void;
 };
@@ -61,6 +63,8 @@ export const MapCanvas = ({
   onViewStateChange,
   onInteractionModeChange,
   onOverlayCornersChange,
+  onOverlayInteractionStart,
+  onOverlayInteractionEnd,
   onVertexSelectionChange,
   onMapClick,
 }: MapCanvasProps) => {
@@ -72,6 +76,8 @@ export const MapCanvas = ({
   const viewStateHandlerRef = useRef(onViewStateChange);
   const modeHandlerRef = useRef(onInteractionModeChange);
   const overlayChangeHandlerRef = useRef(onOverlayCornersChange);
+  const overlayInteractionStartHandlerRef = useRef(onOverlayInteractionStart);
+  const overlayInteractionEndHandlerRef = useRef(onOverlayInteractionEnd);
   const vertexSelectionHandlerRef = useRef(onVertexSelectionChange);
   const mapClickHandlerRef = useRef(onMapClick);
 
@@ -103,6 +109,14 @@ export const MapCanvas = ({
   useEffect(() => {
     overlayChangeHandlerRef.current = onOverlayCornersChange;
   }, [onOverlayCornersChange]);
+
+  useEffect(() => {
+    overlayInteractionStartHandlerRef.current = onOverlayInteractionStart;
+  }, [onOverlayInteractionStart]);
+
+  useEffect(() => {
+    overlayInteractionEndHandlerRef.current = onOverlayInteractionEnd;
+  }, [onOverlayInteractionEnd]);
 
   useEffect(() => {
     vertexSelectionHandlerRef.current = onVertexSelectionChange;
@@ -171,6 +185,12 @@ export const MapCanvas = ({
         },
         onOverlayCornersChange: (corners) => {
           overlayChangeHandlerRef.current(corners);
+        },
+        onOverlayInteractionStart: () => {
+          overlayInteractionStartHandlerRef.current();
+        },
+        onOverlayInteractionEnd: () => {
+          overlayInteractionEndHandlerRef.current();
         },
         onVertexSelectionChange: (hasSelectedVertex) => {
           vertexSelectionHandlerRef.current(hasSelectedVertex);

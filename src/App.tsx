@@ -176,6 +176,16 @@ const overlayCenter = (corners: OverlayCorners): Coordinates => [
   (corners.topLeft[1] + corners.topRight[1] + corners.bottomRight[1] + corners.bottomLeft[1]) / 4,
 ];
 
+const overlayCornersEqual = (left: OverlayCorners, right: OverlayCorners): boolean =>
+  left.topLeft[0] === right.topLeft[0] &&
+  left.topLeft[1] === right.topLeft[1] &&
+  left.topRight[0] === right.topRight[0] &&
+  left.topRight[1] === right.topRight[1] &&
+  left.bottomRight[0] === right.bottomRight[0] &&
+  left.bottomRight[1] === right.bottomRight[1] &&
+  left.bottomLeft[0] === right.bottomLeft[0] &&
+  left.bottomLeft[1] === right.bottomLeft[1];
+
 const geometryCenter = (geometry: FloorFeature["geometry"]): Coordinates | undefined => {
   if (geometry.type === "Point") {
     return geometry.coordinates;
@@ -341,6 +351,8 @@ function App() {
   });
   const projectUndoStackRef = useRef<ProjectHistoryEntry[]>([]);
   const projectRedoStackRef = useRef<ProjectHistoryEntry[]>([]);
+  const overlayInteractionSnapshotRef = useRef<ProjectSnapshot | undefined>(undefined);
+  const overlayInteractionChangedRef = useRef(false);
 
   const runtimeConfig = getRuntimeConfig();
   const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
@@ -422,6 +434,8 @@ function App() {
       );
       projectUndoStackRef.current = [];
       projectRedoStackRef.current = [];
+      overlayInteractionSnapshotRef.current = undefined;
+      overlayInteractionChangedRef.current = false;
       setProjectUndoStack([]);
       setProjectRedoStack([]);
       setSaveStatus("saved");
@@ -637,6 +651,14 @@ function App() {
     },
     [snapshotProjectState],
   );
+
+  const pushProjectUndoSnapshot = useCallback((label: string, snapshot: ProjectSnapshot) => {
+    const nextUndo = [...projectUndoStackRef.current, { label, snapshot }];
+    projectUndoStackRef.current = nextUndo;
+    projectRedoStackRef.current = [];
+    setProjectUndoStack(nextUndo);
+    setProjectRedoStack([]);
+  }, []);
 
   const undoProjectMutation = useCallback((): boolean => {
     const previous = projectUndoStackRef.current.at(-1);
@@ -1001,6 +1023,52 @@ function App() {
     },
     [activeFloor],
   );
+
+  const onOverlayInteractionStart = useCallback(() => {
+    if (overlayInteractionSnapshotRef.current) {
+      return;
+    }
+
+    overlayInteractionSnapshotRef.current = snapshotProjectState();
+    overlayInteractionChangedRef.current = false;
+  }, [snapshotProjectState]);
+
+  const onOverlayCornersChange = useCallback(
+    (corners: OverlayCorners) => {
+      if (!activeFloor) {
+        return;
+      }
+
+      const interactionSnapshot = overlayInteractionSnapshotRef.current;
+      if (interactionSnapshot) {
+        const previousOverlay = interactionSnapshot.overlays.find(
+          (overlay) => overlay.floorId === activeFloor.id,
+        );
+        if (previousOverlay && !overlayCornersEqual(previousOverlay.corners, corners)) {
+          overlayInteractionChangedRef.current = true;
+        }
+      }
+
+      applyToCurrentOverlay((overlay) => ({
+        ...overlay,
+        corners,
+        updatedAt: new Date().toISOString(),
+      }));
+    },
+    [activeFloor, applyToCurrentOverlay],
+  );
+
+  const onOverlayInteractionEnd = useCallback(() => {
+    const interactionSnapshot = overlayInteractionSnapshotRef.current;
+    const changed = overlayInteractionChangedRef.current;
+    overlayInteractionSnapshotRef.current = undefined;
+    overlayInteractionChangedRef.current = false;
+    if (!interactionSnapshot || !changed) {
+      return;
+    }
+
+    pushProjectUndoSnapshot("Overlay adjusted", interactionSnapshot);
+  }, [pushProjectUndoSnapshot]);
 
   const onViewStateChange = useCallback((center: Coordinates, zoom: number) => {
     setMapView({ center, zoom });
@@ -1851,13 +1919,9 @@ function App() {
                     onInteractionModeChange={onInteractionModeChange}
                     onMapClick={onRouteMapClick}
                     onVertexSelectionChange={(hasVertex) => setHasSelectedVertex(hasVertex)}
-                    onOverlayCornersChange={(corners) => {
-                      applyToCurrentOverlay((overlay) => ({
-                        ...overlay,
-                        corners,
-                        updatedAt: new Date().toISOString(),
-                      }));
-                    }}
+                    onOverlayCornersChange={onOverlayCornersChange}
+                    onOverlayInteractionStart={onOverlayInteractionStart}
+                    onOverlayInteractionEnd={onOverlayInteractionEnd}
                   />
                 </div>
               </div>
