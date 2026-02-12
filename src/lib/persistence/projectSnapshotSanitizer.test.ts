@@ -66,6 +66,8 @@ describe("sanitizeProjectSnapshot", () => {
           updatedAt: "2026-02-06T00:00:00.000Z",
         },
       ],
+      lockedFeatureIds: ["ok-point", "missing-feature", "ok-point", ""],
+      lockedOverlayFloorIds: ["f1", "missing-floor", "f1", ""],
     });
 
     expect(sanitized.features).toHaveLength(2);
@@ -76,6 +78,8 @@ describe("sanitizeProjectSnapshot", () => {
     expect(sanitized.overlays).toHaveLength(1);
     expect(sanitized.overlays[0]?.opacity).toBe(100);
     expect(sanitized.overlays[0]?.visible).toBe(true);
+    expect(sanitized.lockedFeatureIds).toEqual(["ok-point"]);
+    expect(sanitized.lockedOverlayFloorIds).toEqual(["f1"]);
   });
 
   it("keeps project empty when building/floor data is missing", () => {

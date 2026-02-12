@@ -400,12 +400,28 @@ const normalizeOverlays = (overlays: unknown, floorIds: Set<string>): FloorOverl
     .filter((overlay) => floorIds.has(overlay.floorId));
 };
 
+const normalizeIdList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.filter(isNonEmptyString))];
+};
+
 export const sanitizeProjectSnapshot = (project: ProjectSnapshot): ProjectSnapshot => {
   const venues = normalizeVenues(project.venues);
   const buildings = normalizeBuildings(project.buildings, venues);
   const floors = normalizeFloors(project.levels ?? project.floors, buildings);
   const defaultFloorId = floors[0]?.id;
   const floorIds = new Set(floors.map((floor) => floor.id));
+  const features = normalizeFeatures(project.features, defaultFloorId, floorIds);
+  const overlays = normalizeOverlays(project.overlays, floorIds);
+  const featureIds = new Set(features.map((feature) => feature.id));
+  const lockedFeatureIds = normalizeIdList(project.lockedFeatureIds).filter((id) =>
+    featureIds.has(id),
+  );
+  const lockedOverlayFloorIds = normalizeIdList(project.lockedOverlayFloorIds).filter((floorId) =>
+    floorIds.has(floorId),
+  );
 
   return {
     ...project,
@@ -413,7 +429,9 @@ export const sanitizeProjectSnapshot = (project: ProjectSnapshot): ProjectSnapsh
     buildings,
     levels: floors,
     floors,
-    features: normalizeFeatures(project.features, defaultFloorId, floorIds),
-    overlays: normalizeOverlays(project.overlays, floorIds),
+    features,
+    overlays,
+    lockedFeatureIds,
+    lockedOverlayFloorIds,
   };
 };

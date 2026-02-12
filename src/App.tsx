@@ -299,6 +299,8 @@ const areFeatureListsEqual = (left: FloorFeature[], right: FloorFeature[]): bool
 const saveEditorSnapshot = async (
   features: FloorFeature[],
   overlays: FloorOverlay[],
+  lockedFeatureIds: string[],
+  lockedOverlayFloorIds: string[],
   venues: Venue[],
   buildings: Building[],
   floors: Floor[],
@@ -310,6 +312,8 @@ const saveEditorSnapshot = async (
     updatedAt: new Date().toISOString(),
     features,
     overlays,
+    lockedFeatureIds,
+    lockedOverlayFloorIds,
     venues,
     buildings,
     levels: floors,
@@ -438,8 +442,8 @@ function App() {
 
       setEditorState(createInitialEditorState(migratedFeatures));
       setOverlays(sanitizedProject.overlays);
-      setLockedFeatureIds([]);
-      setLockedOverlayFloorIds([]);
+      setLockedFeatureIds(sanitizedProject.lockedFeatureIds ?? []);
+      setLockedOverlayFloorIds(sanitizedProject.lockedOverlayFloorIds ?? []);
       setVenues(loadedVenues);
       setBuildings(loadedBuildings);
       setFloors(loadedFloors);
@@ -469,7 +473,15 @@ function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSaveStatus("saving");
-      void saveEditorSnapshot(editorState.features, overlays, venues, buildings, floors)
+      void saveEditorSnapshot(
+        editorState.features,
+        overlays,
+        lockedFeatureIds,
+        lockedOverlayFloorIds,
+        venues,
+        buildings,
+        floors,
+      )
         .then(() => {
           setSaveStatus("saved");
         })
@@ -482,7 +494,15 @@ function App() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [editorState.features, overlays, venues, buildings, floors]);
+  }, [
+    editorState.features,
+    overlays,
+    lockedFeatureIds,
+    lockedOverlayFloorIds,
+    venues,
+    buildings,
+    floors,
+  ]);
 
   useEffect(() => {
     if (!selection) {

@@ -196,6 +196,8 @@ export type ProjectSnapshot = {
   updatedAt: string;
   features: FloorFeature[];
   overlays: FloorOverlay[];
+  lockedFeatureIds?: string[];
+  lockedOverlayFloorIds?: string[];
   venues?: Venue[];
   buildings?: Building[];
   levels?: Level[];

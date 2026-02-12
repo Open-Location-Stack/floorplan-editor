@@ -712,6 +712,86 @@ describe("App browser smoke", () => {
     fireEvent.click(featureLockSwitch);
     expect(featureLockSwitch).toBeChecked();
     expect(screen.queryByText("Debug feature JSON")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        lockedFeatureIds?: string[];
+        lockedOverlayFloorIds?: string[];
+      };
+      expect(latestSnapshot.lockedFeatureIds).toContain("shape-1");
+      expect(latestSnapshot.lockedOverlayFloorIds).toContain("floor-1");
+    });
+  });
+
+  it("restores persisted lock state from snapshots", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "floor.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 80,
+          visible: true,
+          corners: {
+            topLeft: [5.12, 52.091],
+            topRight: [5.123, 52.091],
+            bottomRight: [5.123, 52.089],
+            bottomLeft: [5.12, 52.089],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+      lockedFeatureIds: ["shape-1"],
+      lockedOverlayFloorIds: ["floor-1"],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const bitmapLockSwitch = await screen.findByRole("checkbox", {
+      name: /lock level bitmap geometry/i,
+    });
+    expect(bitmapLockSwitch).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: /lock feature geometry/i })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        lockedFeatureIds?: string[];
+        lockedOverlayFloorIds?: string[];
+      };
+      expect(latestSnapshot.lockedFeatureIds).toContain("shape-1");
+      expect(latestSnapshot.lockedOverlayFloorIds).toContain("floor-1");
+    });
   });
 
   it("applies draw-driven deletes from keyboard", async () => {
