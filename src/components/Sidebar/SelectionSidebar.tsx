@@ -13,6 +13,7 @@ import type {
 import { BuildingEditor } from "./BuildingEditor";
 import { FeatureEditor } from "./FeatureEditor";
 import { FloorEditor } from "./FloorEditor";
+import { VenueEditor } from "./VenueEditor";
 
 type SelectionSidebarProps = {
   selection: Selection | undefined;
@@ -26,7 +27,7 @@ type SelectionSidebarProps = {
   allFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
-  onUpdateBuildingVenueName: (buildingId: string, name: string) => void;
+  onRenameVenue: (venueId: string, name: string) => void;
   onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
   onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
   onExportBuildingArchive: (buildingId: string) => void;
@@ -62,7 +63,7 @@ export const SelectionSidebar = ({
   allFeatures,
   overlay,
   onRenameBuilding,
-  onUpdateBuildingVenueName,
+  onRenameVenue,
   onUpdateBuildingVenueCategory,
   onUpdateBuildingAddressField,
   onExportBuildingArchive,
@@ -85,7 +86,7 @@ export const SelectionSidebar = ({
   onOverlayToggleVisibility,
   onOverlayToggleLock,
 }: SelectionSidebarProps) => {
-  if (!selection || !building) {
+  if (!selection) {
     return (
       <section className="card bg-base-100 shadow">
         <div className="card-body">
@@ -98,13 +99,27 @@ export const SelectionSidebar = ({
     );
   }
 
+  if (selection.kind === "venue" && venue) {
+    return <VenueEditor venue={venue} onRenameVenue={(name) => onRenameVenue(venue.id, name)} />;
+  }
+
+  if (!building) {
+    return (
+      <section className="card bg-base-100 shadow">
+        <div className="card-body">
+          <h2 className="card-title text-lg">Selection</h2>
+          <p className="text-sm text-base-content/70">Selected item is unavailable.</p>
+        </div>
+      </section>
+    );
+  }
+
   if (selection.kind === "building") {
     return (
       <BuildingEditor
         building={building}
         venue={venue}
         onRenameBuilding={(name) => onRenameBuilding(building.id, name)}
-        onUpdateVenueName={(name) => onUpdateBuildingVenueName(building.id, name)}
         onUpdateVenueCategory={(category) => onUpdateBuildingVenueCategory(building.id, category)}
         onUpdateAddressField={(field, value) =>
           onUpdateBuildingAddressField(building.id, field, value)

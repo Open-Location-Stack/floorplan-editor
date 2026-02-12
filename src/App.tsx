@@ -532,7 +532,11 @@ function App() {
     setEditorState((current) => selectFeature(current, undefined));
   }, [selection, resolvedSelection, venues, buildings, floors, editorState.features]);
 
-  const activeVenue = resolvedSelection?.venue ?? venues[0];
+  const selectedVenue =
+    selection?.kind === "venue"
+      ? venues.find((current) => current.id === selection.id)
+      : resolvedSelection?.venue;
+  const activeVenue = selectedVenue ?? venues[0];
   const activeBuilding = resolvedSelection?.building ?? buildings[0];
   const activeFloor =
     resolvedSelection?.floor ??
@@ -1418,24 +1422,11 @@ function App() {
     [applyProjectMutation],
   );
 
-  const onUpdateBuildingVenueName = useCallback(
-    (buildingId: string, name: string) => {
-      applyProjectMutation("Building venue updated", () => {
-        setBuildings((current) =>
-          current.map((building) =>
-            building.id === buildingId
-              ? {
-                  ...building,
-                  imdf: {
-                    ...building.imdf,
-                    venue: {
-                      ...building.imdf?.venue,
-                      name: { ...(building.imdf?.venue?.name ?? {}), en: name },
-                    },
-                  },
-                }
-              : building,
-          ),
+  const onRenameVenue = useCallback(
+    (venueId: string, name: string) => {
+      applyProjectMutation("Venue renamed", () => {
+        setVenues((current) =>
+          current.map((venue) => (venue.id === venueId ? { ...venue, name: name || "Untitled venue" } : venue)),
         );
       });
     },
@@ -2061,7 +2052,7 @@ function App() {
             <aside className="xl:min-h-0 xl:overflow-y-auto xl:pl-1">
               <SelectionSidebar
                 selection={selection}
-                venue={resolvedSelection?.venue}
+                venue={selectedVenue}
                 building={resolvedSelection?.building}
                 levels={floors}
                 level={activeFloor}
@@ -2080,7 +2071,7 @@ function App() {
                   );
                 }}
                 onRenameBuilding={onRenameBuilding}
-                onUpdateBuildingVenueName={onUpdateBuildingVenueName}
+                onRenameVenue={onRenameVenue}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}
                 onExportBuildingArchive={onExportBuildingArchive}

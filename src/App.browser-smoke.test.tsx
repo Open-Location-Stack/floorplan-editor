@@ -306,6 +306,42 @@ describe("App browser smoke", () => {
     expect(mockRepository.deleteProject).toHaveBeenCalledWith("default-project");
   });
 
+  it("edits venue name from the venue editor", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Main Venue" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Main Venue" }));
+
+    expect(await screen.findByRole("heading", { name: "Venue" })).toBeInTheDocument();
+    const nameInput = screen.getByRole("textbox", { name: /name/i });
+    expect(nameInput).toHaveValue("Main Venue");
+
+    fireEvent.change(nameInput, { target: { value: "Campus Venue" } });
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        venues?: Array<{ id: string; name: string }>;
+      };
+      expect(latestSnapshot.venues?.find((venue) => venue.id === "venue-1")?.name).toBe(
+        "Campus Venue",
+      );
+    });
+  });
+
   it("searches addresses and recenters the map when selecting a result", async () => {
     mockRepository.loadProject.mockResolvedValue(undefined);
     vi.stubGlobal(

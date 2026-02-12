@@ -5,7 +5,6 @@ type BuildingEditorProps = {
   venue: Venue | undefined;
   building: Building;
   onRenameBuilding: (name: string) => void;
-  onUpdateVenueName: (name: string) => void;
   onUpdateVenueCategory: (category: string) => void;
   onUpdateAddressField: (field: string, value: string) => void;
   onExportArchive: () => void;
@@ -19,7 +18,6 @@ export const BuildingEditor = ({
   venue,
   building,
   onRenameBuilding,
-  onUpdateVenueName,
   onUpdateVenueCategory,
   onUpdateAddressField,
   onExportArchive,
@@ -29,8 +27,6 @@ export const BuildingEditor = ({
   archiveWarnings,
 }: BuildingEditorProps) => {
   const importInputRef = useRef<HTMLInputElement>(null);
-  /* biome-ignore lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
-  const venueName = building.imdf?.venue?.name?.["en"] ?? "";
   const venueCategory = building.imdf?.venue?.category ?? "";
   const address = building.imdf?.address;
 
@@ -52,13 +48,6 @@ export const BuildingEditor = ({
         <div className="rounded-box border border-base-300 p-3">
           <h3 className="mb-2 text-sm font-semibold">Venue</h3>
           <div className="grid gap-2">
-            <input
-              className="input input-bordered input-sm"
-              type="text"
-              value={venueName}
-              placeholder="Venue name (en)"
-              onChange={(event) => onUpdateVenueName(event.currentTarget.value)}
-            />
             <input
               className="input input-bordered input-sm"
               type="text"
