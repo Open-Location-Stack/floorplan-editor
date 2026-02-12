@@ -3,11 +3,12 @@ import type { SupportedImdfType } from "../../lib/imdf/schema";
 import { validateFloor } from "../../lib/imdf/validate";
 import type {
   Building,
-  Floor,
   FloorFeature,
   FloorOverlay,
   JsonObject,
   JsonValue,
+  Level,
+  Venue,
 } from "../../lib/types";
 import { BuildingEditor } from "./BuildingEditor";
 import { FeatureEditor } from "./FeatureEditor";
@@ -15,9 +16,10 @@ import { FloorEditor } from "./FloorEditor";
 
 type SelectionSidebarProps = {
   selection: Selection | undefined;
+  venue: Venue | undefined;
   building: Building | undefined;
-  floors: Floor[];
-  floor: Floor | undefined;
+  levels: Level[];
+  level: Level | undefined;
   feature: FloorFeature | undefined;
   featureLocked: boolean;
   overlayLocked: boolean;
@@ -31,10 +33,10 @@ type SelectionSidebarProps = {
   onImportBuildingArchive: (buildingId: string, file: File) => void;
   archiveWarnings: string[];
   onDeleteBuilding: (buildingId: string) => void;
-  onAddFloor: (buildingId: string) => void;
-  onRenameFloor: (floorId: string, name: string) => void;
-  onCloneFloor: (floorId: string) => void;
-  onDeleteFloor: (floorId: string) => void;
+  onAddLevel: (buildingId: string) => void;
+  onRenameLevel: (levelId: string, name: string) => void;
+  onCloneLevel: (levelId: string) => void;
+  onDeleteLevel: (levelId: string) => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onUpdateFeatureProperty: (featureId: string, key: string, value: JsonValue | undefined) => void;
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
@@ -50,9 +52,10 @@ type SelectionSidebarProps = {
 
 export const SelectionSidebar = ({
   selection,
+  venue,
   building,
-  floors,
-  floor,
+  levels,
+  level,
   feature,
   featureLocked,
   overlayLocked,
@@ -66,10 +69,10 @@ export const SelectionSidebar = ({
   onImportBuildingArchive,
   archiveWarnings,
   onDeleteBuilding,
-  onAddFloor,
-  onRenameFloor,
-  onCloneFloor,
-  onDeleteFloor,
+  onAddLevel,
+  onRenameLevel,
+  onCloneLevel,
+  onDeleteLevel,
   onCreateFeature,
   onUpdateFeatureProperty,
   onUpdateFeatureMetadata,
@@ -87,7 +90,9 @@ export const SelectionSidebar = ({
       <section className="card bg-base-100 shadow">
         <div className="card-body">
           <h2 className="card-title text-lg">Selection</h2>
-          <p className="text-sm text-base-content/70">Select a building, floor, or feature.</p>
+          <p className="text-sm text-base-content/70">
+            Select a venue, building, level, or feature.
+          </p>
         </div>
       </section>
     );
@@ -97,6 +102,7 @@ export const SelectionSidebar = ({
     return (
       <BuildingEditor
         building={building}
+        venue={venue}
         onRenameBuilding={(name) => onRenameBuilding(building.id, name)}
         onUpdateVenueName={(name) => onUpdateBuildingVenueName(building.id, name)}
         onUpdateVenueCategory={(category) => onUpdateBuildingVenueCategory(building.id, category)}
@@ -107,24 +113,24 @@ export const SelectionSidebar = ({
         onImportArchive={(file) => onImportBuildingArchive(building.id, file)}
         archiveWarnings={archiveWarnings}
         onDeleteBuilding={() => onDeleteBuilding(building.id)}
-        onAddFloor={() => onAddFloor(building.id)}
+        onAddLevel={() => onAddLevel(building.id)}
       />
     );
   }
 
-  if (selection.kind === "floor" && floor) {
-    const floorFeatures = allFeatures.filter((current) => current.properties.floorId === floor.id);
-    const validation = validateFloor(floor.id, allFeatures);
+  if ((selection.kind === "level" || selection.kind === "floor") && level) {
+    const levelFeatures = allFeatures.filter((current) => current.properties.floorId === level.id);
+    const validation = validateFloor(level.id, allFeatures);
 
     return (
       <FloorEditor
-        floor={floor}
-        floorFeatures={floorFeatures}
+        level={level}
+        levelFeatures={levelFeatures}
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
-        onRenameFloor={(name) => onRenameFloor(floor.id, name)}
-        onCloneFloor={() => onCloneFloor(floor.id)}
-        onDeleteFloor={() => onDeleteFloor(floor.id)}
+        onRenameLevel={(name) => onRenameLevel(level.id, name)}
+        onCloneLevel={() => onCloneLevel(level.id)}
+        onDeleteLevel={() => onDeleteLevel(level.id)}
         onCreateFeature={onCreateFeature}
         onOverlayUpload={onOverlayUpload}
         onOverlayOpacityChange={onOverlayOpacityChange}
@@ -141,7 +147,8 @@ export const SelectionSidebar = ({
       <FeatureEditor
         feature={feature}
         allFeatures={allFeatures}
-        floors={floors}
+        levels={levels}
+        onCreateFeature={onCreateFeature}
         onUpdateProperty={(key, value) => onUpdateFeatureProperty(feature.id, key, value)}
         onUpdateMetadata={(metadata) => onUpdateFeatureMetadata(feature.id, metadata)}
         onDelete={() => onDeleteFeature(feature.id)}

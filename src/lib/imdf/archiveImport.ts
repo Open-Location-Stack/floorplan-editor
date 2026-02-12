@@ -399,6 +399,8 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       imdfRelationshipParentId: parent["id"],
       imdfRelationshipParentType: parent["feature_type"],
     };
+    childFeature.properties.containmentParentId = parent["id"];
+    childFeature.properties.containmentParentType = parent["feature_type"] as ImdfFeatureType;
   }
 
   const overlays: FloorOverlay[] = [];

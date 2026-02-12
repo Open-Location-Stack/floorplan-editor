@@ -6,33 +6,35 @@ import {
   featureLengthMeters,
 } from "../../../lib/geometry/measurements";
 import { getCategoryOptions } from "../../../lib/imdf/categories";
+import {
+  canContainChildren,
+  getContainmentParentId,
+  resolveFeatureType,
+  wouldCreateContainmentCycle,
+} from "../../../lib/imdf/containment";
 import type { ImdfFeatureField } from "../../../lib/imdf/featureCatalog";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
+import type { SupportedImdfType } from "../../../lib/imdf/schema";
 import type {
   FeatureProperties,
-  Floor,
   FloorFeature,
   ImdfFeatureType,
   JsonObject,
   JsonValue,
 } from "../../../lib/types";
+import { AddFeatureButtonGroups } from "../../Sidebar/AddFeatureButtonGroups";
 
 export type ImdfFeatureEditorProps = {
   feature: FloorFeature;
   type: ImdfFeatureType;
-  floors: Floor[];
   allFeatures: FloorFeature[];
   locked: boolean;
+  onCreateFeature: (type: SupportedImdfType) => void;
   onUpdateProperty: (key: string, value: JsonValue | undefined) => void;
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;
   onClone: () => void;
   onToggleLock: () => void;
-};
-
-type ContainmentOverrideMetadata = JsonObject & {
-  imdfRelationshipParentId?: string;
-  imdfRelationshipParentType?: string;
 };
 
 const isEmpty = (value: JsonValue | undefined): boolean => {
@@ -128,6 +130,7 @@ export const GenericImdfFeatureEditor = ({
   type,
   allFeatures,
   locked,
+  onCreateFeature,
   onUpdateProperty,
   onUpdateMetadata,
   onDelete,
@@ -172,19 +175,21 @@ export const GenericImdfFeatureEditor = ({
       ),
     [allFeatures, feature.id, feature.properties.floorId],
   );
-  const metadataObject: ContainmentOverrideMetadata =
-    feature.properties.metadata && typeof feature.properties.metadata === "object"
-      ? (feature.properties.metadata as ContainmentOverrideMetadata)
-      : {};
-  const relationshipParentId =
-    typeof metadataObject.imdfRelationshipParentId === "string"
-      ? metadataObject.imdfRelationshipParentId
-      : "";
-  const relationshipParentType =
-    typeof metadataObject.imdfRelationshipParentType === "string"
-      ? metadataObject.imdfRelationshipParentType
-      : "level";
-  const debugFeatureJson = useMemo(() => JSON.stringify(feature, null, 2), [feature]);
+  const containmentParentId = getContainmentParentId(feature) ?? "";
+  const isContainerType = canContainChildren(type);
+  const childTypeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of sameFloorFeatures) {
+      const itemType = resolveFeatureType(item);
+      counts.set(itemType, (counts.get(itemType) ?? 0) + 1);
+    }
+    return counts;
+  }, [sameFloorFeatures]);
+  const parentCandidates = useMemo(
+    () =>
+      sameFloorFeatures.filter((candidate) => canContainChildren(resolveFeatureType(candidate))),
+    [sameFloorFeatures],
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -205,24 +210,13 @@ export const GenericImdfFeatureEditor = ({
             />
           </label>
 
-          <label className="form-control gap-1">
-            <span className="label-text">Feature ID (read only)</span>
-            <input
-              className="input input-bordered input-sm"
-              type="text"
-              value={feature.id}
-              readOnly
-            />
-          </label>
-          <label className="form-control gap-1">
-            <span className="label-text">Feature type (read only)</span>
-            <input className="input input-bordered input-sm" type="text" value={type} readOnly />
-          </label>
-
           {spec.fields.map((field) => {
+            if (field.readOnly) {
+              return null;
+            }
             const error = fieldErrors[field.key];
             const hasError = Boolean(error);
-            const label = `${field.key}${field.required ? " *" : ""}${field.readOnly ? " (read only)" : ""}`;
+            const label = `${field.key}${field.required ? " *" : ""}`;
 
             if (field.key === "category" && categoryOptions.length > 0) {
               const currentValue = readString(feature.properties, field.key);
@@ -232,7 +226,6 @@ export const GenericImdfFeatureEditor = ({
                   <select
                     className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                     value={currentValue}
-                    disabled={Boolean(field.readOnly)}
                     onChange={(event) =>
                       onUpdateProperty(field.key, event.currentTarget.value || undefined)
                     }
@@ -262,7 +255,6 @@ export const GenericImdfFeatureEditor = ({
                   <select
                     className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                     value={currentValue}
-                    disabled={Boolean(field.readOnly)}
                     onChange={(event) => {
                       const next = event.currentTarget.value;
                       if (field.type === "number") {
@@ -296,7 +288,6 @@ export const GenericImdfFeatureEditor = ({
                     type="checkbox"
                     className={`checkbox checkbox-sm ${hasError ? "checkbox-error" : ""}`}
                     checked={checked}
-                    disabled={Boolean(field.readOnly)}
                     onChange={(event) => onUpdateProperty(field.key, event.currentTarget.checked)}
                   />
                 </label>
@@ -315,7 +306,6 @@ export const GenericImdfFeatureEditor = ({
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="number"
                     value={currentValue}
-                    readOnly={Boolean(field.readOnly)}
                     onChange={(event) => {
                       const raw = event.currentTarget.value;
                       onUpdateProperty(field.key, raw.length > 0 ? Number(raw) : undefined);
@@ -335,7 +325,6 @@ export const GenericImdfFeatureEditor = ({
                   <textarea
                     className={`textarea textarea-bordered h-24 w-full font-mono text-xs ${hasError ? "textarea-error" : ""}`}
                     value={textValue}
-                    readOnly={Boolean(field.readOnly)}
                     onChange={(event) =>
                       setFieldText((current) => ({
                         ...current,
@@ -376,7 +365,6 @@ export const GenericImdfFeatureEditor = ({
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="text"
                     value={currentValue}
-                    readOnly={Boolean(field.readOnly)}
                     onChange={(event) => {
                       const list = event.currentTarget.value
                         .split(",")
@@ -399,7 +387,7 @@ export const GenericImdfFeatureEditor = ({
               );
             }
 
-            if (field.type === "uuid" && !field.readOnly) {
+            if (field.type === "uuid") {
               const currentValue = readString(feature.properties, field.key);
               const selectable =
                 field.key.endsWith("_id") ||
@@ -436,7 +424,6 @@ export const GenericImdfFeatureEditor = ({
                   className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                   type="text"
                   value={readString(feature.properties, field.key)}
-                  readOnly={Boolean(field.readOnly)}
                   onChange={(event) =>
                     onUpdateProperty(field.key, event.currentTarget.value || undefined)
                   }
@@ -446,30 +433,38 @@ export const GenericImdfFeatureEditor = ({
             );
           })}
 
-          {type !== "level" && type !== "relationship" ? (
+          {type !== "relationship" ? (
             <label className="form-control gap-1">
-              <span className="label-text">containment parent override</span>
+              <span className="label-text">Containment parent</span>
               <select
                 className="select select-bordered select-sm"
-                value={relationshipParentId}
+                value={containmentParentId}
                 onChange={(event) => {
                   const nextId = event.currentTarget.value;
-                  const nextMetadata: ContainmentOverrideMetadata = { ...metadataObject };
-                  if (nextId.length === 0) {
-                    delete nextMetadata.imdfRelationshipParentId;
-                    delete nextMetadata.imdfRelationshipParentType;
-                  } else {
-                    nextMetadata.imdfRelationshipParentId = nextId;
-                    const nextType = sameFloorFeatures.find((candidate) => candidate.id === nextId)
-                      ?.properties.imdfType;
-                    nextMetadata.imdfRelationshipParentType =
-                      typeof nextType === "string" ? nextType : relationshipParentType;
+                  if (
+                    wouldCreateContainmentCycle(
+                      feature.id,
+                      nextId.length > 0 ? nextId : undefined,
+                      allFeatures,
+                    )
+                  ) {
+                    return;
                   }
-                  onUpdateMetadata(nextMetadata);
+                  onUpdateProperty("containmentParentId", nextId.length > 0 ? nextId : undefined);
+                  const nextType = parentCandidates.find((candidate) => candidate.id === nextId)
+                    ?.properties.imdfType;
+                  onUpdateProperty(
+                    "containmentParentType",
+                    typeof nextType === "string"
+                      ? nextType
+                      : nextId.length > 0
+                        ? "unit"
+                        : undefined,
+                  );
                 }}
               >
                 <option value="">Default level containment</option>
-                {sameFloorFeatures.map((candidate) => (
+                {parentCandidates.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.id}
                   </option>
@@ -477,6 +472,12 @@ export const GenericImdfFeatureEditor = ({
               </select>
             </label>
           ) : null}
+
+          <AddFeatureButtonGroups
+            typeCounts={childTypeCounts}
+            disabled={!isContainerType}
+            onCreateFeature={onCreateFeature}
+          />
 
           <div className="rounded-box bg-base-200 p-3 text-sm">
             <div className="mb-2 font-medium">Metadata (JSON object)</div>
@@ -529,14 +530,6 @@ export const GenericImdfFeatureEditor = ({
           </div>
         </div>
       </section>
-      <details className="collapse collapse-arrow border border-base-300 bg-base-100">
-        <summary className="collapse-title text-sm font-medium">Debug feature JSON</summary>
-        <div className="collapse-content">
-          <pre className="overflow-x-auto rounded-box bg-base-200 p-3 text-xs">
-            <code>{debugFeatureJson}</code>
-          </pre>
-        </div>
-      </details>
     </div>
   );
 };

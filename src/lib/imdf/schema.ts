@@ -7,7 +7,9 @@ import {
   isImdfFeatureType,
 } from "./featureCatalog";
 
-export const IMDF_SUPPORTED_TYPES = FLOOR_FEATURE_TYPES;
+export const IMDF_SUPPORTED_TYPES = FLOOR_FEATURE_TYPES.filter(
+  (type) => type !== "level" && type !== "relationship",
+);
 
 export type SupportedImdfType = (typeof FLOOR_FEATURE_TYPES)[number];
 

@@ -1,18 +1,18 @@
-import type { FloorFeature } from "../types";
-import { getImdfSchemaRule, isSupportedImdfType, type SupportedImdfType } from "./schema";
+import type { FloorFeature, ImdfFeatureType } from "../types";
+import { getImdfSchemaRule, isKnownImdfType } from "./schema";
 
 export type NormalizeContext = {
   buildingId: string;
   floorId: string;
 };
 
-const resolveType = (feature: FloorFeature): SupportedImdfType => {
+const resolveType = (feature: FloorFeature): ImdfFeatureType => {
   const raw =
     typeof feature.properties.imdfType === "string"
       ? feature.properties.imdfType
       : feature.properties.kind;
 
-  if (typeof raw === "string" && isSupportedImdfType(raw)) {
+  if (typeof raw === "string" && isKnownImdfType(raw)) {
     return raw;
   }
 
@@ -35,7 +35,22 @@ export const normalizeFeature = (
     originalType === "relationship" && feature.geometry.type === "LineString"
       ? "opening"
       : undefined;
-  const normalizedType = migratedType ?? resolveType(feature);
+  let normalizedType = migratedType ?? resolveType(feature);
+  if (normalizedType === "unit" && feature.geometry.type === "Polygon") {
+    // Recovery path for previously mis-normalized level features.
+    const hasLevelMarkers =
+      (typeof feature.properties.short_name === "object" &&
+        feature.properties.short_name !== null &&
+        !Array.isArray(feature.properties.short_name)) ||
+      typeof feature.properties.ordinal === "number" ||
+      typeof feature.properties.outdoor === "boolean" ||
+      Array.isArray(feature.properties.building_ids);
+    const floorMatch =
+      feature.id === context.floorId || feature.properties.level_id === context.floorId;
+    if (hasLevelMarkers && floorMatch) {
+      normalizedType = "level";
+    }
+  }
   const schema = getImdfSchemaRule(normalizedType);
   const origin =
     typeof feature.properties.origin === "string"

@@ -61,6 +61,6 @@ describe("selection", () => {
       features: [feature],
     });
 
-    expect(selection).toEqual({ kind: "floor", id: "f1" });
+    expect(selection).toEqual({ kind: "level", id: "f1" });
   });
 });

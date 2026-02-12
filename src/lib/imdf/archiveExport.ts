@@ -582,13 +582,17 @@ export const buildImdfArchivePayload = ({
           })
         : undefined;
     const overrideParentRaw =
-      metadata && typeof metadata.imdfRelationshipParentId === "string"
-        ? metadata.imdfRelationshipParentId
-        : undefined;
+      typeof feature.properties.containmentParentId === "string"
+        ? feature.properties.containmentParentId
+        : metadata && typeof metadata.imdfRelationshipParentId === "string"
+          ? metadata.imdfRelationshipParentId
+          : undefined;
     const overrideParentType =
-      metadata && typeof metadata.imdfRelationshipParentType === "string"
-        ? metadata.imdfRelationshipParentType
-        : undefined;
+      typeof feature.properties.containmentParentType === "string"
+        ? feature.properties.containmentParentType
+        : metadata && typeof metadata.imdfRelationshipParentType === "string"
+          ? metadata.imdfRelationshipParentType
+          : undefined;
     const parentId = overrideParentRaw
       ? (featureUuidById.get(overrideParentRaw) ??
         levelByFloor.get(overrideParentRaw) ??

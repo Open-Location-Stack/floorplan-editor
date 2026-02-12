@@ -1,16 +1,17 @@
 import { useMemo, useState } from "react";
-import { getImdfSchemaRule, type SupportedImdfType } from "../../lib/imdf/schema";
-import type { Floor, FloorFeature, FloorOverlay } from "../../lib/types";
+import type { SupportedImdfType } from "../../lib/imdf/schema";
+import type { FloorFeature, FloorOverlay, Level } from "../../lib/types";
+import { AddFeatureButtonGroups } from "./AddFeatureButtonGroups";
 
 type FloorEditorProps = {
-  floor: Floor;
-  floorFeatures: FloorFeature[];
+  level: Level;
+  levelFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
   overlayLocked: boolean;
   validationWarnings: string[];
-  onRenameFloor: (name: string) => void;
-  onCloneFloor: () => void;
-  onDeleteFloor: () => void;
+  onRenameLevel: (name: string) => void;
+  onCloneLevel: () => void;
+  onDeleteLevel: () => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
@@ -19,30 +20,15 @@ type FloorEditorProps = {
   onOverlayToggleLock: () => void;
 };
 
-const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
-  {
-    title: "Areas",
-    types: ["level", "unit", "section", "geofence"],
-  },
-  {
-    title: "Paths",
-    types: ["opening"],
-  },
-  {
-    title: "Points",
-    types: ["amenity", "anchor", "detail", "fixture", "kiosk", "occupant"],
-  },
-];
-
 export const FloorEditor = ({
-  floor,
-  floorFeatures,
+  level,
+  levelFeatures,
   overlay,
   overlayLocked,
   validationWarnings,
-  onRenameFloor,
-  onCloneFloor,
-  onDeleteFloor,
+  onRenameLevel,
+  onCloneLevel,
+  onDeleteLevel,
   onCreateFeature,
   onOverlayUpload,
   onOverlayOpacityChange,
@@ -53,7 +39,7 @@ export const FloorEditor = ({
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const feature of floorFeatures) {
+    for (const feature of levelFeatures) {
       const type =
         typeof feature.properties.imdfType === "string"
           ? feature.properties.imdfType
@@ -64,11 +50,11 @@ export const FloorEditor = ({
       counts.set(type, (counts.get(type) ?? 0) + 1);
     }
     return counts;
-  }, [floorFeatures]);
+  }, [levelFeatures]);
 
   const pathDiagnostics = useMemo(() => {
     const issues: string[] = [];
-    const openings = floorFeatures.filter((feature) => {
+    const openings = levelFeatures.filter((feature) => {
       const type =
         typeof feature.properties.imdfType === "string"
           ? feature.properties.imdfType
@@ -81,65 +67,30 @@ export const FloorEditor = ({
       }
     }
     return issues;
-  }, [floorFeatures]);
+  }, [levelFeatures]);
 
   return (
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
-        <h2 className="card-title text-lg">Floor</h2>
+        <h2 className="card-title text-lg">Level</h2>
         <label className="form-control gap-1">
           <span className="label-text">Name</span>
           <input
             className="input input-bordered input-sm"
             type="text"
-            value={floor.name}
-            onChange={(event) => onRenameFloor(event.currentTarget.value)}
+            value={level.name}
+            onChange={(event) => onRenameLevel(event.currentTarget.value)}
           />
         </label>
 
-        <div className="rounded-box border border-base-300 p-3">
-          <div className="mb-2 text-sm font-semibold">Add IMDF feature</div>
-          <div className="grid gap-2">
-            {DRAWABLE_GROUPS.map((group) => (
-              <label className="form-control" key={group.title}>
-                <span className="label-text text-xs text-base-content/60">{group.title}</span>
-                <select
-                  className="select select-bordered select-sm"
-                  defaultValue=""
-                  onChange={(event) => {
-                    const value = event.currentTarget.value as SupportedImdfType;
-                    if (value) {
-                      onCreateFeature(value);
-                      event.currentTarget.value = "";
-                    }
-                  }}
-                >
-                  <option value="" disabled>
-                    Select feature type
-                  </option>
-                  {group.types.map((type) => {
-                    const rule = getImdfSchemaRule(type);
-                    return (
-                      <option key={type} value={type}>
-                        {rule.defaultName} ({typeCounts.get(type) ?? 0})
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-base-content/70">
-            Map toolbar draw buttons are disabled; use these controls to start geometry creation.
-          </p>
-        </div>
+        <AddFeatureButtonGroups typeCounts={typeCounts} onCreateFeature={onCreateFeature} />
 
         <div className="flex gap-2">
-          <button className="btn btn-sm" type="button" onClick={onCloneFloor}>
-            Clone floor
+          <button className="btn btn-sm" type="button" onClick={onCloneLevel}>
+            Clone level
           </button>
-          <button className="btn btn-sm btn-error" type="button" onClick={onDeleteFloor}>
-            Delete floor
+          <button className="btn btn-sm btn-error" type="button" onClick={onDeleteLevel}>
+            Delete level
           </button>
         </div>
 
@@ -224,7 +175,7 @@ export const FloorEditor = ({
                 checked={overlayLocked}
                 onChange={onOverlayToggleLock}
                 disabled={!overlay}
-                aria-label="Lock floor bitmap geometry"
+                aria-label="Lock level bitmap geometry"
               />
             </label>
           </div>

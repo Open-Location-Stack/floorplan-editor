@@ -1,9 +1,9 @@
-import { getImdfSchemaRule, isSupportedImdfType } from "./schema";
+import { getImdfSchemaRule, isKnownImdfType } from "./schema";
 
 const defaultSortOrder = 50;
 
 export const sortOrderForFeatureType = (type: string | undefined): number => {
-  if (!type || !isSupportedImdfType(type)) {
+  if (!type || !isKnownImdfType(type)) {
     return defaultSortOrder;
   }
 

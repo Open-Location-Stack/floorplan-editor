@@ -1,7 +1,8 @@
 import { useRef } from "react";
-import type { Building } from "../../lib/types";
+import type { Building, Venue } from "../../lib/types";
 
 type BuildingEditorProps = {
+  venue: Venue | undefined;
   building: Building;
   onRenameBuilding: (name: string) => void;
   onUpdateVenueName: (name: string) => void;
@@ -10,11 +11,12 @@ type BuildingEditorProps = {
   onExportArchive: () => void;
   onImportArchive: (file: File) => void;
   onDeleteBuilding: () => void;
-  onAddFloor: () => void;
+  onAddLevel: () => void;
   archiveWarnings: string[];
 };
 
 export const BuildingEditor = ({
+  venue,
   building,
   onRenameBuilding,
   onUpdateVenueName,
@@ -23,7 +25,7 @@ export const BuildingEditor = ({
   onExportArchive,
   onImportArchive,
   onDeleteBuilding,
-  onAddFloor,
+  onAddLevel,
   archiveWarnings,
 }: BuildingEditorProps) => {
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +38,7 @@ export const BuildingEditor = ({
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
         <h2 className="card-title text-lg">Building</h2>
+        {venue ? <p className="text-xs text-base-content/70">Venue: {venue.name}</p> : null}
         <label className="form-control gap-1">
           <span className="label-text">Name</span>
           <input
@@ -146,8 +149,8 @@ export const BuildingEditor = ({
         </div>
 
         <div className="flex gap-2">
-          <button className="btn btn-sm" type="button" onClick={onAddFloor}>
-            Add floor
+          <button className="btn btn-sm" type="button" onClick={onAddLevel}>
+            Add level
           </button>
           <button className="btn btn-sm btn-error" type="button" onClick={onDeleteBuilding}>
             Delete building

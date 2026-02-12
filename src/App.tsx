@@ -38,6 +38,7 @@ import type {
   GeometryType,
   OverlayCorners,
   ThemeId,
+  Venue,
 } from "./lib/types";
 
 const THEME_STORAGE_KEY = "floorplan-editor-theme";
@@ -83,6 +84,7 @@ type LocationSearchStatus = "idle" | "loading" | "error";
 type ProjectSnapshot = {
   editorState: EditorState;
   overlays: FloorOverlay[];
+  venues: Venue[];
   buildings: Building[];
   floors: Floor[];
   selection: Selection | undefined;
@@ -297,6 +299,7 @@ const areFeatureListsEqual = (left: FloorFeature[], right: FloorFeature[]): bool
 const saveEditorSnapshot = async (
   features: FloorFeature[],
   overlays: FloorOverlay[],
+  venues: Venue[],
   buildings: Building[],
   floors: Floor[],
 ): Promise<void> => {
@@ -307,7 +310,9 @@ const saveEditorSnapshot = async (
     updatedAt: new Date().toISOString(),
     features,
     overlays,
+    venues,
     buildings,
+    levels: floors,
     floors,
   });
 };
@@ -319,6 +324,7 @@ function App() {
   const [overlays, setOverlays] = useState<FloorOverlay[]>([]);
   const [lockedFeatureIds, setLockedFeatureIds] = useState<string[]>([]);
   const [lockedOverlayFloorIds, setLockedOverlayFloorIds] = useState<string[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
@@ -368,11 +374,13 @@ function App() {
       selection
         ? resolveSelection(selection, {
             buildings,
+            venues,
+            levels: floors,
             floors,
             features: editorState.features,
           })
         : undefined,
-    [selection, buildings, floors, editorState.features],
+    [selection, venues, buildings, floors, editorState.features],
   );
 
   useEffect(() => {
@@ -398,6 +406,7 @@ function App() {
       }
 
       const sanitizedProject = sanitizeProjectSnapshot(project);
+      const loadedVenues = sanitizedProject.venues ?? [];
       const loadedBuildings = sanitizedProject.buildings ?? [];
       const loadedFloors = sanitizedProject.floors ?? [];
       const primaryFloor = loadedFloors[0];
@@ -431,11 +440,14 @@ function App() {
       setOverlays(sanitizedProject.overlays);
       setLockedFeatureIds([]);
       setLockedOverlayFloorIds([]);
+      setVenues(loadedVenues);
       setBuildings(loadedBuildings);
       setFloors(loadedFloors);
       setSelection(
         firstValidSelection({
+          venues: loadedVenues,
           buildings: loadedBuildings,
+          levels: loadedFloors,
           floors: loadedFloors,
           features: migratedFeatures,
         }),
@@ -457,7 +469,7 @@ function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSaveStatus("saving");
-      void saveEditorSnapshot(editorState.features, overlays, buildings, floors)
+      void saveEditorSnapshot(editorState.features, overlays, venues, buildings, floors)
         .then(() => {
           setSaveStatus("saved");
         })
@@ -470,11 +482,17 @@ function App() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [editorState.features, overlays, buildings, floors]);
+  }, [editorState.features, overlays, venues, buildings, floors]);
 
   useEffect(() => {
     if (!selection) {
-      const fallback = firstValidSelection({ buildings, floors, features: editorState.features });
+      const fallback = firstValidSelection({
+        venues,
+        buildings,
+        levels: floors,
+        floors,
+        features: editorState.features,
+      });
       setSelection(fallback);
       return;
     }
@@ -483,11 +501,18 @@ function App() {
       return;
     }
 
-    const fallback = firstValidSelection({ buildings, floors, features: editorState.features });
+    const fallback = firstValidSelection({
+      venues,
+      buildings,
+      levels: floors,
+      floors,
+      features: editorState.features,
+    });
     setSelection(fallback);
     setEditorState((current) => selectFeature(current, undefined));
-  }, [selection, resolvedSelection, buildings, floors, editorState.features]);
+  }, [selection, resolvedSelection, venues, buildings, floors, editorState.features]);
 
+  const activeVenue = resolvedSelection?.venue ?? venues[0];
   const activeBuilding = resolvedSelection?.building ?? buildings[0];
   const activeFloor =
     resolvedSelection?.floor ??
@@ -639,17 +664,19 @@ function App() {
     (): ProjectSnapshot => ({
       editorState: structuredClone(editorState),
       overlays: structuredClone(overlays),
+      venues: structuredClone(venues),
       buildings: structuredClone(buildings),
       floors: structuredClone(floors),
       selection: selection ? structuredClone(selection) : undefined,
       drawMode,
     }),
-    [editorState, overlays, buildings, floors, selection, drawMode],
+    [editorState, overlays, venues, buildings, floors, selection, drawMode],
   );
 
   const restoreProjectState = useCallback((snapshot: ProjectSnapshot) => {
     setEditorState(snapshot.editorState);
     setOverlays(snapshot.overlays);
+    setVenues(snapshot.venues);
     setBuildings(snapshot.buildings);
     setFloors(snapshot.floors);
     setSelection(snapshot.selection);
@@ -1226,9 +1253,12 @@ function App() {
   const selectNode = useCallback(
     (nextSelection: Selection) => {
       let targetCenter: Coordinates | undefined;
-      if (nextSelection.kind === "building") {
+      if (nextSelection.kind === "venue") {
+        const venueBuilding = buildings.find((building) => building.venueId === nextSelection.id);
+        targetCenter = venueBuilding ? buildingCenter(venueBuilding.id) : undefined;
+      } else if (nextSelection.kind === "building") {
         targetCenter = buildingCenter(nextSelection.id);
-      } else if (nextSelection.kind === "floor") {
+      } else if (nextSelection.kind === "floor" || nextSelection.kind === "level") {
         targetCenter = floorCenter(nextSelection.id);
       } else {
         const feature = editorState.features.find((current) => current.id === nextSelection.id);
@@ -1248,14 +1278,16 @@ function App() {
 
       setEditorState((current) => selectFeature(current, undefined));
     },
-    [buildingCenter, cancelDrawMode, editorState.features, floorCenter, relocateMap],
+    [buildingCenter, buildings, cancelDrawMode, editorState.features, floorCenter, relocateMap],
   );
 
   const onAddBuilding = useCallback(() => {
+    const venueId = activeVenue?.id ?? venues[0]?.id ?? createId();
     const buildingId = createId();
     const floorId = createId();
     const building: Building = {
       id: buildingId,
+      venueId,
       name: `Building ${buildings.length + 1}`,
       location: mapView.center,
     };
@@ -1266,12 +1298,15 @@ function App() {
     };
 
     applyProjectMutation("Building added", () => {
+      if (venues.length === 0) {
+        setVenues([{ id: venueId, name: "Main Venue" }]);
+      }
       setBuildings((current) => [...current, building]);
       setFloors((current) => [...current, floor]);
-      setSelection({ kind: "floor", id: floorId });
+      setSelection({ kind: "level", id: floorId });
       setEditorState((current) => selectFeature(current, undefined));
     });
-  }, [applyProjectMutation, buildings.length, mapView.center]);
+  }, [activeVenue?.id, applyProjectMutation, buildings.length, mapView.center, venues]);
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {
@@ -1311,7 +1346,9 @@ function App() {
             );
 
             const nextSelection = firstValidSelection({
+              venues,
               buildings: nextBuildings,
+              levels: nextFloors,
               floors: nextFloors,
               features: nextFeatures,
             });
@@ -1319,7 +1356,14 @@ function App() {
           }),
       });
     },
-    [buildings, floors, editorState.features, applyProjectMutation, requestProjectConfirmation],
+    [
+      venues,
+      buildings,
+      floors,
+      editorState.features,
+      applyProjectMutation,
+      requestProjectConfirmation,
+    ],
   );
 
   const onAddFloor = useCallback(
@@ -1453,6 +1497,7 @@ function App() {
       }
       setArchiveWarnings(imported.value.warnings);
       applyProjectMutation("IMDF archive imported", () => {
+        const fallbackVenueId = activeVenue?.id ?? venues[0]?.id ?? "venue-default";
         const upsertById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
           const byId = new Map(current.map((item) => [item.id, item]));
           for (const item of incoming) {
@@ -1461,7 +1506,18 @@ function App() {
           return [...byId.values()];
         };
 
-        setBuildings((current) => upsertById(current, imported.value.buildings));
+        setVenues((current) =>
+          current.length > 0 ? current : [{ id: fallbackVenueId, name: "Main Venue" }],
+        );
+        setBuildings((current) =>
+          upsertById(
+            current,
+            imported.value.buildings.map((building) => ({
+              ...building,
+              venueId: building.venueId ?? fallbackVenueId,
+            })),
+          ),
+        );
         setFloors((current) => upsertById(current, imported.value.floors));
         setOverlays((current) => upsertById(current, imported.value.overlays));
         setEditorState((current) =>
@@ -1469,7 +1525,7 @@ function App() {
         );
       });
     },
-    [applyProjectMutation],
+    [activeVenue?.id, applyProjectMutation, venues],
   );
 
   const onRenameFloor = useCallback(
@@ -1708,8 +1764,9 @@ function App() {
                 </button>
               </div>
               <BuildingsTree
+                venues={venues}
                 buildings={buildings}
-                floors={floors}
+                levels={floors}
                 features={editorState.features}
                 selection={selection}
                 onSelect={selectNode}
@@ -1984,9 +2041,10 @@ function App() {
             <aside className="xl:min-h-0 xl:overflow-y-auto xl:pl-1">
               <SelectionSidebar
                 selection={selection}
+                venue={resolvedSelection?.venue}
                 building={resolvedSelection?.building}
-                floors={floors}
-                floor={activeFloor}
+                levels={floors}
+                level={activeFloor}
                 feature={selectedFeature}
                 allFeatures={editorState.features}
                 overlay={selectedOverlayForMap}
@@ -2009,10 +2067,10 @@ function App() {
                 onImportBuildingArchive={onImportBuildingArchive}
                 archiveWarnings={archiveWarnings}
                 onDeleteBuilding={onDeleteBuilding}
-                onAddFloor={onAddFloor}
-                onRenameFloor={onRenameFloor}
-                onCloneFloor={onCloneFloor}
-                onDeleteFloor={onDeleteFloor}
+                onAddLevel={onAddFloor}
+                onRenameLevel={onRenameFloor}
+                onCloneLevel={onCloneFloor}
+                onDeleteLevel={onDeleteFloor}
                 onCreateFeature={onCreateFeature}
                 onUpdateFeatureProperty={(featureId, key, value) => {
                   const floor = floors.find(

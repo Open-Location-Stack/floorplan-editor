@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 type TreeNodeProps = {
   label: ReactNode;
-  depth: 0 | 1 | 2;
+  depth: number;
   selected: boolean;
   expandable?: boolean;
   expanded?: boolean;

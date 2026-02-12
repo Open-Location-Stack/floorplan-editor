@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import type { Building, FeatureCollection, Floor, FloorFeature } from "../types";
 import { normalizeFeature } from "./normalize";
 import { sortOrderForFeatureType } from "./renderRules";
@@ -338,6 +339,44 @@ const resolveInternalType = (feature: FloorFeature): string => {
   return typeof typeCandidate === "string" ? typeCandidate : "";
 };
 
+const resolveContainmentParent = (
+  feature: FloorFeature,
+): { parentId?: string; parentType?: string } => {
+  if (typeof feature.properties.containmentParentId === "string") {
+    const parentType =
+      typeof feature.properties.containmentParentType === "string"
+        ? feature.properties.containmentParentType
+        : undefined;
+    return parentType
+      ? {
+          parentId: feature.properties.containmentParentId,
+          parentType,
+        }
+      : {
+          parentId: feature.properties.containmentParentId,
+        };
+  }
+  const metadata =
+    feature.properties.metadata && typeof feature.properties.metadata === "object"
+      ? (feature.properties.metadata as Record<string, unknown>)
+      : undefined;
+  if (metadata && typeof metadata["imdfRelationshipParentId"] === "string") {
+    const parentType =
+      typeof metadata["imdfRelationshipParentType"] === "string"
+        ? (metadata["imdfRelationshipParentType"] as string)
+        : undefined;
+    return parentType
+      ? {
+          parentId: metadata["imdfRelationshipParentId"] as string,
+          parentType,
+        }
+      : {
+          parentId: metadata["imdfRelationshipParentId"] as string,
+        };
+  }
+  return {};
+};
+
 const buildEmptyCollections = (): Record<ImdfDatasetType, ImdfFeatureCollection> => ({
   address: { type: "FeatureCollection", features: [] },
   amenity: { type: "FeatureCollection", features: [] },
@@ -408,11 +447,6 @@ export const exportImdfDataset = ({
     (feature) =>
       feature.geometry.type === "LineString" && resolveInternalType(feature) === "opening",
   );
-  const relationshipSourceFeatures = normalizedFloorFeatures.filter(
-    (feature) =>
-      feature.geometry.type === "LineString" && resolveInternalType(feature) === "relationship",
-  );
-
   const unitSourceFeatures = normalizedFloorFeatures.filter(
     (feature) => feature.geometry.type === "Polygon" && resolveInternalType(feature) !== "level",
   );
@@ -560,11 +594,8 @@ export const exportImdfDataset = ({
     openingIdBySource.set(sourceFeature.id, openingId);
   }
 
-  const childFeatures = [
-    ...unitSourceFeatures,
-    ...openingSourceFeatures,
-    ...relationshipSourceFeatures,
-  ];
+  const sourceById = new Map(normalizedFloorFeatures.map((feature) => [feature.id, feature]));
+  const childFeatures = [...unitSourceFeatures, ...openingSourceFeatures];
   for (const sourceFeature of childFeatures) {
     const childType =
       sourceFeature.geometry.type === "LineString"
@@ -579,9 +610,20 @@ export const exportImdfDataset = ({
     if (!childId) {
       continue;
     }
+    const containment = resolveContainmentParent(sourceFeature);
+    const parentSource = containment.parentId ? sourceById.get(containment.parentId) : undefined;
+    const parentType = containment.parentType ?? resolveInternalType(parentSource ?? sourceFeature);
+    const parentId =
+      !containment.parentId || containment.parentId === floor.id
+        ? primaryLevelId
+        : parentType === "opening"
+          ? (openingIdBySource.get(containment.parentId) ?? primaryLevelId)
+          : parentType === "unit" || parentType === "section" || parentType === "geofence"
+            ? (unitIdBySource.get(containment.parentId) ?? primaryLevelId)
+            : primaryLevelId;
     collections.relationship.features.push({
       type: "Feature",
-      id: toExportId(`contains:${primaryLevelId}:${childId}`, "relationship"),
+      id: toExportId(`contains:${parentId}:${childId}`, "relationship"),
       feature_type: "relationship",
       geometry: null,
       properties: {
@@ -589,7 +631,17 @@ export const exportImdfDataset = ({
         category: "contains",
         direction: 1,
         references: [
-          { id: primaryLevelId, feature_type: "level" },
+          {
+            id: parentId,
+            feature_type:
+              parentId === primaryLevelId
+                ? "level"
+                : parentType === "section" || parentType === "geofence"
+                  ? "unit"
+                  : parentType === "opening"
+                    ? "opening"
+                    : "unit",
+          },
           { id: childId, feature_type: childType },
         ],
       },

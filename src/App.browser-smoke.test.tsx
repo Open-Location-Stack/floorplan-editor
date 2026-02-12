@@ -265,7 +265,7 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("No buildings.")).toBeInTheDocument();
+      expect(screen.getByText("No venues.")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /add building/i }));
@@ -301,7 +301,7 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("No buildings.")).toBeInTheDocument();
+      expect(screen.getByText("No venues.")).toBeInTheDocument();
     });
     expect(mockRepository.deleteProject).toHaveBeenCalledWith("default-project");
   });
@@ -501,9 +501,7 @@ describe("App browser smoke", () => {
     expect(screen.getByTestId("mock-map-feature-ids")).not.toHaveTextContent("shape-first");
     expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-1");
 
-    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
-      target: { value: "opening" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
     expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
 
     fireEvent.click(screen.getByRole("button", { name: "First Floor" }));
@@ -624,12 +622,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /paths/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
-      target: { value: "opening" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
     fireEvent.click(screen.getByTestId("mock-map-select-feature"));
 
     await waitFor(() => {
@@ -701,7 +697,7 @@ describe("App browser smoke", () => {
     render(<App />);
 
     const bitmapLockSwitch = await screen.findByRole("checkbox", {
-      name: /lock floor bitmap geometry/i,
+      name: /lock level bitmap geometry/i,
     });
     expect(bitmapLockSwitch).not.toBeChecked();
     fireEvent.click(bitmapLockSwitch);
@@ -715,8 +711,7 @@ describe("App browser smoke", () => {
     expect(featureLockSwitch).not.toBeChecked();
     fireEvent.click(featureLockSwitch);
     expect(featureLockSwitch).toBeChecked();
-    expect(screen.getByText("Debug feature JSON")).toBeInTheDocument();
-    expect(screen.getByText(/"id": "shape-1"/)).toBeInTheDocument();
+    expect(screen.queryByText("Debug feature JSON")).not.toBeInTheDocument();
   });
 
   it("applies draw-driven deletes from keyboard", async () => {
@@ -781,12 +776,10 @@ describe("App browser smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: /add building/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /paths/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole("combobox", { name: /paths/i }), {
-      target: { value: "opening" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
@@ -831,12 +824,10 @@ describe("App browser smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: /add building/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /areas/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /section/i })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole("combobox", { name: /areas/i }), {
-      target: { value: "section" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /section/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("polygon");
@@ -926,10 +917,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /delete floor/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /delete level/i })).toBeInTheDocument();
     });
 
-    const deleteFloorButton = screen.getByRole("button", { name: /delete floor/i });
+    const deleteFloorButton = screen.getByRole("button", { name: /delete level/i });
     expect(deleteFloorButton).not.toBeDisabled();
     fireEvent.click(deleteFloorButton);
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
@@ -985,10 +976,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /clone floor/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /clone level/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /clone floor/i }));
+    fireEvent.click(screen.getByRole("button", { name: /clone level/i }));
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     await waitFor(() => {
@@ -1133,10 +1124,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /delete floor/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /delete level/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /delete floor/i }));
+    fireEvent.click(screen.getByRole("button", { name: /delete level/i }));
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -1190,10 +1181,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /delete floor/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /delete level/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /delete floor/i }));
+    fireEvent.click(screen.getByRole("button", { name: /delete level/i }));
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     fireEvent.keyDown(window, { key: "z", ctrlKey: true });

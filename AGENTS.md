@@ -26,6 +26,11 @@
 - Leverage `@testing-library/react` helpers for component behavior and `src/test/setup.ts` for shared mocks or extensions.
 - Cover calculator edge cases (zero values, large areas) and user interaction flows; ensure new logic includes deterministic assertions before merging.
 - Bug fix policy: each production bug fix must add at least one regression test that fails on old behavior and passes with the fix.
+- Test run hygiene policy:
+  - Never start a new test command if a previous test process is still running.
+  - Before any new run, check for active test processes (for example `vitest`, `npm run test`, Playwright) and either wait for completion or explicitly terminate the stale run first.
+  - If a prior run hangs or does not finish, kill that run, identify the root cause (e.g., infinite loop, unresolved async handle, recursive render), fix it, and only then start the next run.
+  - Do not paper over hangs by repeatedly launching additional runs in parallel.
 
 ## Commit & Pull Request Guidelines
 - Compose commits with short, imperative subjects (`Add halls summary row`), mirroring existing Git history and keeping them under ~72 characters.

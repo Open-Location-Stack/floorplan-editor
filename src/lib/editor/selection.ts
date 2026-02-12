@@ -1,22 +1,33 @@
-import type { Building, Floor, FloorFeature } from "../types";
+import type { Building, FloorFeature, Level, Venue } from "../types";
 
 export type Selection =
+  | { kind: "venue"; id: string }
   | { kind: "building"; id: string }
   | { kind: "floor"; id: string }
+  | { kind: "level"; id: string }
   | { kind: "feature"; id: string };
 
 export type SelectionContext = {
+  venues?: Venue[];
   buildings: Building[];
-  floors: Floor[];
+  floors?: Level[];
+  levels?: Level[];
   features: FloorFeature[];
 };
 
 export type ResolvedSelection = {
   selection: Selection;
+  venue: Venue | undefined;
   building: Building;
-  floor: Floor | undefined;
+  level: Level | undefined;
+  floor: Level | undefined;
   feature: FloorFeature | undefined;
 };
+
+const readLevels = (context: SelectionContext): Level[] =>
+  (context.levels ?? []).length > 0 ? (context.levels ?? []) : (context.floors ?? []);
+
+const readVenues = (context: SelectionContext): Venue[] => context.venues ?? [];
 
 const resolveFromFeature = (
   selection: Selection,
@@ -28,20 +39,23 @@ const resolveFromFeature = (
   }
 
   const floorId = typeof feature.properties.floorId === "string" ? feature.properties.floorId : "";
-  const floor = context.floors.find((current) => current.id === floorId);
-  if (!floor) {
+  const level = readLevels(context).find((current) => current.id === floorId);
+  if (!level) {
     return undefined;
   }
 
-  const building = context.buildings.find((current) => current.id === floor.buildingId);
+  const building = context.buildings.find((current) => current.id === level.buildingId);
   if (!building) {
     return undefined;
   }
+  const venue = readVenues(context).find((current) => current.id === building.venueId);
 
   return {
     selection,
+    venue,
     building,
-    floor,
+    level,
+    floor: level,
     feature,
   };
 };
@@ -50,20 +64,23 @@ const resolveFromFloor = (
   selection: Selection,
   context: SelectionContext,
 ): ResolvedSelection | undefined => {
-  const floor = context.floors.find((current) => current.id === selection.id);
-  if (!floor) {
+  const level = readLevels(context).find((current) => current.id === selection.id);
+  if (!level) {
     return undefined;
   }
 
-  const building = context.buildings.find((current) => current.id === floor.buildingId);
+  const building = context.buildings.find((current) => current.id === level.buildingId);
   if (!building) {
     return undefined;
   }
+  const venue = readVenues(context).find((current) => current.id === building.venueId);
 
   return {
     selection,
+    venue,
     building,
-    floor,
+    level,
+    floor: level,
     feature: undefined,
   };
 };
@@ -77,12 +94,39 @@ const resolveFromBuilding = (
     return undefined;
   }
 
-  const floor = context.floors.find((current) => current.buildingId === building.id);
+  const venue = readVenues(context).find((current) => current.id === building.venueId);
+  const level = readLevels(context).find((current) => current.buildingId === building.id);
 
   return {
     selection,
+    venue,
     building,
-    floor,
+    level,
+    floor: level,
+    feature: undefined,
+  };
+};
+
+const resolveFromVenue = (
+  selection: Selection,
+  context: SelectionContext,
+): ResolvedSelection | undefined => {
+  const venue = readVenues(context).find((current) => current.id === selection.id);
+  if (!venue) {
+    return undefined;
+  }
+  const building = context.buildings.find((current) => current.venueId === venue.id);
+  if (!building) {
+    return undefined;
+  }
+  const level = readLevels(context).find((current) => current.buildingId === building.id);
+
+  return {
+    selection,
+    venue,
+    building,
+    level,
+    floor: level,
     feature: undefined,
   };
 };
@@ -95,22 +139,38 @@ export const resolveSelection = (
     return resolveFromFeature(selection, context);
   }
 
-  if (selection.kind === "floor") {
+  if (selection.kind === "level" || selection.kind === "floor") {
     return resolveFromFloor(selection, context);
+  }
+
+  if (selection.kind === "venue") {
+    return resolveFromVenue(selection, context);
   }
 
   return resolveFromBuilding(selection, context);
 };
 
 export const firstValidSelection = (context: SelectionContext): Selection | undefined => {
-  const building = context.buildings[0];
+  const venue = readVenues(context)[0];
+  if (!venue) {
+    const building = context.buildings[0];
+    if (!building) {
+      return undefined;
+    }
+    const level = readLevels(context).find((current) => current.buildingId === building.id);
+    if (level) {
+      return { kind: "level", id: level.id };
+    }
+    return { kind: "building", id: building.id };
+  }
+
+  const building = context.buildings.find((current) => current.venueId === venue.id);
   if (!building) {
     return undefined;
   }
-
-  const floor = context.floors.find((current) => current.buildingId === building.id);
-  if (floor) {
-    return { kind: "floor", id: floor.id };
+  const level = readLevels(context).find((current) => current.buildingId === building.id);
+  if (level) {
+    return { kind: "level", id: level.id };
   }
 
   return { kind: "building", id: building.id };

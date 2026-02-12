@@ -330,6 +330,15 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     },
   },
   {
+    id: "gl-draw-polygon-fill-static",
+    type: "fill",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
+    paint: {
+      "fill-color": drawPolygonFillColorExpression,
+      "fill-opacity": drawPolygonFillOpacityExpression,
+    },
+  },
+  {
     id: "gl-draw-polygon-fill-active",
     type: "fill",
     filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
@@ -347,6 +356,19 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       ["==", "active", "false"],
       ["!=", "mode", "static"],
     ],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": "#111827",
+      "line-width": drawPolygonStrokeWidthExpression,
+    },
+  },
+  {
+    id: "gl-draw-polygon-stroke-static",
+    type: "line",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
     layout: {
       "line-cap": "round",
       "line-join": "round",

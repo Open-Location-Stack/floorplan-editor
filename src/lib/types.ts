@@ -80,6 +80,9 @@ export type FeatureProperties = {
   floor_id?: string;
   level_id?: string;
   building_id?: string;
+  venueId?: string;
+  containmentParentId?: string;
+  containmentParentType?: ImdfFeatureType | "level";
   featureType?: string;
   category?: string;
   externalId?: string;
@@ -150,6 +153,7 @@ export type FloorOverlay = {
 
 export type Building = {
   id: string;
+  venueId?: string;
   name: string;
   location?: Coordinates;
   imdf?: {
@@ -173,11 +177,17 @@ export type Building = {
   };
 };
 
-export type Floor = {
+export type Venue = {
+  id: string;
+  name: string;
+};
+
+export type Level = {
   id: string;
   buildingId: string;
   name: string;
 };
+export type Floor = Level;
 
 export type ProjectSnapshot = {
   id: string;
@@ -186,6 +196,8 @@ export type ProjectSnapshot = {
   updatedAt: string;
   features: FloorFeature[];
   overlays: FloorOverlay[];
+  venues?: Venue[];
   buildings?: Building[];
+  levels?: Level[];
   floors?: Floor[];
 };

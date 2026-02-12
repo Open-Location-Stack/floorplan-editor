@@ -1,13 +1,14 @@
 import type {
   Building,
   Coordinates,
-  Floor,
   FloorFeature,
   FloorOverlay,
   Geometry,
   JsonObject,
   JsonValue,
+  Level,
   ProjectSnapshot,
+  Venue,
 } from "../types";
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -272,10 +273,34 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
   };
 };
 
-const normalizeBuildings = (buildings: unknown): Building[] => {
+const normalizeVenues = (venues: unknown): Venue[] => {
+  if (!Array.isArray(venues)) {
+    return [{ id: "venue-default", name: "Main Venue" }];
+  }
+  const normalized = venues
+    .map((venue) => {
+      if (!venue || typeof venue !== "object") {
+        return undefined;
+      }
+      const raw = venue as { id?: unknown; name?: unknown };
+      if (!isNonEmptyString(raw.id)) {
+        return undefined;
+      }
+      return {
+        id: raw.id,
+        name: isNonEmptyString(raw.name) ? raw.name : "Untitled venue",
+      };
+    })
+    .filter((venue): venue is Venue => Boolean(venue));
+  return normalized.length > 0 ? normalized : [{ id: "venue-default", name: "Main Venue" }];
+};
+
+const normalizeBuildings = (buildings: unknown, venues: Venue[]): Building[] => {
   if (!Array.isArray(buildings)) {
     return [];
   }
+  const fallbackVenueId = venues[0]?.id ?? "venue-default";
+  const venueIds = new Set(venues.map((venue) => venue.id));
 
   const normalized = buildings
     .map((building) => {
@@ -283,23 +308,32 @@ const normalizeBuildings = (buildings: unknown): Building[] => {
         return undefined;
       }
 
-      const raw = building as { id?: unknown; name?: unknown; location?: unknown };
+      const raw = building as {
+        id?: unknown;
+        name?: unknown;
+        location?: unknown;
+        venueId?: unknown;
+      };
       if (!isNonEmptyString(raw.id)) {
         return undefined;
       }
 
       return {
         id: raw.id,
+        venueId:
+          isNonEmptyString(raw.venueId) && venueIds.has(raw.venueId)
+            ? raw.venueId
+            : fallbackVenueId,
         name: isNonEmptyString(raw.name) ? raw.name : "Untitled building",
         ...(isCoordinates(raw.location) ? { location: raw.location } : {}),
       };
     })
-    .filter((building): building is Building => Boolean(building));
+    .filter(Boolean) as Building[];
 
   return normalized;
 };
 
-const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
+const normalizeFloors = (floors: unknown, buildings: Building[]): Level[] => {
   const validBuildingIds = new Set(buildings.map((building) => building.id));
   if (!Array.isArray(floors)) {
     return [];
@@ -326,7 +360,7 @@ const normalizeFloors = (floors: unknown, buildings: Building[]): Floor[] => {
         name: isNonEmptyString(raw.name) ? raw.name : "Untitled floor",
       };
     })
-    .filter((floor): floor is Floor => Boolean(floor));
+    .filter((floor): floor is Level => Boolean(floor));
 
   return normalized;
 };
@@ -367,14 +401,17 @@ const normalizeOverlays = (overlays: unknown, floorIds: Set<string>): FloorOverl
 };
 
 export const sanitizeProjectSnapshot = (project: ProjectSnapshot): ProjectSnapshot => {
-  const buildings = normalizeBuildings(project.buildings);
-  const floors = normalizeFloors(project.floors, buildings);
+  const venues = normalizeVenues(project.venues);
+  const buildings = normalizeBuildings(project.buildings, venues);
+  const floors = normalizeFloors(project.levels ?? project.floors, buildings);
   const defaultFloorId = floors[0]?.id;
   const floorIds = new Set(floors.map((floor) => floor.id));
 
   return {
     ...project,
+    venues,
     buildings,
+    levels: floors,
     floors,
     features: normalizeFeatures(project.features, defaultFloorId, floorIds),
     overlays: normalizeOverlays(project.overlays, floorIds),
