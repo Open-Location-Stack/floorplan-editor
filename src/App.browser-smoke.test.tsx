@@ -844,6 +844,85 @@ const addVenueAndBuilding = async (): Promise<void> => {
     expect(await screen.findByText("Opacity: 30%")).toBeInTheDocument();
   });
 
+  it("preserves overlay orientation when replacing an image", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "old.png",
+          imageDataUrl: "data:image/png;base64,old",
+          opacity: 80,
+          visible: true,
+          corners: {
+            topLeft: [5.12, 52.091],
+            topRight: [5.123, 52.091],
+            bottomRight: [5.123, 52.089],
+            bottomLeft: [5.12, 52.089],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    class MockFileReader {
+      result: string | null = null;
+      onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
+
+      readAsDataURL(): void {
+        window.setTimeout(() => {
+          this.result = "data:image/png;base64,new";
+          this.onload?.call(this as unknown as FileReader, {} as ProgressEvent<FileReader>);
+        }, 0);
+      }
+    }
+
+    vi.stubGlobal("FileReader", MockFileReader);
+
+    const { default: App } = await import("./App");
+    const { container } = render(<App />);
+    await screen.findByRole("button", { name: /upload image/i });
+
+    const fileInput = container.querySelector('input[type="file"][accept="image/png,image/jpeg,image/webp"]');
+    if (!(fileInput instanceof HTMLInputElement)) {
+      throw new Error("Expected bitmap upload input");
+    }
+
+    const uploadFile = new File(["x"], "new.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [uploadFile] } });
+    fireEvent.click(screen.getByRole("button", { name: /upload image/i }));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        overlays: Array<{
+          imageName: string;
+          corners: {
+            topLeft: [number, number];
+            topRight: [number, number];
+            bottomRight: [number, number];
+            bottomLeft: [number, number];
+          };
+        }>;
+      };
+      expect(latestSnapshot.overlays[0]?.imageName).toBe("new.png");
+      expect(latestSnapshot.overlays[0]?.corners).toEqual({
+        topLeft: [5.12, 52.091],
+        topRight: [5.123, 52.091],
+        bottomRight: [5.123, 52.089],
+        bottomLeft: [5.12, 52.089],
+      });
+    });
+  });
+
   it("restores persisted lock state from snapshots", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
