@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Selection } from "../../lib/editor/selection";
 import { getChildrenByParent } from "../../lib/imdf/containment";
 import { sortFeaturesForRendering } from "../../lib/imdf/export";
+import { isLevelGeometryFeature } from "../../lib/imdf/levelGeometry";
 import type { Building, FloorFeature, Level, Venue } from "../../lib/types";
 import { TreeNode } from "./TreeNode";
 
@@ -101,6 +102,9 @@ export const BuildingsTree = ({
   const featuresByLevel = useMemo(() => {
     const groups = new Map<string, FloorFeature[]>();
     for (const feature of sortFeaturesForRendering(features)) {
+      if (isLevelGeometryFeature(feature)) {
+        continue;
+      }
       if (typeof feature.properties.floorId !== "string") {
         continue;
       }

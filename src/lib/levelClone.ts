@@ -1,17 +1,17 @@
 import { createId } from "./id";
 import type { Floor, FloorFeature, FloorOverlay, JsonValue } from "./types";
 
-type CloneFloorOptions = {
-  floor: Floor;
-  floors: Floor[];
+type CloneLevelOptions = {
+  level: Floor;
+  levels: Floor[];
   features: FloorFeature[];
   overlays: FloorOverlay[];
   createIdFn?: () => string;
   timestamp?: string;
 };
 
-type CloneFloorResult = {
-  floor: Floor;
+type CloneLevelResult = {
+  level: Floor;
   features: FloorFeature[];
   overlay: FloorOverlay | undefined;
 };
@@ -54,11 +54,11 @@ const remapOptionalJsonValue = (
   return remapJsonValue(value, idMap);
 };
 
-const nextCopiedFloorName = (sourceName: string, floorsInBuilding: Floor[]): string => {
+const nextCopiedLevelName = (sourceName: string, levelsInBuilding: Floor[]): string => {
   const existing = new Set(
-    floorsInBuilding
-      .filter((floor) => floor.name.startsWith(sourceName))
-      .map((floor) => floor.name),
+    levelsInBuilding
+      .filter((level) => level.name.startsWith(sourceName))
+      .map((level) => level.name),
   );
 
   const firstCandidate = `${sourceName} copy`;
@@ -74,25 +74,25 @@ const nextCopiedFloorName = (sourceName: string, floorsInBuilding: Floor[]): str
   return `${sourceName} copy ${copyNumber}`;
 };
 
-export const cloneFloorWithReferences = ({
-  floor,
-  floors,
+export const cloneLevelWithReferences = ({
+  level,
+  levels,
   features,
   overlays,
   createIdFn = createId,
   timestamp = new Date().toISOString(),
-}: CloneFloorOptions): CloneFloorResult => {
-  const floorFeatures = features.filter((feature) => feature.properties.floorId === floor.id);
-  const sourceOverlay = overlays.find((overlay) => overlay.floorId === floor.id);
-  const floorsInBuilding = floors.filter((current) => current.buildingId === floor.buildingId);
+}: CloneLevelOptions): CloneLevelResult => {
+  const levelFeatures = features.filter((feature) => feature.properties.floorId === level.id);
+  const sourceOverlay = overlays.find((overlay) => overlay.floorId === level.id);
+  const levelsInBuilding = levels.filter((current) => current.buildingId === level.buildingId);
 
-  const clonedFloorId = createIdFn();
+  const clonedLevelId = createIdFn();
   const featureIdMap = new Map<string, string>(
-    floorFeatures.map((feature) => [feature.id, createIdFn()]),
+    levelFeatures.map((feature) => [feature.id, createIdFn()]),
   );
-  const idMap = new Map<string, string>([[floor.id, clonedFloorId], ...featureIdMap.entries()]);
+  const idMap = new Map<string, string>([[level.id, clonedLevelId], ...featureIdMap.entries()]);
 
-  const clonedFeatures = floorFeatures.map((sourceFeature) => {
+  const clonedFeatures = levelFeatures.map((sourceFeature) => {
     const clonedFeature = deepClone(sourceFeature);
     const clonedFeatureId = featureIdMap.get(sourceFeature.id) ?? createIdFn();
 
@@ -104,11 +104,11 @@ export const cloneFloorWithReferences = ({
     clonedFeature.properties = remappedProperties;
     clonedFeature.properties.id = clonedFeatureId;
     clonedFeature.properties.imdf_id = clonedFeatureId;
-    clonedFeature.properties.floorId = clonedFloorId;
-    clonedFeature.properties.floor_id = clonedFloorId;
-    clonedFeature.properties.level_id = clonedFloorId;
-    clonedFeature.properties.buildingId = floor.buildingId;
-    clonedFeature.properties.building_id = floor.buildingId;
+    clonedFeature.properties.floorId = clonedLevelId;
+    clonedFeature.properties.floor_id = clonedLevelId;
+    clonedFeature.properties.level_id = clonedLevelId;
+    clonedFeature.properties.buildingId = level.buildingId;
+    clonedFeature.properties.building_id = level.buildingId;
 
     return clonedFeature;
   });
@@ -117,16 +117,16 @@ export const cloneFloorWithReferences = ({
     ? {
         ...deepClone(sourceOverlay),
         id: createIdFn(),
-        floorId: clonedFloorId,
+        floorId: clonedLevelId,
         updatedAt: timestamp,
       }
     : undefined;
 
   return {
-    floor: {
-      ...floor,
-      id: clonedFloorId,
-      name: nextCopiedFloorName(floor.name, floorsInBuilding),
+    level: {
+      ...level,
+      id: clonedLevelId,
+      name: nextCopiedLevelName(level.name, levelsInBuilding),
     },
     features: clonedFeatures,
     overlay: clonedOverlay,

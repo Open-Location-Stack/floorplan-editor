@@ -15,7 +15,6 @@ import {
   updateFeature,
 } from "./lib/editor/editorModel";
 import { firstValidSelection, resolveSelection, type Selection } from "./lib/editor/selection";
-import { cloneFloorWithReferences } from "./lib/floorClone";
 import {
   type OpenCageSearchResult,
   reverseGeocodeOpenCage,
@@ -26,8 +25,10 @@ import { exportBuildingImdfZip } from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
+import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
+import { cloneLevelWithReferences } from "./lib/levelClone";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
 import { findRouteBetweenPoints } from "./lib/navigation/pointRouting";
@@ -36,10 +37,10 @@ import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSaniti
 import type {
   Building,
   Coordinates,
-  Floor,
   FloorFeature,
   FloorOverlay,
   GeometryType,
+  Level,
   OverlayCorners,
   ThemeId,
   Venue,
@@ -90,7 +91,7 @@ type ProjectSnapshot = {
   overlays: FloorOverlay[];
   venues: Venue[];
   buildings: Building[];
-  floors: Floor[];
+  levels: Level[];
   selection: Selection | undefined;
   drawMode: DrawMode;
 };
@@ -310,7 +311,7 @@ const readFeatureName = (feature: FloorFeature): string | undefined => {
   return undefined;
 };
 
-const nextPathNumberForFloor = (features: FloorFeature[], floorId: string): number => {
+const nextPathNumberForLevel = (features: FloorFeature[], floorId: string): number => {
   let max = 0;
   for (const feature of features) {
     if (feature.properties.floorId !== floorId) {
@@ -339,7 +340,7 @@ const nextPathNumberForFloor = (features: FloorFeature[], floorId: string): numb
   return max + 1;
 };
 
-const isFeatureOnFloor = (feature: FloorFeature, floorId: string): boolean =>
+const isFeatureOnLevel = (feature: FloorFeature, floorId: string): boolean =>
   feature.properties.floorId === floorId || !feature.properties.floorId;
 
 const areFeatureListsEqual = (left: FloorFeature[], right: FloorFeature[]): boolean =>
@@ -352,7 +353,7 @@ const saveEditorSnapshot = async (
   lockedOverlayFloorIds: string[],
   venues: Venue[],
   buildings: Building[],
-  floors: Floor[],
+  levels: Level[],
 ): Promise<void> => {
   await projectRepository.saveProject({
     id: PROJECT_ID,
@@ -365,8 +366,8 @@ const saveEditorSnapshot = async (
     lockedOverlayFloorIds,
     venues,
     buildings,
-    levels: floors,
-    floors,
+    levels,
+    floors: levels,
   });
 };
 
@@ -379,7 +380,7 @@ function App() {
   const [lockedOverlayFloorIds, setLockedOverlayFloorIds] = useState<string[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
-  const [floors, setFloors] = useState<Floor[]>([]);
+  const [levels, setLevels] = useState<Level[]>([]);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -428,12 +429,11 @@ function App() {
         ? resolveSelection(selection, {
             buildings,
             venues,
-            levels: floors,
-            floors,
+            levels,
             features: editorState.features,
           })
         : undefined,
-    [selection, venues, buildings, floors, editorState.features],
+    [selection, venues, buildings, levels, editorState.features],
   );
 
   useEffect(() => {
@@ -461,15 +461,15 @@ function App() {
       const sanitizedProject = sanitizeProjectSnapshot(project);
       const loadedVenues = sanitizedProject.venues ?? [];
       const loadedBuildings = sanitizedProject.buildings ?? [];
-      const loadedFloors = sanitizedProject.floors ?? [];
-      const primaryFloor = loadedFloors[0];
+      const loadedLevels = sanitizedProject.levels ?? [];
+      const primaryLevel = loadedLevels[0];
       const primaryBuilding = loadedBuildings[0];
 
       const migratedFeatures = sanitizedProject.features.map((feature) => {
         const resolvedFloorId =
           typeof feature.properties.floorId === "string"
             ? feature.properties.floorId
-            : primaryFloor?.id;
+            : primaryLevel?.id;
 
         return normalizeFeature(
           {
@@ -482,7 +482,7 @@ function App() {
           {
             floorId: resolvedFloorId ?? "",
             buildingId:
-              loadedFloors.find((floor) => floor.id === resolvedFloorId)?.buildingId ??
+              loadedLevels.find((level) => level.id === resolvedFloorId)?.buildingId ??
               primaryBuilding?.id ??
               "",
           },
@@ -495,13 +495,13 @@ function App() {
       setLockedOverlayFloorIds(sanitizedProject.lockedOverlayFloorIds ?? []);
       setVenues(loadedVenues);
       setBuildings(loadedBuildings);
-      setFloors(loadedFloors);
+      setLevels(loadedLevels);
       setSelection(
         firstValidSelection({
           venues: loadedVenues,
           buildings: loadedBuildings,
-          levels: loadedFloors,
-          floors: loadedFloors,
+          levels: loadedLevels,
+          floors: loadedLevels,
           features: migratedFeatures,
         }),
       );
@@ -529,7 +529,7 @@ function App() {
         lockedOverlayFloorIds,
         venues,
         buildings,
-        floors,
+        levels,
       )
         .then(() => {
           setSaveStatus("saved");
@@ -550,7 +550,7 @@ function App() {
     lockedOverlayFloorIds,
     venues,
     buildings,
-    floors,
+    levels,
   ]);
 
   useEffect(() => {
@@ -558,8 +558,8 @@ function App() {
       const fallback = firstValidSelection({
         venues,
         buildings,
-        levels: floors,
-        floors,
+        levels,
+        floors: levels,
         features: editorState.features,
       });
       setSelection(fallback);
@@ -573,13 +573,13 @@ function App() {
     const fallback = firstValidSelection({
       venues,
       buildings,
-      levels: floors,
-      floors,
+      levels,
+      floors: levels,
       features: editorState.features,
     });
     setSelection(fallback);
     setEditorState((current) => selectFeature(current, undefined));
-  }, [selection, resolvedSelection, venues, buildings, floors, editorState.features]);
+  }, [selection, resolvedSelection, venues, buildings, levels, editorState.features]);
 
   const selectedVenue =
     selection?.kind === "venue"
@@ -587,10 +587,10 @@ function App() {
       : resolvedSelection?.venue;
   const activeVenue = selectedVenue ?? venues[0];
   const activeBuilding = resolvedSelection?.building ?? buildings[0];
-  const activeFloor =
+  const activeLevel =
     resolvedSelection?.floor ??
-    floors.find((floor) => floor.buildingId === activeBuilding?.id) ??
-    floors[0];
+    levels.find((floor) => floor.buildingId === activeBuilding?.id) ??
+    levels[0];
 
   const selectedFeature = useMemo(
     () => editorState.features.find((feature) => feature.id === editorState.selectedFeatureId),
@@ -598,8 +598,8 @@ function App() {
   );
 
   const selectedOverlay = useMemo(
-    () => overlays.find((overlay) => overlay.floorId === activeFloor?.id),
-    [overlays, activeFloor?.id],
+    () => overlays.find((overlay) => overlay.floorId === activeLevel?.id),
+    [overlays, activeLevel?.id],
   );
   const selectedOverlayForMap = useMemo(() => {
     if (!selectedOverlay) {
@@ -615,7 +615,7 @@ function App() {
     setBuildings((current) => {
       let changed = false;
       const next = current.map((building) => {
-        const floorIds = floors
+        const floorIds = levels
           .filter((floor) => floor.buildingId === building.id)
           .map((floor) => floor.id);
         const levelPolygons = editorState.features
@@ -660,17 +660,17 @@ function App() {
       });
       return changed ? next : current;
     });
-  }, [editorState.features, floors]);
+  }, [editorState.features, levels]);
 
   const visibleFeatures = useMemo(() => {
-    if (!activeFloor) {
+    if (!activeLevel) {
       return [];
     }
 
     return sortFeaturesForRendering(
-      editorState.features.filter((feature) => feature.properties.floorId === activeFloor.id),
+      editorState.features.filter((feature) => feature.properties.floorId === activeLevel.id),
     );
-  }, [editorState.features, activeFloor]);
+  }, [editorState.features, activeLevel]);
 
   const navigationGraph = useMemo(() => buildNavigationGraph(visibleFeatures), [visibleFeatures]);
   const routeResult = useMemo(() => {
@@ -681,7 +681,7 @@ function App() {
   }, [navigationGraph, routeStartCoordinate, routeEndCoordinate]);
 
   const routeOverlayFeatures = useMemo(() => {
-    if (!activeFloor || !routeResult?.found) {
+    if (!activeLevel || !routeResult?.found) {
       return [] as FloorFeature[];
     }
     const routeFeatures: FloorFeature[] = [];
@@ -694,7 +694,7 @@ function App() {
       },
       properties: {
         kind: "route-edge",
-        floorId: activeFloor.id,
+        floorId: activeLevel.id,
       },
     });
     if (routeResult.snappedStart) {
@@ -707,7 +707,7 @@ function App() {
         },
         properties: {
           kind: "route-node",
-          floorId: activeFloor.id,
+          floorId: activeLevel.id,
         },
       });
     }
@@ -721,15 +721,15 @@ function App() {
         },
         properties: {
           kind: "route-node",
-          floorId: activeFloor.id,
+          floorId: activeLevel.id,
         },
       });
     }
     return routeFeatures;
-  }, [routeResult, activeFloor]);
+  }, [routeResult, activeLevel]);
 
   const selectedFeatureForMap =
-    selectedFeature && activeFloor && selectedFeature.properties.floorId === activeFloor.id
+    selectedFeature && activeLevel && selectedFeature.properties.floorId === activeLevel.id
       ? selectedFeature
       : undefined;
 
@@ -739,11 +739,11 @@ function App() {
       overlays: structuredClone(overlays),
       venues: structuredClone(venues),
       buildings: structuredClone(buildings),
-      floors: structuredClone(floors),
+      levels: structuredClone(levels),
       selection: selection ? structuredClone(selection) : undefined,
       drawMode,
     }),
-    [editorState, overlays, venues, buildings, floors, selection, drawMode],
+    [editorState, overlays, venues, buildings, levels, selection, drawMode],
   );
 
   const restoreProjectState = useCallback((snapshot: ProjectSnapshot) => {
@@ -751,7 +751,7 @@ function App() {
     setOverlays(snapshot.overlays);
     setVenues(snapshot.venues);
     setBuildings(snapshot.buildings);
-    setFloors(snapshot.floors);
+    setLevels(snapshot.levels);
     setSelection(snapshot.selection);
     setDrawMode(snapshot.drawMode);
   }, []);
@@ -844,12 +844,12 @@ function App() {
       setHasSelectedVertex(false);
       if (mode !== "select") {
         setEditorState((current) => selectFeature(current, undefined));
-        if (activeFloor) {
-          setSelection({ kind: "floor", id: activeFloor.id });
+        if (activeLevel) {
+          setSelection({ kind: "level", id: activeLevel.id });
         }
       }
     },
-    [activeFloor],
+    [activeLevel],
   );
 
   const cancelDrawMode = useCallback(() => {
@@ -876,7 +876,7 @@ function App() {
 
   const onDrawFeaturesChange = useCallback(
     (featuresFromMap: FloorFeature[]) => {
-      if (!activeFloor || !activeBuilding) {
+      if (!activeLevel || !activeBuilding) {
         return;
       }
 
@@ -886,9 +886,9 @@ function App() {
       let consumedPendingTemplate = false;
 
       setEditorState((current) => {
-        let nextPathNumber = nextPathNumberForFloor(current.features, activeFloor.id);
+        let nextPathNumber = nextPathNumberForLevel(current.features, activeLevel.id);
         const currentVisible = current.features.filter((feature) =>
-          isFeatureOnFloor(feature, activeFloor.id),
+          isFeatureOnLevel(feature, activeLevel.id),
         );
         const currentVisibleById = new Map(currentVisible.map((feature) => [feature.id, feature]));
 
@@ -930,7 +930,7 @@ function App() {
               ...feature,
               properties: {
                 ...mergedProperties,
-                floorId: mergedProperties.floorId ?? existing?.properties.floorId ?? activeFloor.id,
+                floorId: mergedProperties.floorId ?? existing?.properties.floorId ?? activeLevel.id,
                 kind:
                   typeof mergedProperties.kind === "string" && mergedProperties.kind
                     ? mergedProperties.kind
@@ -939,7 +939,7 @@ function App() {
               },
             },
             {
-              floorId: activeFloor.id,
+              floorId: activeLevel.id,
               buildingId: activeBuilding.id,
             },
           );
@@ -960,7 +960,7 @@ function App() {
         }
 
         const nonVisible = current.features.filter(
-          (feature) => !isFeatureOnFloor(feature, activeFloor.id),
+          (feature) => !isFeatureOnLevel(feature, activeLevel.id),
         );
         const nextFeatures = [...nonVisible, ...nextVisible];
         const nextSelectedFeatureId =
@@ -976,15 +976,15 @@ function App() {
         setPendingDrawFeatureType(undefined);
       }
     },
-    [activeFloor, activeBuilding, pendingDrawFeatureType, lockedFeatureIdsSet],
+    [activeLevel, activeBuilding, pendingDrawFeatureType, lockedFeatureIdsSet],
   );
 
   const onDrawSelectionChange = useCallback(
     (featureId: string | undefined) => {
       if (!featureId) {
         setEditorState((current) => selectFeature(current, undefined));
-        if (activeFloor) {
-          setSelection({ kind: "floor", id: activeFloor.id });
+        if (activeLevel) {
+          setSelection({ kind: "level", id: activeLevel.id });
         }
         return;
       }
@@ -996,8 +996,8 @@ function App() {
       }
       if (lockedFeatureIdsSet.has(feature.id)) {
         setEditorState((current) => selectFeature(current, undefined));
-        if (activeFloor) {
-          setSelection({ kind: "floor", id: activeFloor.id });
+        if (activeLevel) {
+          setSelection({ kind: "level", id: activeLevel.id });
         }
         return;
       }
@@ -1006,7 +1006,7 @@ function App() {
       setSelection({ kind: "feature", id: featureId });
       setDrawMode("select");
     },
-    [editorState.features, activeFloor, lockedFeatureIdsSet],
+    [editorState.features, activeLevel, lockedFeatureIdsSet],
   );
 
   const onInteractionModeChange = useCallback((mode: DrawMode) => {
@@ -1018,7 +1018,7 @@ function App() {
 
   const onRouteMapClick = useCallback(
     (coordinate: Coordinates) => {
-      if (!activeFloor || !routePickEnabled || drawMode !== "select") {
+      if (!activeLevel || !routePickEnabled || drawMode !== "select") {
         return;
       }
       if (!routeStartCoordinate || routeEndCoordinate) {
@@ -1028,7 +1028,7 @@ function App() {
       }
       setRouteEndCoordinate(coordinate);
     },
-    [activeFloor, routePickEnabled, drawMode, routeStartCoordinate, routeEndCoordinate],
+    [activeLevel, routePickEnabled, drawMode, routeStartCoordinate, routeEndCoordinate],
   );
 
   useEffect(() => {
@@ -1154,13 +1154,13 @@ function App() {
 
   const applyToCurrentOverlay = useCallback(
     (transform: (overlay: FloorOverlay) => FloorOverlay) => {
-      if (!activeFloor) {
+      if (!activeLevel) {
         return;
       }
 
       setOverlays((current) =>
         current.map((overlay) => {
-          if (overlay.floorId !== activeFloor.id || lockedOverlayFloorIdsSet.has(overlay.floorId)) {
+          if (overlay.floorId !== activeLevel.id || lockedOverlayFloorIdsSet.has(overlay.floorId)) {
             return overlay;
           }
 
@@ -1168,7 +1168,7 @@ function App() {
         }),
       );
     },
-    [activeFloor, lockedOverlayFloorIdsSet],
+    [activeLevel, lockedOverlayFloorIdsSet],
   );
 
   const onOverlayInteractionStart = useCallback(() => {
@@ -1182,14 +1182,14 @@ function App() {
 
   const onOverlayCornersChange = useCallback(
     (corners: OverlayCorners) => {
-      if (!activeFloor) {
+      if (!activeLevel) {
         return;
       }
 
       const interactionSnapshot = overlayInteractionSnapshotRef.current;
       if (interactionSnapshot) {
         const previousOverlay = interactionSnapshot.overlays.find(
-          (overlay) => overlay.floorId === activeFloor.id,
+          (overlay) => overlay.floorId === activeLevel.id,
         );
         if (previousOverlay && !overlayCornersEqual(previousOverlay.corners, corners)) {
           overlayInteractionChangedRef.current = true;
@@ -1202,7 +1202,7 @@ function App() {
         updatedAt: new Date().toISOString(),
       }));
     },
-    [activeFloor, applyToCurrentOverlay],
+    [activeLevel, applyToCurrentOverlay],
   );
 
   const onOverlayInteractionEnd = useCallback(() => {
@@ -1233,7 +1233,7 @@ function App() {
     }));
   }, []);
 
-  const floorCenter = useCallback(
+  const levelCenter = useCallback(
     (floorId: string): Coordinates | undefined => {
       const floorOverlay = overlays.find((overlay) => overlay.floorId === floorId);
       if (floorOverlay) {
@@ -1283,11 +1283,11 @@ function App() {
         return directBuildingLocation;
       }
 
-      const floorIds = floors
+      const floorIds = levels
         .filter((floor) => floor.buildingId === buildingId)
         .map((floor) => floor.id);
       for (const floorId of floorIds) {
-        const center = floorCenter(floorId);
+        const center = levelCenter(floorId);
         if (center) {
           return center;
         }
@@ -1295,12 +1295,12 @@ function App() {
 
       return undefined;
     },
-    [buildings, floors, floorCenter],
+    [buildings, levels, levelCenter],
   );
 
   const uploadOverlayForCurrentFloor = useCallback(
     (file: File) => {
-      if (!activeFloor) {
+      if (!activeLevel) {
         return;
       }
 
@@ -1314,7 +1314,7 @@ function App() {
         setOverlays((current) => {
           const nextOverlay: FloorOverlay = {
             id: selectedOverlay?.id ?? createId(),
-            floorId: activeFloor.id,
+            floorId: activeLevel.id,
             imageName: file.name,
             imageDataUrl: dataUrl,
             opacity: selectedOverlay?.opacity ?? 30,
@@ -1323,13 +1323,13 @@ function App() {
             updatedAt: new Date().toISOString(),
           };
 
-          const withoutCurrent = current.filter((overlay) => overlay.floorId !== activeFloor.id);
+          const withoutCurrent = current.filter((overlay) => overlay.floorId !== activeLevel.id);
           return [...withoutCurrent, nextOverlay];
         });
       };
       reader.readAsDataURL(file);
     },
-    [mapView.center, mapView.zoom, activeFloor, selectedOverlay],
+    [mapView.center, mapView.zoom, activeLevel, selectedOverlay],
   );
 
   const selectNode = useCallback(
@@ -1341,7 +1341,7 @@ function App() {
       } else if (nextSelection.kind === "building") {
         targetCenter = buildingCenter(nextSelection.id);
       } else if (nextSelection.kind === "floor" || nextSelection.kind === "level") {
-        targetCenter = floorCenter(nextSelection.id);
+        targetCenter = levelCenter(nextSelection.id);
       } else {
         const feature = editorState.features.find((current) => current.id === nextSelection.id);
         targetCenter = feature ? geometryCenter(feature.geometry) : undefined;
@@ -1360,7 +1360,7 @@ function App() {
 
       setEditorState((current) => selectFeature(current, undefined));
     },
-    [buildingCenter, buildings, cancelDrawMode, editorState.features, floorCenter, relocateMap],
+    [buildingCenter, buildings, cancelDrawMode, editorState.features, levelCenter, relocateMap],
   );
 
   const onAddBuilding = useCallback(
@@ -1370,23 +1370,23 @@ function App() {
         (current) => (current.venueId ?? resolvedVenueId) === resolvedVenueId,
       ).length;
       const buildingId = createId();
-      const floorId = createId();
+      const levelId = createId();
       const building: Building = {
         id: buildingId,
         venueId: resolvedVenueId,
         name: `Building ${buildingCount + 1}`,
         location: mapView.center,
       };
-      const floor: Floor = {
-        id: floorId,
+      const level: Level = {
+        id: levelId,
         buildingId,
-        name: "Ground Floor",
+        name: "Ground Level",
       };
 
       applyProjectMutation("Building added", () => {
         setBuildings((current) => [...current, building]);
-        setFloors((current) => [...current, floor]);
-        setSelection({ kind: "level", id: floorId });
+        setLevels((current) => [...current, level]);
+        setSelection({ kind: "level", id: levelId });
         setEditorState((current) => selectFeature(current, undefined));
       });
     },
@@ -1405,7 +1405,7 @@ function App() {
 
   const onDeleteBuilding = useCallback(
     (buildingId: string) => {
-      const floorsToDelete = floors
+      const floorsToDelete = levels
         .filter((floor) => floor.buildingId === buildingId)
         .map((floor) => floor.id);
       const buildingName =
@@ -1413,18 +1413,18 @@ function App() {
 
       requestProjectConfirmation({
         title: "Delete building?",
-        message: `Delete "${buildingName}" and all its floors and features?`,
+        message: `Delete "${buildingName}" and all its levels and features?`,
         confirmLabel: "Yes",
         apply: () =>
           applyProjectMutation("Building deleted", () => {
             const nextBuildings = buildings.filter((building) => building.id !== buildingId);
-            const nextFloors = floors.filter((floor) => floor.buildingId !== buildingId);
+            const nextLevels = levels.filter((floor) => floor.buildingId !== buildingId);
             const nextFeatures = editorState.features.filter(
               (feature) => !floorsToDelete.includes(feature.properties.floorId ?? ""),
             );
 
             setBuildings(nextBuildings);
-            setFloors(nextFloors);
+            setLevels(nextLevels);
             setOverlays((current) =>
               current.filter((overlay) => !floorsToDelete.includes(overlay.floorId)),
             );
@@ -1443,8 +1443,8 @@ function App() {
             const nextSelection = firstValidSelection({
               venues,
               buildings: nextBuildings,
-              levels: nextFloors,
-              floors: nextFloors,
+              levels: nextLevels,
+              floors: nextLevels,
               features: nextFeatures,
             });
             setSelection(nextSelection);
@@ -1454,28 +1454,28 @@ function App() {
     [
       venues,
       buildings,
-      floors,
+      levels,
       editorState.features,
       applyProjectMutation,
       requestProjectConfirmation,
     ],
   );
 
-  const onAddFloor = useCallback(
+  const onAddLevel = useCallback(
     (buildingId: string) => {
-      const nextFloor: Floor = {
+      const nextLevel: Level = {
         id: createId(),
         buildingId,
-        name: `Floor ${floors.filter((current) => current.buildingId === buildingId).length + 1}`,
+        name: `Level ${levels.filter((current) => current.buildingId === buildingId).length + 1}`,
       };
 
-      applyProjectMutation("Floor added", () => {
-        setFloors((current) => [...current, nextFloor]);
-        setSelection({ kind: "floor", id: nextFloor.id });
+      applyProjectMutation("Level added", () => {
+        setLevels((current) => [...current, nextLevel]);
+        setSelection({ kind: "level", id: nextLevel.id });
         setEditorState((current) => selectFeature(current, undefined));
       });
     },
-    [applyProjectMutation, floors],
+    [applyProjectMutation, levels],
   );
 
   const onRenameBuilding = useCallback(
@@ -1641,14 +1641,14 @@ function App() {
       }
       const result = await exportBuildingImdfZip({
         building,
-        floors,
+        floors: levels,
         features: editorState.features,
         overlays,
       });
       setArchiveWarnings(result.warnings);
       downloadBlob(result.blob, `${building.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
     },
-    [buildings, editorState.features, floors, overlays],
+    [buildings, editorState.features, levels, overlays],
   );
 
   const onImportBuildingArchive = useCallback(
@@ -1681,7 +1681,7 @@ function App() {
             })),
           ),
         );
-        setFloors((current) => upsertById(current, imported.value.floors));
+        setLevels((current) => upsertById(current, imported.value.floors));
         setOverlays((current) => upsertById(current, imported.value.overlays));
         setEditorState((current) =>
           replaceAllFeatures(current, upsertById(current.features, imported.value.features)),
@@ -1691,12 +1691,12 @@ function App() {
     [activeVenue?.id, applyProjectMutation, venues],
   );
 
-  const onRenameFloor = useCallback(
-    (floorId: string, name: string) => {
-      applyProjectMutation("Floor renamed", () => {
-        setFloors((current) =>
-          current.map((floor) =>
-            floor.id === floorId ? { ...floor, name: name || "Untitled floor" } : floor,
+  const onRenameLevel = useCallback(
+    (levelId: string, name: string) => {
+      applyProjectMutation("Level renamed", () => {
+        setLevels((current) =>
+          current.map((level) =>
+            level.id === levelId ? { ...level, name: name || "Untitled level" } : level,
           ),
         );
       });
@@ -1704,27 +1704,27 @@ function App() {
     [applyProjectMutation],
   );
 
-  const onDeleteFloor = useCallback(
-    (floorId: string) => {
-      const floor = floors.find((current) => current.id === floorId);
-      if (!floor) {
+  const onDeleteLevel = useCallback(
+    (levelId: string) => {
+      const level = levels.find((current) => current.id === levelId);
+      if (!level) {
         return;
       }
 
       requestProjectConfirmation({
-        title: "Delete floor?",
-        message: `Delete "${floor.name}" and all features on this floor?`,
+        title: "Delete level?",
+        message: `Delete "${level.name}" and all features on this level?`,
         confirmLabel: "Yes",
         apply: () =>
-          applyProjectMutation("Floor deleted", () => {
-            const nextFloors = floors.filter((current) => current.id !== floorId);
+          applyProjectMutation("Level deleted", () => {
+            const nextLevels = levels.filter((current) => current.id !== levelId);
             const nextFeatures = editorState.features.filter(
-              (feature) => feature.properties.floorId !== floorId,
+              (feature) => feature.properties.floorId !== levelId,
             );
-            setFloors(nextFloors);
-            setOverlays((current) => current.filter((overlay) => overlay.floorId !== floorId));
+            setLevels(nextLevels);
+            setOverlays((current) => current.filter((overlay) => overlay.floorId !== levelId));
             setLockedOverlayFloorIds((current) =>
-              current.filter((currentFloorId) => currentFloorId !== floorId),
+              current.filter((currentFloorId) => currentFloorId !== levelId),
             );
             setEditorState((current) =>
               replaceAllFeatures(selectFeature(current, undefined), nextFeatures),
@@ -1735,41 +1735,41 @@ function App() {
               ),
             );
 
-            const nextFloor =
-              nextFloors.find((current) => current.buildingId === floor.buildingId) ??
-              nextFloors[0];
-            if (nextFloor) {
-              setSelection({ kind: "floor", id: nextFloor.id });
+            const nextLevel =
+              nextLevels.find((current) => current.buildingId === level.buildingId) ??
+              nextLevels[0];
+            if (nextLevel) {
+              setSelection({ kind: "level", id: nextLevel.id });
             } else {
-              setSelection({ kind: "building", id: floor.buildingId });
+              setSelection({ kind: "building", id: level.buildingId });
             }
           }),
       });
     },
-    [floors, editorState.features, applyProjectMutation, requestProjectConfirmation],
+    [levels, editorState.features, applyProjectMutation, requestProjectConfirmation],
   );
 
-  const onCloneFloor = useCallback(
-    (floorId: string) => {
-      const sourceFloor = floors.find((floor) => floor.id === floorId);
-      if (!sourceFloor) {
+  const onCloneLevel = useCallback(
+    (levelId: string) => {
+      const sourceLevel = levels.find((level) => level.id === levelId);
+      if (!sourceLevel) {
         return;
       }
 
       requestProjectConfirmation({
-        title: "Clone floor?",
-        message: `Clone "${sourceFloor.name}" including features and overlay?`,
+        title: "Clone level?",
+        message: `Clone "${sourceLevel.name}" including features and overlay?`,
         confirmLabel: "Yes",
         apply: () =>
-          applyProjectMutation("Floor cloned", () => {
-            const clone = cloneFloorWithReferences({
-              floor: sourceFloor,
-              floors,
+          applyProjectMutation("Level cloned", () => {
+            const clone = cloneLevelWithReferences({
+              level: sourceLevel,
+              levels,
               features: editorState.features,
               overlays,
             });
 
-            setFloors((current) => [...current, clone.floor]);
+            setLevels((current) => [...current, clone.level]);
             setEditorState((current) =>
               replaceAllFeatures(selectFeature(current, undefined), [
                 ...current.features,
@@ -1780,12 +1780,149 @@ function App() {
             if (cloneOverlay) {
               setOverlays((current) => [...current, cloneOverlay]);
             }
-            setSelection({ kind: "floor", id: clone.floor.id });
+            setSelection({ kind: "level", id: clone.level.id });
             setDrawMode("select");
           }),
       });
     },
-    [editorState.features, floors, overlays, applyProjectMutation, requestProjectConfirmation],
+    [editorState.features, levels, overlays, applyProjectMutation, requestProjectConfirmation],
+  );
+
+  const onAddLevelGeometry = useCallback(
+    (levelId: string) => {
+      const level = levels.find((candidate) => candidate.id === levelId);
+      if (!level) {
+        return;
+      }
+      if (
+        editorState.features.some(
+          (feature) => isLevelGeometryFeature(feature) && feature.properties.floorId === levelId,
+        )
+      ) {
+        return;
+      }
+      setSelection({ kind: "level", id: levelId });
+      startDrawMode("polygon");
+      setPendingDrawFeatureType("level");
+    },
+    [editorState.features, levels, startDrawMode],
+  );
+
+  const onRemoveLevelGeometry = useCallback(
+    (levelId: string) => {
+      const levelGeometryFeatures = getLevelGeometryFeatures(editorState.features, levelId);
+      if (levelGeometryFeatures.length === 0) {
+        return;
+      }
+      const idsToRemove = new Set(levelGeometryFeatures.map((feature) => feature.id));
+      applyProjectMutation("Level geometry removed", () => {
+        setEditorState((current) => {
+          const nextFeatures = current.features.filter((feature) => !idsToRemove.has(feature.id));
+          const nextSelectionId =
+            current.selectedFeatureId && idsToRemove.has(current.selectedFeatureId)
+              ? undefined
+              : current.selectedFeatureId;
+          return selectFeature(replaceAllFeatures(current, nextFeatures), nextSelectionId);
+        });
+      });
+    },
+    [editorState.features, applyProjectMutation],
+  );
+
+  const onUpdateLevelOrdinal = useCallback(
+    (levelId: string, ordinal: number) => {
+      applyProjectMutation("Level ordinal updated", () => {
+        setEditorState((current) => {
+          const nextFeatures = current.features.map((feature) => {
+            if (!isLevelGeometryFeature(feature) || feature.properties.floorId !== levelId) {
+              return feature;
+            }
+            return {
+              ...feature,
+              properties: {
+                ...feature.properties,
+                ordinal,
+              },
+            };
+          });
+          if (areFeatureListsEqual(current.features, nextFeatures)) {
+            return current;
+          }
+          const next = replaceAllFeatures(current, nextFeatures);
+          const nextSelectedId =
+            current.selectedFeatureId &&
+            nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
+              ? current.selectedFeatureId
+              : undefined;
+          return selectFeature(next, nextSelectedId);
+        });
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onUpdateLevelShortName = useCallback(
+    (levelId: string, shortName: string) => {
+      applyProjectMutation("Level short name updated", () => {
+        setEditorState((current) => {
+          const nextFeatures = current.features.map((feature) => {
+            if (!isLevelGeometryFeature(feature) || feature.properties.floorId !== levelId) {
+              return feature;
+            }
+            return {
+              ...feature,
+              properties: {
+                ...feature.properties,
+                short_name: { en: shortName },
+              },
+            };
+          });
+          if (areFeatureListsEqual(current.features, nextFeatures)) {
+            return current;
+          }
+          const next = replaceAllFeatures(current, nextFeatures);
+          const nextSelectedId =
+            current.selectedFeatureId &&
+            nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
+              ? current.selectedFeatureId
+              : undefined;
+          return selectFeature(next, nextSelectedId);
+        });
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onUpdateLevelOutdoor = useCallback(
+    (levelId: string, outdoor: boolean) => {
+      applyProjectMutation("Level outdoor updated", () => {
+        setEditorState((current) => {
+          const nextFeatures = current.features.map((feature) => {
+            if (!isLevelGeometryFeature(feature) || feature.properties.floorId !== levelId) {
+              return feature;
+            }
+            return {
+              ...feature,
+              properties: {
+                ...feature.properties,
+                outdoor,
+              },
+            };
+          });
+          if (areFeatureListsEqual(current.features, nextFeatures)) {
+            return current;
+          }
+          const next = replaceAllFeatures(current, nextFeatures);
+          const nextSelectedId =
+            current.selectedFeatureId &&
+            nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
+              ? current.selectedFeatureId
+              : undefined;
+          return selectFeature(next, nextSelectedId);
+        });
+      });
+    },
+    [applyProjectMutation],
   );
 
   const onCreateFeature = useCallback(
@@ -1924,7 +2061,7 @@ function App() {
               <BuildingsTree
                 venues={venues}
                 buildings={buildings}
-                levels={floors}
+                levels={levels}
                 features={editorState.features}
                 selection={selection}
                 onSelect={selectNode}
@@ -2206,15 +2343,15 @@ function App() {
                 selection={selection}
                 venue={selectedVenue}
                 building={resolvedSelection?.building}
-                levels={floors}
-                level={activeFloor}
+                levels={levels}
+                level={activeLevel}
                 feature={selectedFeature}
                 allFeatures={editorState.features}
                 overlay={selectedOverlayForMap}
                 featureLocked={Boolean(
                   selectedFeature && lockedFeatureIdsSet.has(selectedFeature.id),
                 )}
-                overlayLocked={Boolean(activeFloor && lockedOverlayFloorIdsSet.has(activeFloor.id))}
+                overlayLocked={Boolean(activeLevel && lockedOverlayFloorIdsSet.has(activeLevel.id))}
                 onFeatureToggleLock={(featureId) => {
                   setLockedFeatureIds((current) =>
                     current.includes(featureId)
@@ -2232,20 +2369,25 @@ function App() {
                 onImportBuildingArchive={onImportBuildingArchive}
                 archiveWarnings={archiveWarnings}
                 onDeleteBuilding={onDeleteBuilding}
-                onAddLevel={onAddFloor}
-                onRenameLevel={onRenameFloor}
-                onCloneLevel={onCloneFloor}
-                onDeleteLevel={onDeleteFloor}
+                onAddLevel={onAddLevel}
+                onRenameLevel={onRenameLevel}
+                onCloneLevel={onCloneLevel}
+                onDeleteLevel={onDeleteLevel}
+                onAddLevelGeometry={onAddLevelGeometry}
+                onRemoveLevelGeometry={onRemoveLevelGeometry}
+                onUpdateLevelOrdinal={onUpdateLevelOrdinal}
+                onUpdateLevelShortName={onUpdateLevelShortName}
+                onUpdateLevelOutdoor={onUpdateLevelOutdoor}
                 onCreateFeature={onCreateFeature}
                 onUpdateFeatureProperty={(featureId, key, value) => {
-                  const floor = floors.find(
+                  const level = levels.find(
                     (current) =>
                       current.id ===
                       editorState.features.find((feature) => feature.id === featureId)?.properties
                         .floorId,
                   );
-                  const building = floor
-                    ? buildings.find((current) => current.id === floor.buildingId)
+                  const building = level
+                    ? buildings.find((current) => current.id === level.buildingId)
                     : undefined;
 
                   setEditorState((current) =>
@@ -2259,7 +2401,7 @@ function App() {
                           },
                         },
                         {
-                          floorId: floor?.id ?? activeFloor?.id ?? feature.properties.floorId ?? "",
+                          floorId: level?.id ?? activeLevel?.id ?? feature.properties.floorId ?? "",
                           buildingId:
                             building?.id ??
                             activeBuilding?.id ??
@@ -2305,7 +2447,7 @@ function App() {
                         );
 
                         if (deletedFeature?.properties.floorId) {
-                          setSelection({ kind: "floor", id: deletedFeature.properties.floorId });
+                          setSelection({ kind: "level", id: deletedFeature.properties.floorId });
                         }
                       }),
                   });
@@ -2316,7 +2458,7 @@ function App() {
                     return;
                   }
 
-                  const floor = floors.find((current) => current.id === source.properties.floorId);
+                  const floor = levels.find((current) => current.id === source.properties.floorId);
                   const building = floor
                     ? buildings.find((current) => current.id === floor.buildingId)
                     : activeBuilding;
@@ -2344,13 +2486,13 @@ function App() {
                 }}
                 onOverlayUpload={uploadOverlayForCurrentFloor}
                 onOverlayOpacityChange={(opacity) => {
-                  if (!activeFloor) {
+                  if (!activeLevel) {
                     return;
                   }
 
                   setOverlays((current) =>
                     current.map((overlay) =>
-                      overlay.floorId === activeFloor.id
+                      overlay.floorId === activeLevel.id
                         ? { ...overlay, opacity, updatedAt: new Date().toISOString() }
                         : overlay,
                     ),
@@ -2364,13 +2506,13 @@ function App() {
                   }));
                 }}
                 onOverlayToggleVisibility={() => {
-                  if (!activeFloor) {
+                  if (!activeLevel) {
                     return;
                   }
 
                   setOverlays((current) =>
                     current.map((overlay) =>
-                      overlay.floorId === activeFloor.id
+                      overlay.floorId === activeLevel.id
                         ? {
                             ...overlay,
                             visible: overlay.visible === false,
@@ -2381,14 +2523,14 @@ function App() {
                   );
                 }}
                 onOverlayToggleLock={() => {
-                  if (!activeFloor) {
+                  if (!activeLevel) {
                     return;
                   }
 
                   setLockedOverlayFloorIds((current) =>
-                    current.includes(activeFloor.id)
-                      ? current.filter((floorId) => floorId !== activeFloor.id)
-                      : [...current, activeFloor.id],
+                    current.includes(activeLevel.id)
+                      ? current.filter((floorId) => floorId !== activeLevel.id)
+                      : [...current, activeLevel.id],
                   );
                 }}
               />

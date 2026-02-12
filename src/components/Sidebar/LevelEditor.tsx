@@ -3,7 +3,7 @@ import type { SupportedImdfType } from "../../lib/imdf/schema";
 import type { FloorFeature, FloorOverlay, Level } from "../../lib/types";
 import { AddFeatureButtonGroups } from "./AddFeatureButtonGroups";
 
-type FloorEditorProps = {
+type LevelEditorProps = {
   level: Level;
   levelFeatures: FloorFeature[];
   overlay: FloorOverlay | undefined;
@@ -12,6 +12,15 @@ type FloorEditorProps = {
   onRenameLevel: (name: string) => void;
   onCloneLevel: () => void;
   onDeleteLevel: () => void;
+  hasLevelGeometry: boolean;
+  levelOrdinal: number;
+  levelShortName: string;
+  levelOutdoor: boolean;
+  onAddLevelGeometry: () => void;
+  onRemoveLevelGeometry: () => void;
+  onUpdateLevelOrdinal: (ordinal: number) => void;
+  onUpdateLevelShortName: (shortName: string) => void;
+  onUpdateLevelOutdoor: (outdoor: boolean) => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
@@ -20,7 +29,7 @@ type FloorEditorProps = {
   onOverlayToggleLock: () => void;
 };
 
-export const FloorEditor = ({
+export const LevelEditor = ({
   level,
   levelFeatures,
   overlay,
@@ -29,13 +38,22 @@ export const FloorEditor = ({
   onRenameLevel,
   onCloneLevel,
   onDeleteLevel,
+  hasLevelGeometry,
+  levelOrdinal,
+  levelShortName,
+  levelOutdoor,
+  onAddLevelGeometry,
+  onRemoveLevelGeometry,
+  onUpdateLevelOrdinal,
+  onUpdateLevelShortName,
+  onUpdateLevelOutdoor,
   onCreateFeature,
   onOverlayUpload,
   onOverlayOpacityChange,
   onOverlayRecenter,
   onOverlayToggleVisibility,
   onOverlayToggleLock,
-}: FloorEditorProps) => {
+}: LevelEditorProps) => {
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -83,7 +101,72 @@ export const FloorEditor = ({
           />
         </label>
 
+        <div className="rounded-box border border-base-300 p-3">
+          <div className="mb-2 text-sm font-semibold">Level metadata</div>
+          <div className="grid gap-2">
+            <label className="form-control gap-1">
+              <span className="label-text">Ordinal (numeric floor level)</span>
+              <input
+                className="input input-bordered input-sm"
+                type="number"
+                value={levelOrdinal}
+                onChange={(event) => onUpdateLevelOrdinal(Number(event.currentTarget.value) || 0)}
+                disabled={!hasLevelGeometry}
+                aria-label="Level ordinal"
+              />
+            </label>
+            <label className="form-control gap-1">
+              <span className="label-text">Short name</span>
+              <input
+                className="input input-bordered input-sm"
+                type="text"
+                value={levelShortName}
+                onChange={(event) => onUpdateLevelShortName(event.currentTarget.value)}
+                disabled={!hasLevelGeometry}
+                aria-label="Level short name"
+              />
+            </label>
+            <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+              <span className="label-text">Outdoor level</span>
+              <input
+                type="checkbox"
+                className="toggle toggle-sm"
+                checked={levelOutdoor}
+                onChange={(event) => onUpdateLevelOutdoor(event.currentTarget.checked)}
+                disabled={!hasLevelGeometry}
+                aria-label="Level outdoor"
+              />
+            </label>
+            {!hasLevelGeometry ? (
+              <p className="text-xs text-base-content/70">
+                Add geometry to enable IMDF level metadata editing.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
         <AddFeatureButtonGroups typeCounts={typeCounts} onCreateFeature={onCreateFeature} />
+
+        <div className="flex gap-2">
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={onAddLevelGeometry}
+            disabled={hasLevelGeometry}
+            aria-label="Add level geometry"
+          >
+            Add geometry
+          </button>
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={onRemoveLevelGeometry}
+            disabled={!hasLevelGeometry}
+            aria-label="Remove level geometry"
+          >
+            Remove geometry
+          </button>
+        </div>
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onCloneLevel}>
@@ -185,7 +268,7 @@ export const FloorEditor = ({
           <summary className="cursor-pointer font-medium">Path diagnostics</summary>
           <div className="mt-3 text-sm">
             {pathDiagnostics.length === 0 ? (
-              <div className="text-success">No path issues found on this floor.</div>
+              <div className="text-success">No path issues found on this level.</div>
             ) : (
               <ul className="list-disc pl-4">
                 {pathDiagnostics.map((issue) => (

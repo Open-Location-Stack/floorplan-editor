@@ -1,4 +1,5 @@
 import type { Selection } from "../../lib/editor/selection";
+import { getLevelGeometryFeatures, hasLevelGeometry } from "../../lib/imdf/levelGeometry";
 import type { SupportedImdfType } from "../../lib/imdf/schema";
 import { validateFloor } from "../../lib/imdf/validate";
 import type {
@@ -12,7 +13,7 @@ import type {
 } from "../../lib/types";
 import { BuildingEditor } from "./BuildingEditor";
 import { FeatureEditor } from "./FeatureEditor";
-import { FloorEditor } from "./FloorEditor";
+import { LevelEditor } from "./LevelEditor";
 import { VenueEditor } from "./VenueEditor";
 
 type SelectionSidebarProps = {
@@ -40,6 +41,11 @@ type SelectionSidebarProps = {
   onRenameLevel: (levelId: string, name: string) => void;
   onCloneLevel: (levelId: string) => void;
   onDeleteLevel: (levelId: string) => void;
+  onAddLevelGeometry: (levelId: string) => void;
+  onRemoveLevelGeometry: (levelId: string) => void;
+  onUpdateLevelOrdinal: (levelId: string, ordinal: number) => void;
+  onUpdateLevelShortName: (levelId: string, shortName: string) => void;
+  onUpdateLevelOutdoor: (levelId: string, outdoor: boolean) => void;
   onCreateFeature: (type: SupportedImdfType) => void;
   onUpdateFeatureProperty: (featureId: string, key: string, value: JsonValue | undefined) => void;
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
@@ -78,6 +84,11 @@ export const SelectionSidebar = ({
   onRenameLevel,
   onCloneLevel,
   onDeleteLevel,
+  onAddLevelGeometry,
+  onRemoveLevelGeometry,
+  onUpdateLevelOrdinal,
+  onUpdateLevelShortName,
+  onUpdateLevelOutdoor,
   onCreateFeature,
   onUpdateFeatureProperty,
   onUpdateFeatureMetadata,
@@ -146,17 +157,42 @@ export const SelectionSidebar = ({
 
   if ((selection.kind === "level" || selection.kind === "floor") && level) {
     const levelFeatures = allFeatures.filter((current) => current.properties.floorId === level.id);
+    const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
+    const levelShortName = (() => {
+      const shortName = levelGeometryFeature?.properties.short_name;
+      if (shortName && typeof shortName === "object" && !Array.isArray(shortName)) {
+        const english = (shortName as { en?: unknown }).en;
+        if (typeof english === "string") {
+          return english;
+        }
+      }
+      return level.name;
+    })();
+    const levelOrdinal =
+      typeof levelGeometryFeature?.properties.ordinal === "number"
+        ? levelGeometryFeature.properties.ordinal
+        : 0;
+    const levelOutdoor = Boolean(levelGeometryFeature?.properties.outdoor);
     const validation = validateFloor(level.id, allFeatures);
 
     return (
-      <FloorEditor
+      <LevelEditor
         level={level}
         levelFeatures={levelFeatures}
+        hasLevelGeometry={hasLevelGeometry(levelFeatures, level.id)}
+        levelOrdinal={levelOrdinal}
+        levelShortName={levelShortName}
+        levelOutdoor={levelOutdoor}
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
         onRenameLevel={(name) => onRenameLevel(level.id, name)}
         onCloneLevel={() => onCloneLevel(level.id)}
         onDeleteLevel={() => onDeleteLevel(level.id)}
+        onAddLevelGeometry={() => onAddLevelGeometry(level.id)}
+        onRemoveLevelGeometry={() => onRemoveLevelGeometry(level.id)}
+        onUpdateLevelOrdinal={(ordinal) => onUpdateLevelOrdinal(level.id, ordinal)}
+        onUpdateLevelShortName={(shortName) => onUpdateLevelShortName(level.id, shortName)}
+        onUpdateLevelOutdoor={(outdoor) => onUpdateLevelOutdoor(level.id, outdoor)}
         onCreateFeature={onCreateFeature}
         onOverlayUpload={onOverlayUpload}
         onOverlayOpacityChange={onOverlayOpacityChange}

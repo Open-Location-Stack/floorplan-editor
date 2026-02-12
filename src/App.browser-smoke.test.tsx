@@ -1267,6 +1267,118 @@ describe("App browser smoke", () => {
     });
   });
 
+  it("manages level geometry with add/remove controls and keeps hierarchy flat", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      buildings: [{ id: "building-1", name: "HQ Building" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Level" }],
+      features: [
+        {
+          type: "Feature",
+          id: "level-geometry-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "floor-1",
+            name: "Nested Level Feature",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("button", { name: "Nested Level Feature" })).not.toBeInTheDocument();
+
+    const addGeometryButton = screen.getByRole("button", { name: /add level geometry/i });
+    const removeGeometryButton = screen.getByRole("button", { name: /remove level geometry/i });
+    const ordinalInput = screen.getByRole("spinbutton", { name: /level ordinal/i });
+    const shortNameInput = screen.getByRole("textbox", { name: /level short name/i });
+    const outdoorToggle = screen.getByRole("checkbox", { name: /level outdoor/i });
+
+    expect(addGeometryButton).toBeDisabled();
+    expect(removeGeometryButton).toBeEnabled();
+    expect(ordinalInput).toBeEnabled();
+    expect(shortNameInput).toBeEnabled();
+    expect(outdoorToggle).toBeEnabled();
+
+    fireEvent.change(ordinalInput, { target: { value: "2" } });
+    fireEvent.change(shortNameInput, { target: { value: "G" } });
+    fireEvent.click(outdoorToggle);
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          properties: {
+            kind?: string;
+            floorId?: string;
+            ordinal?: number;
+            short_name?: { en?: string };
+            outdoor?: boolean;
+          };
+        }>;
+      };
+      const levelFeature = latestSnapshot.features.find(
+        (feature) =>
+          feature.properties.kind === "level" && feature.properties.floorId === "floor-1",
+      );
+      expect(levelFeature?.properties.ordinal).toBe(2);
+      expect(levelFeature?.properties.short_name).toEqual({ en: "G" });
+      expect(levelFeature?.properties.outdoor).toBe(true);
+    });
+
+    fireEvent.click(removeGeometryButton);
+
+    await waitFor(() => {
+      expect(addGeometryButton).toBeEnabled();
+      expect(removeGeometryButton).toBeDisabled();
+    });
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          properties: {
+            kind?: string;
+            floorId?: string;
+          };
+        }>;
+      };
+      expect(
+        latestSnapshot.features.some(
+          (feature) =>
+            feature.properties.kind === "level" && feature.properties.floorId === "floor-1",
+        ),
+      ).toBe(false);
+    });
+  });
+
   it("allows deleting the last floor and cascades floor data", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",

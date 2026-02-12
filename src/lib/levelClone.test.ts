@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneFloorWithReferences } from "./floorClone";
+import { cloneLevelWithReferences } from "./levelClone";
 import type { FloorFeature, FloorOverlay } from "./types";
 
 const createIdSequence = (...ids: string[]): (() => string) => {
@@ -14,7 +14,7 @@ const createIdSequence = (...ids: string[]): (() => string) => {
   };
 };
 
-describe("cloneFloorWithReferences", () => {
+describe("cloneLevelWithReferences", () => {
   it("deep clones floor data and remaps ids and references", () => {
     const sourceFeatureA: FloorFeature = {
       type: "Feature",
@@ -86,9 +86,9 @@ describe("cloneFloorWithReferences", () => {
       updatedAt: "2026-02-01T10:00:00.000Z",
     };
 
-    const result = cloneFloorWithReferences({
-      floor: { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
-      floors: [
+    const result = cloneLevelWithReferences({
+      level: { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
+      levels: [
         { id: "floor-1", buildingId: "building-1", name: "Ground Floor" },
         { id: "floor-2", buildingId: "building-1", name: "Ground Floor copy" },
       ],
@@ -98,8 +98,8 @@ describe("cloneFloorWithReferences", () => {
       timestamp: "2026-02-10T12:00:00.000Z",
     });
 
-    expect(result.floor.id).toBe("floor-3");
-    expect(result.floor.name).toBe("Ground Floor copy 2");
+    expect(result.level.id).toBe("floor-3");
+    expect(result.level.name).toBe("Ground Floor copy 2");
     expect(result.features).toHaveLength(2);
     expect(result.overlay?.id).toBe("overlay-2");
     expect(result.overlay?.floorId).toBe("floor-3");
