@@ -80,4 +80,31 @@ describe("path graph + point routing", () => {
     expect(snapped).toBeDefined();
     expect(snapped?.coordinate[1]).toBeCloseTo(52.09, 6);
   });
+
+  it("routes across relationship line features", () => {
+    const features: FloorFeature[] = [
+      {
+        type: "Feature",
+        id: "relationship-main",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.09],
+            [5.122, 52.09],
+          ],
+        },
+        properties: {
+          kind: "relationship",
+          imdfType: "relationship",
+          floorId: "f1",
+          level_id: "f1",
+        },
+      },
+    ];
+
+    const graph = buildPathGraph(features);
+    const route = findRouteBetweenPoints(graph, [5.1201, 52.0902], [5.1218, 52.0898]);
+    expect(route.found).toBe(true);
+    expect(route.routeCoordinates.length).toBeGreaterThanOrEqual(2);
+  });
 });

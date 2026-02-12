@@ -19,6 +19,18 @@ describe("sanitizeProjectSnapshot", () => {
         },
         {
           type: "Feature",
+          id: "ok-relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5, 52],
+              [5.001, 52.001],
+            ],
+          },
+          properties: { kind: "relationship" },
+        },
+        {
+          type: "Feature",
           id: "broken",
           geometry: { type: "Polygon", coordinates: [[[5, 52]]] },
           properties: { kind: "unit" },
@@ -56,8 +68,11 @@ describe("sanitizeProjectSnapshot", () => {
       ],
     });
 
-    expect(sanitized.features).toHaveLength(1);
+    expect(sanitized.features).toHaveLength(2);
     expect(sanitized.features[0]?.properties.floorId).toBe("f1");
+    expect(sanitized.features.some((feature) => feature.properties.kind === "relationship")).toBe(
+      true,
+    );
     expect(sanitized.overlays).toHaveLength(1);
     expect(sanitized.overlays[0]?.opacity).toBe(100);
     expect(sanitized.overlays[0]?.visible).toBe(true);

@@ -25,7 +25,7 @@ const DRAWABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
   },
   {
     title: "Paths",
-    types: ["opening"],
+    types: ["opening", "relationship"],
   },
   {
     title: "Points",

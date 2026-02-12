@@ -39,10 +39,15 @@ const classifyFeatureType = (feature: FloorFeature): string =>
     ? feature.properties.imdfType
     : feature.properties.kind;
 
+const isRoutableLineType = (type: string): boolean => type === "opening" || type === "relationship";
+
 const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
   const segments: Segment[] = [];
   for (const feature of features) {
-    if (classifyFeatureType(feature) !== "opening" || feature.geometry.type !== "LineString") {
+    if (
+      !isRoutableLineType(classifyFeatureType(feature)) ||
+      feature.geometry.type !== "LineString"
+    ) {
       continue;
     }
     const floorId = feature.properties.floorId;
