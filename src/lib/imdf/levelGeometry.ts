@@ -1,11 +1,7 @@
 import type { FloorFeature } from "../types";
 
 export const isLevelGeometryFeature = (feature: FloorFeature): boolean => {
-  const featureType =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
-  return featureType === "level" && feature.geometry.type === "Polygon";
+  return feature.feature_type === "level" && feature.geometry.type === "Polygon";
 };
 
 export const getLevelGeometryFeatures = (
@@ -13,7 +9,7 @@ export const getLevelGeometryFeatures = (
   levelId: string,
 ): FloorFeature[] =>
   features.filter(
-    (feature) => feature.properties.floorId === levelId && isLevelGeometryFeature(feature),
+    (feature) => feature.properties.level_id === levelId && isLevelGeometryFeature(feature),
   );
 
 export const hasLevelGeometry = (features: FloorFeature[], levelId: string): boolean =>

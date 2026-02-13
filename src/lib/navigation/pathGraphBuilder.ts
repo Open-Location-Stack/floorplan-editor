@@ -6,7 +6,7 @@ const INTERSECTION_EPSILON = 1e-9;
 
 type Segment = {
   id: string;
-  floorId?: string;
+  level_id?: string;
   from: Coordinates;
   to: Coordinates;
 };
@@ -35,9 +35,10 @@ const interpolate = (from: Coordinates, to: Coordinates, t: number): Coordinates
 ];
 
 const classifyFeatureType = (feature: FloorFeature): string =>
-  typeof feature.properties.imdfType === "string"
+  feature.feature_type ??
+  (typeof feature.properties.imdfType === "string"
     ? feature.properties.imdfType
-    : feature.properties.kind;
+    : (feature.properties.kind ?? ""));
 
 const isRoutableLineType = (type: string): boolean => type === "opening";
 
@@ -50,7 +51,10 @@ const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
     ) {
       continue;
     }
-    const floorId = feature.properties.floorId;
+    const level_id =
+      typeof feature.properties.level_id === "string"
+        ? feature.properties.level_id
+        : feature.properties.floorId;
     for (let index = 0; index < feature.geometry.coordinates.length - 1; index += 1) {
       const from = feature.geometry.coordinates[index];
       const to = feature.geometry.coordinates[index + 1];
@@ -61,7 +65,7 @@ const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
         id: `${feature.id}:${index}`,
         from,
         to,
-        ...(floorId ? { floorId } : {}),
+        ...(level_id ? { level_id } : {}),
       });
     }
   }
@@ -117,7 +121,7 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
     }
     for (let rightIndex = leftIndex + 1; rightIndex < segments.length; rightIndex += 1) {
       const right = segments[rightIndex];
-      if (!right || left.floorId !== right.floorId) {
+      if (!right || left.level_id !== right.level_id) {
         continue;
       }
       const intersection = findIntersection(left.from, left.to, right.from, right.to);
@@ -167,14 +171,14 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
         nodeByKey.set(fromKey, {
           id: fromKey,
           coordinate: fromCoordinate,
-          ...(segment.floorId ? { floorId: segment.floorId } : {}),
+          ...(segment.level_id ? { floorId: segment.level_id } : {}),
         });
       }
       if (!nodeByKey.has(toKey)) {
         nodeByKey.set(toKey, {
           id: toKey,
           coordinate: toCoordinate,
-          ...(segment.floorId ? { floorId: segment.floorId } : {}),
+          ...(segment.level_id ? { floorId: segment.level_id } : {}),
         });
       }
 
@@ -183,7 +187,7 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
         fromNodeId: fromKey,
         toNodeId: toKey,
         weightMeters: distance,
-        ...(segment.floorId ? { floorId: segment.floorId } : {}),
+        ...(segment.level_id ? { floorId: segment.level_id } : {}),
         coordinates: [fromCoordinate, toCoordinate],
       });
       edgeIndex += 1;

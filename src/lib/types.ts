@@ -57,7 +57,7 @@ export type ImdfRelationshipDirection = "directed" | "undirected";
 
 export type RelationshipFeatureRef = {
   featureId: string;
-  floorId?: string;
+  level_id?: string;
 };
 
 export type RelationshipRefs = {
@@ -74,24 +74,19 @@ export type FeatureStyle = {
 };
 
 export type FeatureProperties = {
-  kind: string;
   name?: string | ImdfLabel;
+  level_id?: string;
   floorId?: string;
   buildingId?: string;
-  id?: string;
-  imdf_id?: string;
-  floor_id?: string;
-  level_id?: string;
   building_id?: string;
-  venueId?: string;
-  containmentParentId?: string;
-  containmentParentType?: ImdfFeatureType | "level";
-  featureType?: string;
-  category?: string;
-  externalId?: string;
+  kind?: string;
   imdfType?: string;
-  imdfClass?: string;
   imdf_feature_type?: ImdfFeatureType;
+  feature_type?: string;
+  featureType?: string;
+  externalId?: string;
+  imdfClass?: string;
+  category?: string;
   short_name?: ImdfLabel;
   display_point?: Coordinates;
   ordinal?: number;
@@ -116,15 +111,28 @@ export type FeatureProperties = {
   origin_id?: string;
   intermediary_id?: string;
   destination_id?: string;
-  relation?: RelationshipRefs;
-  style?: FeatureStyle;
+  "formation:relation"?: RelationshipRefs;
+  "formation:style"?: FeatureStyle;
+  "formation:metadata"?: JsonObject;
+  "formation:containment_parent_id"?: string;
+  "formation:containment_parent_type"?: ImdfFeatureType | "level";
   metadata?: JsonObject;
+  relation?: RelationshipRefs;
+  containmentParentId?: string;
+  containmentParentType?: ImdfFeatureType | "level";
+  // Legacy fields remain typed while code is being migrated.
+  floor_id?: string;
+  id?: string;
+  imdf_id?: string;
+  // Internal-only extension keys should be namespaced.
+  [key: `formation:${string}`]: JsonValue | undefined;
   [key: string]: JsonValue | undefined;
 };
 
 export type FloorFeature = {
   type: "Feature";
   id: string;
+  feature_type?: ImdfFeatureType | `formation:${string}`;
   geometry: Geometry;
   properties: FeatureProperties;
 };
@@ -144,6 +152,7 @@ export type OverlayCorners = {
 export type FloorOverlay = {
   id: string;
   floorId: string;
+  level_id?: string;
   imageName: string;
   imageDataUrl: string;
   opacity: number;

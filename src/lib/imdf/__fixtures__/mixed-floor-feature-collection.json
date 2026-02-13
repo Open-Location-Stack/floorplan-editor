@@ -18,10 +18,8 @@
       },
       "properties": {
         "kind": "level",
-        "imdfType": "level",
+        "feature_type": "level",
         "name": "Ground floor",
-        "floorId": "floor-1",
-        "buildingId": "building-1",
         "level_id": "floor-1",
         "building_id": "building-1"
       }
@@ -43,10 +41,8 @@
       },
       "properties": {
         "kind": "unit",
-        "imdfType": "unit",
+        "feature_type": "unit",
         "name": "Room 101",
-        "floorId": "floor-1",
-        "buildingId": "building-1",
         "level_id": "floor-1",
         "building_id": "building-1",
         "category": "unspecified"
@@ -61,10 +57,8 @@
       },
       "properties": {
         "kind": "path",
-        "imdfType": "path",
+        "feature_type": "path",
         "name": "Main path",
-        "floorId": "floor-1",
-        "buildingId": "building-1",
         "level_id": "floor-1",
         "building_id": "building-1",
         "connects_to": ["unit-101", "floor-1"]

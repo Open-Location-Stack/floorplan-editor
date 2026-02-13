@@ -359,7 +359,11 @@ export const buildImdfArchivePayload = ({
   const floorsInBuilding = floors.filter((floor) => floor.buildingId === building.id);
   const floorIds = new Set(floorsInBuilding.map((floor) => floor.id));
   const featuresInBuilding = features.filter((feature) =>
-    floorIds.has(feature.properties.floorId ?? ""),
+    floorIds.has(
+      (typeof feature.properties.level_id === "string"
+        ? feature.properties.level_id
+        : feature.properties.floorId) ?? "",
+    ),
   );
   const featureUuidById = new Map(
     featuresInBuilding.map((feature) => [feature.id, resolveImdfUuid(feature.id)]),
@@ -372,17 +376,20 @@ export const buildImdfArchivePayload = ({
 
   const levelPolygons: Array<Extract<FloorFeature["geometry"], { type: "Polygon" }>> = [];
   const levelFeatures = featuresInBuilding.filter(
-    (feature) => readImdfType(feature.properties.imdfType) === "level",
+    (feature) =>
+      (readImdfType(feature.feature_type) ??
+        readImdfType(feature.properties.imdfType) ??
+        readImdfType(feature.properties.kind)) === "level",
   );
   for (const floor of floorsInBuilding) {
     const floorLevelFeature = levelFeatures.find(
-      (feature) => feature.properties.floorId === floor.id,
+      (feature) => feature.properties.level_id === floor.id,
     );
     const sourcePolygon = floorLevelFeature
       ? normalizePolygon(floorLevelFeature.geometry)
       : undefined;
     const floorCoordinates = featuresInBuilding
-      .filter((feature) => feature.properties.floorId === floor.id)
+      .filter((feature) => feature.properties.level_id === floor.id)
       .flatMap((feature) => geometryCoordinates(feature.geometry));
     const fallbackPolygon = polygonFromBbox(bboxFromCoordinates(floorCoordinates), 0);
     const geometry = sourcePolygon ?? fallbackPolygon;
@@ -499,7 +506,9 @@ export const buildImdfArchivePayload = ({
   const datasetTypeSet = new Set<string>(IMDF_STANDARD_DATASET_TYPES);
   for (const feature of featuresInBuilding) {
     const mappedType =
-      readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
+      readImdfType(feature.feature_type) ??
+      readImdfType(feature.properties.imdfType) ??
+      readImdfType(feature.properties.kind);
     if (!mappedType || !datasetTypeSet.has(mappedType) || mappedType === "level") {
       continue;
     }
@@ -514,8 +523,8 @@ export const buildImdfArchivePayload = ({
     }
     const spec = getImdfSchemaRule(mappedType);
     const featureSpec = getFeatureSpec(mappedType);
-    const floorId = feature.properties["floorId"];
-    const levelId = typeof floorId === "string" ? levelByFloor.get(floorId) : undefined;
+    const level_id = feature.properties["level_id"] ?? feature.properties.floorId;
+    const levelId = typeof level_id === "string" ? levelByFloor.get(level_id) : undefined;
     if (!levelId && spec.type !== "relationship") {
       warnings.push(`Feature ${feature.id} skipped: missing floor/level reference.`);
       continue;
@@ -548,7 +557,7 @@ export const buildImdfArchivePayload = ({
         baseProperties[key] = value;
       }
     }
-    const relation = feature.properties.relation;
+    const relation = feature.properties["formation:relation"] ?? feature.properties.relation;
     const originRef =
       readRelationshipReference(feature.properties.origin) ??
       (typeof feature.properties.origin_id === "string"
@@ -665,32 +674,35 @@ export const buildImdfArchivePayload = ({
       continue;
     }
     const mappedType =
-      readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
+      readImdfType(feature.feature_type) ??
+      readImdfType(feature.properties.imdfType) ??
+      readImdfType(feature.properties.kind);
     if (!mappedType || mappedType === "level" || mappedType === "relationship") {
       continue;
     }
-    const floorId = feature.properties.floorId;
-    const levelId = typeof floorId === "string" ? levelByFloor.get(floorId) : undefined;
+    const level_id = feature.properties.level_id ?? feature.properties.floorId;
+    const levelId = typeof level_id === "string" ? levelByFloor.get(level_id) : undefined;
     if (!levelId) {
       continue;
     }
     const childId = featureUuidById.get(feature.id) ?? resolveImdfUuid(feature.id);
     const metadata =
-      feature.properties.metadata && typeof feature.properties.metadata === "object"
-        ? (feature.properties.metadata as {
+      feature.properties["formation:metadata"] &&
+      typeof feature.properties["formation:metadata"] === "object"
+        ? (feature.properties["formation:metadata"] as {
             imdfRelationshipParentId?: string;
             imdfRelationshipParentType?: string;
           })
         : undefined;
     const overrideParentRaw =
-      typeof feature.properties.containmentParentId === "string"
-        ? feature.properties.containmentParentId
+      typeof feature.properties["formation:containment_parent_id"] === "string"
+        ? feature.properties["formation:containment_parent_id"]
         : metadata && typeof metadata.imdfRelationshipParentId === "string"
           ? metadata.imdfRelationshipParentId
           : undefined;
     const overrideParentType =
-      typeof feature.properties.containmentParentType === "string"
-        ? feature.properties.containmentParentType
+      typeof feature.properties["formation:containment_parent_type"] === "string"
+        ? feature.properties["formation:containment_parent_type"]
         : metadata && typeof metadata.imdfRelationshipParentType === "string"
           ? metadata.imdfRelationshipParentType
           : undefined;

@@ -3,7 +3,8 @@ import { getImdfSchemaRule, isKnownImdfType } from "./schema";
 
 export type NormalizeContext = {
   buildingId: string;
-  floorId: string;
+  level_id?: string;
+  floorId?: string;
 };
 
 const readReferenceId = (value: unknown): string | undefined => {
@@ -22,19 +23,12 @@ const readReferenceId = (value: unknown): string | undefined => {
 };
 
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {
-  const raw =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
-
-  if (typeof raw === "string" && isKnownImdfType(raw)) {
-    return raw;
+  if (typeof feature.feature_type === "string" && isKnownImdfType(feature.feature_type)) {
+    return feature.feature_type;
   }
-
   if (feature.geometry.type === "LineString") {
     return "opening";
   }
-
   return "unit";
 };
 
@@ -42,17 +36,13 @@ export const normalizeFeature = (
   feature: FloorFeature,
   context: NormalizeContext,
 ): FloorFeature => {
-  const originalType =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
+  const resolvedLevelId = context.level_id ?? context.floorId ?? "";
   const migratedType =
-    originalType === "relationship" && feature.geometry.type === "LineString"
+    feature.feature_type === "relationship" && feature.geometry.type === "LineString"
       ? "opening"
       : undefined;
   let normalizedType = migratedType ?? resolveType(feature);
   if (normalizedType === "unit" && feature.geometry.type === "Polygon") {
-    // Recovery path for previously mis-normalized level features.
     const hasLevelMarkers =
       (typeof feature.properties.short_name === "object" &&
         feature.properties.short_name !== null &&
@@ -60,12 +50,13 @@ export const normalizeFeature = (
       typeof feature.properties.ordinal === "number" ||
       typeof feature.properties.outdoor === "boolean" ||
       Array.isArray(feature.properties.building_ids);
-    const floorMatch =
-      feature.id === context.floorId || feature.properties.level_id === context.floorId;
-    if (hasLevelMarkers && floorMatch) {
+    const levelMatch =
+      feature.id === resolvedLevelId || feature.properties.level_id === resolvedLevelId;
+    if (hasLevelMarkers && levelMatch) {
       normalizedType = "level";
     }
   }
+
   const schema = getImdfSchemaRule(normalizedType);
   const origin =
     readReferenceId(feature.properties.origin) ?? readReferenceId(feature.properties.origin_id);
@@ -75,16 +66,17 @@ export const normalizeFeature = (
   const destination =
     readReferenceId(feature.properties.destination) ??
     readReferenceId(feature.properties.destination_id);
+
   const relation =
     normalizedType === "relationship" && origin && destination
       ? {
           origin: { featureId: origin },
           ...(intermediary
-            ? { intermediary: { featureId: intermediary, floorId: context.floorId } }
+            ? { intermediary: { featureId: intermediary, level_id: resolvedLevelId } }
             : {}),
           destination: { featureId: destination },
         }
-      : feature.properties.relation;
+      : feature.properties["formation:relation"];
 
   const rawName = feature.properties.name;
   const existingLabel =
@@ -100,17 +92,17 @@ export const normalizeFeature = (
 
   const normalized: FloorFeature = {
     ...feature,
+    feature_type: normalizedType,
     properties: {
       ...feature.properties,
-      id: String(feature.id),
-      imdf_id: String(feature.id),
       kind: normalizedType,
       imdfType: normalizedType,
-      imdf_feature_type: normalizedType,
-      floorId: context.floorId,
-      level_id: context.floorId,
+      level_id: resolvedLevelId,
+      floorId: resolvedLevelId,
       buildingId: context.buildingId,
       building_id: context.buildingId,
+      id: feature.id,
+      imdf_id: feature.id,
       ...(normalizedType === "level" ? { building_ids: [context.buildingId] } : {}),
       ...(origin ? { origin: { id: origin, feature_type: "unit" }, origin_id: origin } : {}),
       ...(intermediary
@@ -122,7 +114,7 @@ export const normalizeFeature = (
       ...(destination
         ? { destination: { id: destination, feature_type: "unit" }, destination_id: destination }
         : {}),
-      ...(relation ? { relation } : {}),
+      ...(relation ? { "formation:relation": relation } : {}),
       ...(normalizedType === "relationship" && !feature.properties.direction
         ? { direction: "directed" }
         : {}),

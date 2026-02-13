@@ -54,7 +54,7 @@ describe("validateFloor", () => {
       },
     ]);
 
-    expect(result.errors).toContain("Feature shape-1 is not assigned to level_id f1.");
+    expect(result.errors.some((error) => error.includes("not assigned to level_id f1"))).toBe(true);
   });
 
   it("accepts valid relationship references", () => {

@@ -52,8 +52,17 @@ const describeFeature = (feature: FloorFeature): string => {
   return `Feature ${feature.id}`;
 };
 
-export const validateFloor = (floorId: string, features: FloorFeature[]): FloorValidationResult => {
-  const floorFeatures = features.filter((feature) => feature.properties.floorId === floorId);
+export const validateFloor = (
+  level_id: string,
+  features: FloorFeature[],
+): FloorValidationResult => {
+  const floorFeatures = features.filter((feature) => {
+    const featureLevelId =
+      typeof feature.properties.level_id === "string"
+        ? feature.properties.level_id
+        : feature.properties.floorId;
+    return featureLevelId === level_id || featureLevelId === undefined;
+  });
   const allIds = new Set(features.map((feature) => feature.id));
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -61,9 +70,11 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
   for (const feature of floorFeatures) {
     const featureDescription = describeFeature(feature);
     const featureType =
-      readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
-    if (feature.properties.level_id !== floorId) {
-      errors.push(`${featureDescription} is not assigned to level_id ${floorId}.`);
+      readImdfType(feature.feature_type) ??
+      readImdfType(feature.properties.imdfType) ??
+      readImdfType(feature.properties.kind);
+    if (feature.properties.level_id !== level_id) {
+      errors.push(`${featureDescription} is not assigned to level_id ${level_id}.`);
     }
     if (!featureType) {
       warnings.push(`${featureDescription} has no IMDF type.`);

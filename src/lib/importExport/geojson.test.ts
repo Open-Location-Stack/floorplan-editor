@@ -38,4 +38,63 @@ describe("geojson import/export", () => {
       expect(parsed.features[0].id).toBe("f1");
     }
   });
+
+  it("drops relationship features on import", () => {
+    const raw = JSON.stringify({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "r1",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [1, 2],
+              [1.001, 2.001],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            name: "Contains relationship",
+            origin: { id: "a", feature_type: "unit" },
+            destination: { id: "b", feature_type: "opening" },
+            direction: "directed",
+          },
+        },
+        {
+          type: "Feature",
+          id: "u1",
+          feature_type: "unit",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [1, 2],
+                [1.001, 2],
+                [1.001, 2.001],
+                [1, 2.001],
+                [1, 2],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            category: "room",
+            name: "Unit",
+            level_id: "f1",
+          },
+        },
+      ],
+    });
+
+    const imported = parseGeoJsonImport(raw);
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.features).toHaveLength(1);
+    expect(imported.features[0]?.id).toBe("u1");
+    expect(imported.features[0]?.properties.kind).toBe("unit");
+  });
 });

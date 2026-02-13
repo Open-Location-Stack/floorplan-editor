@@ -2,10 +2,7 @@ import type { FloorFeature } from "../types";
 import { readImdfType } from "./featureCatalog";
 
 export const readFeatureType = (feature: FloorFeature): string =>
-  readImdfType(feature.properties.imdfType) ??
-  readImdfType(feature.properties.kind) ??
-  feature.properties.kind ??
-  "feature";
+  readImdfType(feature.feature_type) ?? "feature";
 
 export const readFeatureDisplayName = (feature: FloorFeature): string => {
   const name = feature.properties.name;

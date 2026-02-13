@@ -38,8 +38,13 @@ const resolveFromFeature = (
     return undefined;
   }
 
-  const floorId = typeof feature.properties.floorId === "string" ? feature.properties.floorId : "";
-  const level = readLevels(context).find((current) => current.id === floorId);
+  const level_id =
+    typeof feature.properties.level_id === "string"
+      ? feature.properties.level_id
+      : typeof feature.properties.floorId === "string"
+        ? feature.properties.floorId
+        : "";
+  const level = readLevels(context).find((current) => current.id === level_id);
   if (!level) {
     return undefined;
   }

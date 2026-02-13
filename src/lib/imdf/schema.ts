@@ -7,9 +7,11 @@ import {
   isImdfFeatureType,
 } from "./featureCatalog";
 
-export const IMDF_SUPPORTED_TYPES = FLOOR_FEATURE_TYPES.filter((type) => type !== "level");
+export const IMDF_SUPPORTED_TYPES = FLOOR_FEATURE_TYPES.filter(
+  (type) => type !== "level" && type !== "relationship",
+);
 
-export type SupportedImdfType = (typeof FLOOR_FEATURE_TYPES)[number];
+export type SupportedImdfType = Exclude<(typeof FLOOR_FEATURE_TYPES)[number], "relationship">;
 
 export type GeometryTemplateType = GeometryType;
 
@@ -35,7 +37,7 @@ export const getImdfFeatureSpec = (type: ImdfFeatureType): ImdfFeatureSpec => ge
 export const getAllImdfFeatureTypes = (): ImdfFeatureType[] => [...IMDF_FEATURE_TYPES];
 
 export const isSupportedImdfType = (value: string): value is SupportedImdfType =>
-  (IMDF_SUPPORTED_TYPES as readonly string[]).includes(value);
+  value !== "relationship" && (IMDF_SUPPORTED_TYPES as readonly string[]).includes(value);
 
 export const isKnownImdfType = (value: string): value is ImdfFeatureType =>
   isImdfFeatureType(value);

@@ -61,9 +61,7 @@ export const LevelEditor = ({
     const counts = new Map<string, number>();
     for (const feature of levelFeatures) {
       const type =
-        typeof feature.properties.imdfType === "string"
-          ? feature.properties.imdfType
-          : feature.properties.kind;
+        typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
       if (!type) {
         continue;
       }
@@ -76,9 +74,7 @@ export const LevelEditor = ({
     const issues: string[] = [];
     const openings = levelFeatures.filter((feature) => {
       const type =
-        typeof feature.properties.imdfType === "string"
-          ? feature.properties.imdfType
-          : feature.properties.kind;
+        typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
       return type === "opening";
     });
     for (const opening of openings) {

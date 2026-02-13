@@ -37,12 +37,12 @@ export const createImdfFeature = ({
       ? {
           type: "Feature",
           id,
+          feature_type: type,
           geometry: {
             type: "Point",
             coordinates: center,
           },
           properties: {
-            kind: type,
             name: schema.defaultName,
           },
         }
@@ -50,24 +50,24 @@ export const createImdfFeature = ({
         ? {
             type: "Feature",
             id,
+            feature_type: type,
             geometry: {
               type: "LineString",
               coordinates: lineAroundCenter(center),
             },
             properties: {
-              kind: type,
               name: schema.defaultName,
             },
           }
         : {
             type: "Feature",
             id,
+            feature_type: type,
             geometry: {
               type: "Polygon",
               coordinates: polygonAroundCenter(center),
             },
             properties: {
-              kind: type,
               name: schema.defaultName,
             },
           };

@@ -19,7 +19,17 @@ const sortKeysRecursively = (input: unknown): unknown => {
 };
 
 export const normalizeFeatures = (features: unknown[]): FloorFeature[] =>
-  features.map((feature) => assertFeature(feature));
+  features
+    .map((feature) => assertFeature(feature))
+    .filter((feature) => {
+      const kind =
+        typeof feature.feature_type === "string"
+          ? feature.feature_type
+          : typeof feature.properties.kind === "string"
+            ? feature.properties.kind
+            : undefined;
+      return kind !== "relationship";
+    });
 
 export const parseGeoJsonImport = (
   raw: string,

@@ -84,10 +84,10 @@ export const BuildingsTree = ({
       return;
     }
     const feature = features.find((current) => current.id === selection.id);
-    if (!feature || typeof feature.properties.floorId !== "string") {
+    if (!feature || typeof feature.properties.level_id !== "string") {
       return;
     }
-    const level = levels.find((current) => current.id === feature.properties.floorId);
+    const level = levels.find((current) => current.id === feature.properties.level_id);
     if (!level) {
       return;
     }
@@ -109,12 +109,12 @@ export const BuildingsTree = ({
       if (isLevelGeometryFeature(feature)) {
         continue;
       }
-      if (typeof feature.properties.floorId !== "string") {
+      if (typeof feature.properties.level_id !== "string") {
         continue;
       }
-      const group = groups.get(feature.properties.floorId) ?? [];
+      const group = groups.get(feature.properties.level_id) ?? [];
       group.push(feature);
-      groups.set(feature.properties.floorId, group);
+      groups.set(feature.properties.level_id, group);
     }
     return groups;
   }, [features]);

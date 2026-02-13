@@ -157,6 +157,7 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
   const raw = value as {
     id?: unknown;
     type?: unknown;
+    feature_type?: unknown;
     geometry?: unknown;
     properties?: unknown;
   };
@@ -175,7 +176,7 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
       ? (raw.properties as {
           kind?: unknown;
           name?: unknown;
-          floorId?: unknown;
+          level_id?: unknown;
           [key: string]: unknown;
         })
       : {};
@@ -191,20 +192,27 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
     {},
   );
 
-  const kind = isNonEmptyString(rawProperties.kind) ? rawProperties.kind : "unit";
+  const featureType: Exclude<FloorFeature["feature_type"], undefined> =
+    isNonEmptyString(raw.feature_type) && typeof raw.feature_type === "string"
+      ? (raw.feature_type as Exclude<FloorFeature["feature_type"], undefined>)
+      : isNonEmptyString(rawProperties.kind)
+        ? (rawProperties.kind as Exclude<FloorFeature["feature_type"], undefined>)
+        : "unit";
   const name = isNonEmptyString(rawProperties.name) ? rawProperties.name : undefined;
-  const floorId = isNonEmptyString(rawProperties.floorId) ? rawProperties.floorId : undefined;
-  const properties: FloorFeature["properties"] = { ...normalizedProperties, kind };
+  const level_id = isNonEmptyString(rawProperties.level_id) ? rawProperties.level_id : undefined;
+  const properties: FloorFeature["properties"] = { ...normalizedProperties, kind: featureType };
   if (name) {
     properties.name = name;
   }
-  if (floorId) {
-    properties.floorId = floorId;
+  if (level_id) {
+    properties.level_id = level_id;
+    properties.floorId = level_id;
   }
 
   return {
     type: "Feature",
     id: raw.id,
+    feature_type: featureType,
     geometry,
     properties,
   };
@@ -217,6 +225,7 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
 
   const raw = value as {
     id?: unknown;
+    level_id?: unknown;
     floorId?: unknown;
     imageName?: unknown;
     imageDataUrl?: unknown;
@@ -233,7 +242,7 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
 
   if (
     !isNonEmptyString(raw.id) ||
-    !isNonEmptyString(raw.floorId) ||
+    (!isNonEmptyString(raw.level_id) && !isNonEmptyString(raw.floorId)) ||
     !isNonEmptyString(raw.imageDataUrl)
   ) {
     return undefined;
@@ -258,7 +267,12 @@ const normalizeOverlay = (value: unknown): FloorOverlay | undefined => {
 
   return {
     id: raw.id,
-    floorId: raw.floorId,
+    floorId: isNonEmptyString(raw.floorId) ? raw.floorId : (raw.level_id as string),
+    level_id: isNonEmptyString(raw.level_id)
+      ? raw.level_id
+      : isNonEmptyString(raw.floorId)
+        ? raw.floorId
+        : "",
     imageName: isNonEmptyString(raw.imageName) ? raw.imageName : "overlay-image",
     imageDataUrl: raw.imageDataUrl,
     opacity,
@@ -377,14 +391,25 @@ const normalizeFeatures = (
   return features
     .map(normalizeFeature)
     .filter((feature): feature is FloorFeature => Boolean(feature))
+    .filter((feature) => feature.feature_type !== "relationship")
     .map((feature) => ({
       ...feature,
       properties: {
         ...feature.properties,
-        floorId:
-          feature.properties.floorId && floorIds.has(feature.properties.floorId)
-            ? feature.properties.floorId
-            : defaultFloorId,
+        level_id: (() => {
+          const candidate =
+            typeof feature.properties.level_id === "string"
+              ? feature.properties.level_id
+              : feature.properties.floorId;
+          return candidate && floorIds.has(candidate) ? candidate : defaultFloorId;
+        })(),
+        floorId: (() => {
+          const candidate =
+            typeof feature.properties.level_id === "string"
+              ? feature.properties.level_id
+              : feature.properties.floorId;
+          return candidate && floorIds.has(candidate) ? candidate : defaultFloorId;
+        })(),
       },
     }));
 };
@@ -397,7 +422,7 @@ const normalizeOverlays = (overlays: unknown, floorIds: Set<string>): FloorOverl
   return overlays
     .map(normalizeOverlay)
     .filter((overlay): overlay is FloorOverlay => Boolean(overlay))
-    .filter((overlay) => floorIds.has(overlay.floorId));
+    .filter((overlay) => floorIds.has(overlay.level_id ?? overlay.floorId));
 };
 
 const normalizeIdList = (value: unknown): string[] => {
@@ -419,8 +444,8 @@ export const sanitizeProjectSnapshot = (project: ProjectSnapshot): ProjectSnapsh
   const lockedFeatureIds = normalizeIdList(project.lockedFeatureIds).filter((id) =>
     featureIds.has(id),
   );
-  const lockedOverlayFloorIds = normalizeIdList(project.lockedOverlayFloorIds).filter((floorId) =>
-    floorIds.has(floorId),
+  const lockedOverlayFloorIds = normalizeIdList(project.lockedOverlayFloorIds).filter((level_id) =>
+    floorIds.has(level_id),
   );
 
   return {

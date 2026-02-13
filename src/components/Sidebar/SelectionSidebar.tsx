@@ -199,7 +199,7 @@ export const SelectionSidebar = ({
   }
 
   if ((selection.kind === "level" || selection.kind === "floor") && level) {
-    const levelFeatures = allFeatures.filter((current) => current.properties.floorId === level.id);
+    const levelFeatures = allFeatures.filter((current) => current.properties.level_id === level.id);
     const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
     const levelShortName = (() => {
       const shortName = levelGeometryFeature?.properties.short_name;

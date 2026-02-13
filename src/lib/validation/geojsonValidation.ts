@@ -43,11 +43,11 @@ const featureSchema = z.object({
     .object({
       kind: z.string().min(1),
       name: z.string().optional(),
-      floorId: z.string().optional(),
+      level_id: z.string().optional(),
       featureType: z.string().optional(),
       category: z.string().optional(),
       externalId: z.string().optional(),
-      imdfType: z.string().optional(),
+      feature_type: z.string().optional(),
       imdfClass: z.string().optional(),
       metadata: z.record(z.string(), jsonValueSchema).optional(),
     })

@@ -30,9 +30,7 @@ type FeatureEditorProps = {
 
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {
   const typeCandidate =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
+    typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
   return (typeCandidate as ImdfFeatureType) ?? "unit";
 };
 

@@ -34,7 +34,7 @@ export type ImdfFeatureField = {
   placeholder?: string;
   derive?: (
     properties: FeatureProperties,
-    context: { floorId?: string; buildingId?: string },
+    context: { level_id?: string; buildingId?: string },
   ) => JsonValue | undefined;
 };
 
@@ -54,7 +54,7 @@ const floorReferenceField = {
   readOnly: true,
   derived: true,
   editorControl: "uuid-ref",
-  derive: (_properties: FeatureProperties, context: { floorId?: string }) => context.floorId,
+  derive: (_properties: FeatureProperties, context: { level_id?: string }) => context.level_id,
 } as const;
 
 const baseFloorFields = [

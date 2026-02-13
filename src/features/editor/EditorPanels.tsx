@@ -17,10 +17,10 @@ type EditorPanelsProps = {
   onAddBuilding: () => void;
   onDeleteBuilding: (buildingId: string) => void;
   onRenameBuilding: (buildingId: string, name: string) => void;
-  onSelectFloor: (floorId: string) => void;
+  onSelectFloor: (level_id: string) => void;
   onAddFloor: () => void;
-  onDeleteFloor: (floorId: string) => void;
-  onRenameFloor: (floorId: string, name: string) => void;
+  onDeleteFloor: (level_id: string) => void;
+  onRenameFloor: (level_id: string, name: string) => void;
   features: FloorFeature[];
   selectedFeatureId: string | undefined;
   onDeleteSelectedFeature: () => void;
@@ -49,7 +49,6 @@ const IMDF_TYPE_OPTIONS = [
   "fixture",
   "kiosk",
   "section",
-  "relationship",
 ] as const;
 
 const featureNameText = (name: unknown): string => {
@@ -223,13 +222,10 @@ export const EditorPanels = ({
 
           <select
             className="select select-bordered select-sm"
-            value={
-              selectedFeature?.properties.imdfType ?? selectedFeature?.properties.kind ?? "unit"
-            }
+            value={selectedFeature?.feature_type ?? "unit"}
             disabled={!selectedFeature}
             onChange={(event) => {
-              onUpdateSelectedFeatureProperty("imdfType", event.currentTarget.value);
-              onUpdateSelectedFeatureProperty("kind", event.currentTarget.value);
+              onUpdateSelectedFeatureProperty("feature_type", event.currentTarget.value);
             }}
           >
             {IMDF_TYPE_OPTIONS.map((kind) => (

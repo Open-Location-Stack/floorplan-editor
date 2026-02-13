@@ -76,14 +76,9 @@ const sortKeysRecursively = (input: unknown): unknown => {
 
 export const sortFeaturesForRendering = (features: FloorFeature[]): FloorFeature[] =>
   [...features].sort((left, right) => {
-    const leftType =
-      typeof left.properties.imdfType === "string"
-        ? left.properties.imdfType
-        : left.properties.kind;
+    const leftType = typeof left.feature_type === "string" ? left.feature_type : left.feature_type;
     const rightType =
-      typeof right.properties.imdfType === "string"
-        ? right.properties.imdfType
-        : right.properties.kind;
+      typeof right.feature_type === "string" ? right.feature_type : right.feature_type;
 
     const order = sortOrderForFeatureType(leftType) - sortOrderForFeatureType(rightType);
     if (order !== 0) {
@@ -333,9 +328,7 @@ const displayPointForGeometry = (
 
 const resolveInternalType = (feature: FloorFeature): string => {
   const typeCandidate =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
+    typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
 
   return typeof typeCandidate === "string" ? typeCandidate : "";
 };
@@ -343,23 +336,24 @@ const resolveInternalType = (feature: FloorFeature): string => {
 const resolveContainmentParent = (
   feature: FloorFeature,
 ): { parentId?: string; parentType?: string } => {
-  if (typeof feature.properties.containmentParentId === "string") {
+  if (typeof feature.properties["formation:containment_parent_id"] === "string") {
     const parentType =
-      typeof feature.properties.containmentParentType === "string"
-        ? feature.properties.containmentParentType
+      typeof feature.properties["formation:containment_parent_type"] === "string"
+        ? feature.properties["formation:containment_parent_type"]
         : undefined;
     return parentType
       ? {
-          parentId: feature.properties.containmentParentId,
+          parentId: feature.properties["formation:containment_parent_id"],
           parentType,
         }
       : {
-          parentId: feature.properties.containmentParentId,
+          parentId: feature.properties["formation:containment_parent_id"],
         };
   }
   const metadata =
-    feature.properties.metadata && typeof feature.properties.metadata === "object"
-      ? (feature.properties.metadata as Record<string, unknown>)
+    feature.properties["formation:metadata"] &&
+    typeof feature.properties["formation:metadata"] === "object"
+      ? (feature.properties["formation:metadata"] as Record<string, unknown>)
       : undefined;
   if (metadata && typeof metadata["imdfRelationshipParentId"] === "string") {
     const parentType =
@@ -404,8 +398,11 @@ export const exportFloorGeoJson = ({
   features,
 }: ExportFloorInput): FeatureCollection => {
   const floorFeatures = features
-    .filter((feature) => feature.properties.floorId === floor.id)
-    .map((feature) => normalizeFeature(feature, { buildingId: building.id, floorId: floor.id }));
+    .filter(
+      (feature) =>
+        feature.properties.level_id === floor.id || feature.properties.floorId === floor.id,
+    )
+    .map((feature) => normalizeFeature(feature, { buildingId: building.id, level_id: floor.id }));
 
   return {
     type: "FeatureCollection",

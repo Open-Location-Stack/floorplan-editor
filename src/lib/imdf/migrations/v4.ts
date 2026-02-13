@@ -13,24 +13,21 @@ export const migrateProjectSnapshotToImdfV4 = (snapshot: ProjectSnapshot): Proje
   const features = snapshot.features
     .filter((feature) => {
       const type =
-        typeof feature.properties.imdfType === "string"
-          ? feature.properties.imdfType
-          : feature.properties.kind;
+        typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
       return !LEGACY_TYPES.has(type ?? "");
     })
     .map((feature) => {
       const normalizedType =
-        (typeof feature.properties.imdfType === "string"
-          ? feature.properties.imdfType
-          : feature.properties.kind) === "relationship" && feature.geometry.type === "LineString"
+        (typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type) ===
+          "relationship" && feature.geometry.type === "LineString"
           ? "opening"
           : undefined;
-      const floorId =
-        typeof feature.properties.floorId === "string"
-          ? feature.properties.floorId
+      const level_id =
+        typeof feature.properties.level_id === "string"
+          ? feature.properties.level_id
           : defaultFloor?.id;
       const buildingId =
-        (floorId ? floorById.get(floorId)?.buildingId : undefined) ?? defaultBuilding?.id ?? "";
+        (level_id ? floorById.get(level_id)?.buildingId : undefined) ?? defaultBuilding?.id ?? "";
       return normalizeFeature(
         {
           ...feature,
@@ -39,18 +36,18 @@ export const migrateProjectSnapshotToImdfV4 = (snapshot: ProjectSnapshot): Proje
             ...(normalizedType
               ? {
                   kind: normalizedType,
-                  imdfType: normalizedType,
+                  feature_type: normalizedType,
                   category:
                     typeof feature.properties.category === "string"
                       ? feature.properties.category
                       : "pedestrian",
                 }
               : {}),
-            ...(floorId ? { floorId } : {}),
+            ...(level_id ? { level_id } : {}),
           },
         },
         {
-          floorId: floorId ?? "",
+          level_id: level_id ?? "",
           buildingId,
         },
       );

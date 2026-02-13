@@ -9,17 +9,16 @@ export const CONTAINER_TYPES = new Set<ImdfFeatureType | "level">([
 ]);
 
 export const resolveFeatureType = (feature: FloorFeature): ImdfFeatureType =>
-  ((typeof feature.properties.imdfType === "string"
-    ? feature.properties.imdfType
-    : feature.properties.kind) as ImdfFeatureType) ?? "unit";
+  (feature.feature_type as ImdfFeatureType) ?? "unit";
 
 export const canContainChildren = (type: ImdfFeatureType | "level"): boolean =>
   CONTAINER_TYPES.has(type);
 
 const legacyMetadataParent = (feature: FloorFeature): string | undefined => {
   const metadata =
-    feature.properties.metadata && typeof feature.properties.metadata === "object"
-      ? (feature.properties.metadata as JsonObject)
+    feature.properties["formation:metadata"] &&
+    typeof feature.properties["formation:metadata"] === "object"
+      ? (feature.properties["formation:metadata"] as JsonObject)
       : undefined;
   const parent =
     metadata && typeof metadata["imdfRelationshipParentId"] === "string"
@@ -29,13 +28,13 @@ const legacyMetadataParent = (feature: FloorFeature): string | undefined => {
 };
 
 export const getContainmentParentId = (feature: FloorFeature): string | undefined =>
-  typeof feature.properties.containmentParentId === "string"
-    ? feature.properties.containmentParentId
+  typeof feature.properties["formation:containment_parent_id"] === "string"
+    ? feature.properties["formation:containment_parent_id"]
     : legacyMetadataParent(feature);
 
 export const getContainmentParentType = (feature: FloorFeature): ImdfFeatureType | "level" => {
-  if (typeof feature.properties.containmentParentType === "string") {
-    return feature.properties.containmentParentType as ImdfFeatureType | "level";
+  if (typeof feature.properties["formation:containment_parent_type"] === "string") {
+    return feature.properties["formation:containment_parent_type"] as ImdfFeatureType | "level";
   }
   return "level";
 };
@@ -46,7 +45,7 @@ export const getChildrenByParent = (
 ): Map<string, FloorFeature[]> => {
   const byParent = new Map<string, FloorFeature[]>();
   for (const feature of features) {
-    if (feature.properties.floorId !== levelId) {
+    if (feature.properties.level_id !== levelId) {
       continue;
     }
     const parentId = getContainmentParentId(feature) ?? levelId;

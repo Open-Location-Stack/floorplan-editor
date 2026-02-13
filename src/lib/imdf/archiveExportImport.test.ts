@@ -332,8 +332,6 @@ describe("imdf archive export/import", () => {
     if (!imported.ok) {
       return;
     }
-    expect(imported.value.features.some((feature) => feature.properties.imdfType === "kiosk")).toBe(
-      true,
-    );
+    expect(imported.value.features.some((feature) => feature.feature_type === "kiosk")).toBe(true);
   });
 });

@@ -70,10 +70,10 @@ describe("sanitizeProjectSnapshot", () => {
       lockedOverlayFloorIds: ["f1", "missing-floor", "f1", ""],
     });
 
-    expect(sanitized.features).toHaveLength(2);
+    expect(sanitized.features).toHaveLength(1);
     expect(sanitized.features[0]?.properties.floorId).toBe("f1");
-    expect(sanitized.features.some((feature) => feature.properties.kind === "relationship")).toBe(
-      true,
+    expect(sanitized.features.some((feature) => feature.feature_type === "relationship")).toBe(
+      false,
     );
     expect(sanitized.overlays).toHaveLength(1);
     expect(sanitized.overlays[0]?.opacity).toBe(100);

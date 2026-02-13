@@ -82,8 +82,13 @@ export const cloneLevelWithReferences = ({
   createIdFn = createId,
   timestamp = new Date().toISOString(),
 }: CloneLevelOptions): CloneLevelResult => {
-  const levelFeatures = features.filter((feature) => feature.properties.floorId === level.id);
-  const sourceOverlay = overlays.find((overlay) => overlay.floorId === level.id);
+  const levelFeatures = features.filter(
+    (feature) =>
+      feature.properties.level_id === level.id || feature.properties.floorId === level.id,
+  );
+  const sourceOverlay = overlays.find(
+    (overlay) => overlay.level_id === level.id || overlay.floorId === level.id,
+  );
   const levelsInBuilding = levels.filter((current) => current.buildingId === level.buildingId);
 
   const clonedLevelId = createIdFn();
@@ -104,9 +109,9 @@ export const cloneLevelWithReferences = ({
     clonedFeature.properties = remappedProperties;
     clonedFeature.properties.id = clonedFeatureId;
     clonedFeature.properties.imdf_id = clonedFeatureId;
+    clonedFeature.properties.level_id = clonedLevelId;
     clonedFeature.properties.floorId = clonedLevelId;
     clonedFeature.properties.floor_id = clonedLevelId;
-    clonedFeature.properties.level_id = clonedLevelId;
     clonedFeature.properties.buildingId = level.buildingId;
     clonedFeature.properties.building_id = level.buildingId;
 
@@ -118,6 +123,7 @@ export const cloneLevelWithReferences = ({
         ...deepClone(sourceOverlay),
         id: createIdFn(),
         floorId: clonedLevelId,
+        level_id: clonedLevelId,
         updatedAt: timestamp,
       }
     : undefined;

@@ -200,10 +200,10 @@ export const GenericImdfFeatureEditor = ({
     () =>
       allFeatures.filter(
         (candidate) =>
-          candidate.properties.floorId === feature.properties.floorId &&
+          candidate.properties.level_id === feature.properties.level_id &&
           candidate.id !== feature.id,
       ),
-    [allFeatures, feature.id, feature.properties.floorId],
+    [allFeatures, feature.id, feature.properties.level_id],
   );
   const containmentParentId = getContainmentParentId(feature) ?? "";
   const isContainerType = canContainChildren(type);
@@ -543,7 +543,7 @@ export const GenericImdfFeatureEditor = ({
                       const nextType =
                         (candidatesForField[field.key] ?? sameFloorFeatures).find(
                           (candidate) => candidate.id === nextId,
-                        )?.properties.imdfType ?? "unit";
+                        )?.feature_type ?? "unit";
                       onUpdateProperty(field.key, {
                         id: nextId,
                         feature_type: nextType,
@@ -596,8 +596,9 @@ export const GenericImdfFeatureEditor = ({
                     return;
                   }
                   onUpdateProperty("containmentParentId", nextId.length > 0 ? nextId : undefined);
-                  const nextType = parentCandidates.find((candidate) => candidate.id === nextId)
-                    ?.properties.imdfType;
+                  const nextType = parentCandidates.find(
+                    (candidate) => candidate.id === nextId,
+                  )?.feature_type;
                   onUpdateProperty(
                     "containmentParentType",
                     typeof nextType === "string"

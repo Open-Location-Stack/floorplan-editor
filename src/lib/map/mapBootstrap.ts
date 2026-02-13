@@ -732,15 +732,12 @@ const normalizeGeometry = (
 
 const normalizeProperties = (value: unknown): FloorFeature["properties"] => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {
-      kind: "unknown",
-    };
+    return {};
   }
 
-  const candidate = value as { kind?: unknown } & Record<string, unknown>;
+  const candidate = value as Record<string, unknown>;
   return {
     ...candidate,
-    kind: typeof candidate.kind === "string" && candidate.kind ? candidate.kind : "unknown",
   } as FloorFeature["properties"];
 };
 
@@ -755,9 +752,21 @@ const normalizeDrawFeature = (feature: GeoJsonFeature): FloorFeature | undefined
     return undefined;
   }
 
+  const normalizedType: Exclude<FloorFeature["feature_type"], undefined> =
+    // biome-ignore lint/complexity/useLiteralKeys: GeoJSON properties are index-signature based.
+    typeof feature.properties?.["feature_type"] === "string"
+      ? // biome-ignore lint/complexity/useLiteralKeys: GeoJSON properties are index-signature based.
+        (feature.properties["feature_type"] as Exclude<FloorFeature["feature_type"], undefined>)
+      : // biome-ignore lint/complexity/useLiteralKeys: GeoJSON properties are index-signature based.
+        typeof feature.properties?.["kind"] === "string"
+        ? // biome-ignore lint/complexity/useLiteralKeys: GeoJSON properties are index-signature based.
+          (feature.properties["kind"] as Exclude<FloorFeature["feature_type"], undefined>)
+        : ("formation:unknown" as const);
+
   return {
     type: "Feature",
     id,
+    feature_type: normalizedType,
     geometry,
     properties: normalizeProperties(feature.properties),
   };

@@ -22,9 +22,7 @@ const OPENING_CATEGORY_ICON_MAP: Record<string, string> = {
 
 export const getFeatureIconName = (feature: FloorFeature): string | undefined => {
   const type =
-    typeof feature.properties.imdfType === "string"
-      ? feature.properties.imdfType
-      : feature.properties.kind;
+    typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
   if (!type) {
     return undefined;
   }

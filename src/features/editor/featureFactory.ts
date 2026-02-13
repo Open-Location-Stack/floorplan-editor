@@ -6,12 +6,12 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
     return {
       type: "Feature",
       id: createId(),
+      feature_type: "amenity",
       geometry: {
         type: "Point",
         coordinates: [0, 0],
       },
       properties: {
-        kind: "amenity",
         name: "New point",
       },
     };
@@ -21,6 +21,7 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
     return {
       type: "Feature",
       id: createId(),
+      feature_type: "opening",
       geometry: {
         type: "LineString",
         coordinates: [
@@ -29,7 +30,6 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
         ],
       },
       properties: {
-        kind: "opening",
         name: "New opening",
       },
     };
@@ -38,6 +38,7 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
   return {
     type: "Feature",
     id: createId(),
+    feature_type: "unit",
     geometry: {
       type: "Polygon",
       coordinates: [
@@ -51,7 +52,6 @@ export const createFeature = (kind: "point" | "line" | "polygon"): FloorFeature 
       ],
     },
     properties: {
-      kind: "unit",
       name: "New room",
     },
   };
