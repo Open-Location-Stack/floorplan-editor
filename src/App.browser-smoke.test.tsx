@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -431,6 +431,40 @@ describe("App browser smoke", () => {
       };
       expect(latestSnapshot.venues?.find((venue) => venue.id === "venue-1")?.name).toBe(
         "Campus Venue",
+      );
+    });
+  });
+
+  it("keeps spaces when editing level names", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Main Venue" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building 1" }],
+      floors: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const levelHeading = await screen.findByRole("heading", { name: "Level" });
+    const levelSection = levelHeading.closest("section");
+    expect(levelSection).not.toBeNull();
+    const nameInput = within(levelSection as HTMLElement).getByRole("textbox", { name: /^name$/i });
+    fireEvent.change(nameInput, { target: { value: "Second Floor" } });
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        floors?: Array<{ id: string; name: string }>;
+      };
+      expect(latestSnapshot.floors?.find((floor) => floor.id === "floor-1")?.name).toBe(
+        "Second Floor",
       );
     });
   });

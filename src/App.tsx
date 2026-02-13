@@ -2194,7 +2194,7 @@ function App() {
   const onRenameLevel = useCallback(
     (levelId: string, name: string) => {
       applyProjectMutation("Level renamed", () => {
-        const resolvedName = name.trim().length > 0 ? name.trim() : "Untitled level";
+        const resolvedName = name || "Untitled level";
         setLevels((current) =>
           current.map((level) => (level.id === levelId ? { ...level, name: resolvedName } : level)),
         );
