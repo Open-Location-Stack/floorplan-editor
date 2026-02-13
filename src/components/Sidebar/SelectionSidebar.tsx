@@ -32,6 +32,7 @@ type SelectionSidebarProps = {
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
   onRenameVenue: (venueId: string, name: string) => void;
+  onDeleteVenue: (venueId: string) => void;
   onAddBuilding: (venueId: string) => void;
   onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
   onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
@@ -81,6 +82,7 @@ export const SelectionSidebar = ({
   overlay,
   onRenameBuilding,
   onRenameVenue,
+  onDeleteVenue,
   onAddBuilding,
   onUpdateBuildingVenueCategory,
   onUpdateBuildingAddressField,
@@ -130,6 +132,7 @@ export const SelectionSidebar = ({
         venue={venue}
         onRenameVenue={(name) => onRenameVenue(venue.id, name)}
         onAddBuilding={() => onAddBuilding(venue.id)}
+        onDeleteVenue={() => onDeleteVenue(venue.id)}
         rawGeoJsonPreview={{
           type: "Feature",
           feature_type: "venue",

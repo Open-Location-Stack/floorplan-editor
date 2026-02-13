@@ -435,6 +435,105 @@ describe("App browser smoke", () => {
     });
   });
 
+  it("deletes a venue with confirmation and cascades related data", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 5,
+      updatedAt: "2026-02-09T00:00:00.000Z",
+      venues: [
+        { id: "venue-1", name: "Venue A" },
+        { id: "venue-2", name: "Venue B" },
+      ],
+      buildings: [
+        { id: "building-1", venueId: "venue-1", name: "Building A" },
+        { id: "building-2", venueId: "venue-2", name: "Building B" },
+      ],
+      floors: [
+        { id: "floor-1", buildingId: "building-1", name: "Level A" },
+        { id: "floor-2", buildingId: "building-2", name: "Level B" },
+      ],
+      features: [
+        {
+          type: "Feature",
+          id: "feature-1",
+          geometry: { type: "Point", coordinates: [5.121, 52.091] },
+          properties: { kind: "amenity", floorId: "floor-1", name: "A" },
+        },
+        {
+          type: "Feature",
+          id: "feature-2",
+          geometry: { type: "Point", coordinates: [5.122, 52.092] },
+          properties: { kind: "amenity", floorId: "floor-2", name: "B" },
+        },
+      ],
+      overlays: [
+        {
+          id: "overlay-1",
+          floorId: "floor-1",
+          imageName: "a.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.12, 52.1],
+            topRight: [5.13, 52.1],
+            bottomRight: [5.13, 52.09],
+            bottomLeft: [5.12, 52.09],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+        {
+          id: "overlay-2",
+          floorId: "floor-2",
+          imageName: "b.png",
+          imageDataUrl: "data:image/png;base64,abc",
+          opacity: 70,
+          visible: true,
+          locked: false,
+          corners: {
+            topLeft: [5.12, 52.1],
+            topRight: [5.13, 52.1],
+            bottomRight: [5.13, 52.09],
+            bottomLeft: [5.12, 52.09],
+          },
+          updatedAt: "2026-02-09T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Venue A" }));
+    fireEvent.click(screen.getByRole("button", { name: /delete venue/i }));
+    expect(screen.getByRole("dialog", { name: /delete venue/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: /delete venue/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete venue/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        venues: Array<{ id: string }>;
+        buildings: Array<{ id: string }>;
+        floors: Array<{ id: string }>;
+        features: Array<{ id: string }>;
+        overlays: Array<{ id: string }>;
+      };
+
+      expect(latestSnapshot.venues.map((venue) => venue.id)).toEqual(["venue-2"]);
+      expect(latestSnapshot.buildings.map((building) => building.id)).toEqual(["building-2"]);
+      expect(latestSnapshot.floors.map((floor) => floor.id)).toEqual(["floor-2"]);
+      expect(latestSnapshot.features.map((feature) => feature.id)).toEqual(["feature-2"]);
+      expect(latestSnapshot.overlays.map((overlay) => overlay.id)).toEqual(["overlay-2"]);
+    });
+  });
+
   it("reverse geocodes building address via OpenCage with confirmation", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",

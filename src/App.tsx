@@ -1566,6 +1566,76 @@ function App() {
     [applyProjectMutation],
   );
 
+  const onDeleteVenue = useCallback(
+    (venueId: string) => {
+      const venue = venues.find((current) => current.id === venueId);
+      if (!venue) {
+        return;
+      }
+
+      const buildingIdsToDelete = buildings
+        .filter((building) => building.venueId === venueId)
+        .map((building) => building.id);
+      const levelIdsToDelete = levels
+        .filter((level) => buildingIdsToDelete.includes(level.buildingId))
+        .map((level) => level.id);
+
+      requestProjectConfirmation({
+        title: "Delete venue?",
+        message: `Delete "${venue.name}" and all its buildings, levels, and features?`,
+        confirmLabel: "Yes",
+        apply: () =>
+          applyProjectMutation("Venue deleted", () => {
+            const nextVenues = venues.filter((current) => current.id !== venueId);
+            const nextBuildings = buildings.filter((building) => building.venueId !== venueId);
+            const nextLevels = levels.filter(
+              (level) => !buildingIdsToDelete.includes(level.buildingId),
+            );
+            const nextFeatures = editorState.features.filter(
+              (feature) => !levelIdsToDelete.includes(feature.properties.level_id ?? ""),
+            );
+
+            setVenues(nextVenues);
+            setBuildings(nextBuildings);
+            setLevels(nextLevels);
+            setOverlays((current) =>
+              current.filter(
+                (overlay) => !levelIdsToDelete.includes(overlay.level_id ?? overlay.floorId),
+              ),
+            );
+            setLockedOverlayFloorIds((current) =>
+              current.filter((level_id) => !levelIdsToDelete.includes(level_id)),
+            );
+            setLockedFeatureIds((current) =>
+              current.filter((featureId) =>
+                nextFeatures.some((feature) => feature.id === featureId),
+              ),
+            );
+            setEditorState((current) =>
+              replaceAllFeatures(selectFeature(current, undefined), nextFeatures),
+            );
+
+            const nextSelection = firstValidSelection({
+              venues: nextVenues,
+              buildings: nextBuildings,
+              levels: nextLevels,
+              floors: nextLevels,
+              features: nextFeatures,
+            });
+            setSelection(nextSelection);
+          }),
+      });
+    },
+    [
+      venues,
+      buildings,
+      levels,
+      editorState.features,
+      applyProjectMutation,
+      requestProjectConfirmation,
+    ],
+  );
+
   const onUpdateBuildingVenueCategory = useCallback(
     (buildingId: string, category: string) => {
       applyProjectMutation("Building venue category updated", () => {
@@ -2881,6 +2951,7 @@ function App() {
                 }}
                 onRenameBuilding={onRenameBuilding}
                 onRenameVenue={onRenameVenue}
+                onDeleteVenue={onDeleteVenue}
                 onAddBuilding={onAddBuilding}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}

@@ -4,6 +4,7 @@ type VenueEditorProps = {
   venue: Venue;
   onRenameVenue: (name: string) => void;
   onAddBuilding: () => void;
+  onDeleteVenue: () => void;
   rawGeoJsonPreview?: unknown;
 };
 
@@ -11,6 +12,7 @@ export const VenueEditor = ({
   venue,
   onRenameVenue,
   onAddBuilding,
+  onDeleteVenue,
   rawGeoJsonPreview,
 }: VenueEditorProps) => (
   <section className="card bg-base-100 shadow">
@@ -28,6 +30,9 @@ export const VenueEditor = ({
       <div className="flex gap-2">
         <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
           Add building
+        </button>
+        <button className="btn btn-sm btn-error" type="button" onClick={onDeleteVenue}>
+          Delete venue
         </button>
       </div>
       <details className="rounded-box border border-base-300 p-3">
