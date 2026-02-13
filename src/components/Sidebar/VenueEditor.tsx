@@ -10,8 +10,8 @@ export const VenueEditor = ({ venue, onRenameVenue, onAddBuilding }: VenueEditor
   <section className="card bg-base-100 shadow">
     <div className="card-body gap-3">
       <h2 className="card-title text-lg">Venue</h2>
-      <label className="form-control gap-1">
-        <span className="label-text">Name</span>
+      <label className="fieldset">
+        <span className="fieldset-legend">Name</span>
         <input
           className="input input-bordered input-sm"
           type="text"

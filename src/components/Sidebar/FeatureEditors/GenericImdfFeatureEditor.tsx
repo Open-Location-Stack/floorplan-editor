@@ -246,8 +246,8 @@ export const GenericImdfFeatureEditor = ({
             if (field.key === "category" && categoryOptions.length > 0) {
               const currentValue = readString(feature.properties, field.key);
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <select
                     className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                     value={currentValue}
@@ -275,8 +275,8 @@ export const GenericImdfFeatureEditor = ({
             ) {
               const currentValue = readString(feature.properties, field.key);
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <select
                     className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                     value={currentValue}
@@ -325,8 +325,8 @@ export const GenericImdfFeatureEditor = ({
                   ? String(feature.properties[field.key])
                   : "";
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <input
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="number"
@@ -345,8 +345,8 @@ export const GenericImdfFeatureEditor = ({
               const textValue =
                 fieldText[field.key] ?? readEnglishLabel(feature.properties[field.key]);
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <input
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="text"
@@ -374,8 +374,8 @@ export const GenericImdfFeatureEditor = ({
             if (field.type === "string[]") {
               const currentValue = readListValue(feature.properties, field.key);
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <input
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="text"
@@ -398,8 +398,8 @@ export const GenericImdfFeatureEditor = ({
                 fieldText[field.key] ??
                 JSON.stringify(feature.properties[field.key] ?? {}, null, 2);
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <textarea
                     className={`textarea textarea-bordered h-24 w-full font-mono text-xs ${hasError ? "textarea-error" : ""}`}
                     value={textValue}
@@ -438,8 +438,8 @@ export const GenericImdfFeatureEditor = ({
                 field.editorControl === "uuid-ref";
               if (selectable) {
                 return (
-                  <label className="form-control gap-1" key={field.key}>
-                    <span className="label-text">{label}</span>
+                  <label className="fieldset" key={field.key}>
+                    <span className="fieldset-legend">{label}</span>
                     <select
                       className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                       value={currentValue}
@@ -470,8 +470,8 @@ export const GenericImdfFeatureEditor = ({
                   ? ((reference as { id: string }).id ?? "")
                   : "";
               return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
+                <label className="fieldset" key={field.key}>
+                  <span className="fieldset-legend">{label}</span>
                   <select
                     className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
                     value={currentValue}
@@ -503,8 +503,8 @@ export const GenericImdfFeatureEditor = ({
             }
 
             return (
-              <label className="form-control gap-1" key={field.key}>
-                <span className="label-text">{label}</span>
+              <label className="fieldset" key={field.key}>
+                <span className="fieldset-legend">{label}</span>
                 <input
                   className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                   type="text"
@@ -519,8 +519,8 @@ export const GenericImdfFeatureEditor = ({
           })}
 
           {type !== "relationship" ? (
-            <label className="form-control gap-1">
-              <span className="label-text">Containment parent</span>
+            <label className="fieldset">
+              <span className="fieldset-legend">Containment parent</span>
               <select
                 className="select select-bordered select-sm"
                 value={containmentParentId}

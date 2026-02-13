@@ -91,8 +91,8 @@ export const LevelEditor = ({
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
         <h2 className="card-title text-lg">Level</h2>
-        <label className="form-control gap-1">
-          <span className="label-text">Name</span>
+        <label className="fieldset">
+          <span className="fieldset-legend">Name</span>
           <input
             className="input input-bordered input-sm"
             type="text"
@@ -104,8 +104,8 @@ export const LevelEditor = ({
         <div className="rounded-box border border-base-300 p-3">
           <div className="mb-2 text-sm font-semibold">Level metadata</div>
           <div className="grid gap-2">
-            <label className="form-control gap-1">
-              <span className="label-text">Ordinal (numeric floor level)</span>
+            <label className="fieldset">
+              <span className="fieldset-legend">Ordinal (numeric floor level)</span>
               <input
                 className="input input-bordered input-sm"
                 type="number"
@@ -115,8 +115,8 @@ export const LevelEditor = ({
                 aria-label="Level ordinal"
               />
             </label>
-            <label className="form-control gap-1">
-              <span className="label-text">Short name</span>
+            <label className="fieldset">
+              <span className="fieldset-legend">Short name</span>
               <input
                 className="input input-bordered input-sm"
                 type="text"

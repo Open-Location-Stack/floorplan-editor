@@ -2471,10 +2471,8 @@ function App() {
                 </button>
               </div>
               <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
-                <label className="form-control">
-                  <div className="label px-0 pb-1">
-                    <span className="label-text text-sm font-semibold">Basemap style</span>
-                  </div>
+                <label className="fieldset">
+                  <span className="fieldset-legend text-sm font-semibold">Basemap style</span>
                   <select
                     className="select select-bordered select-sm w-full"
                     value={mapStyleId}

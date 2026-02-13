@@ -29,8 +29,8 @@ export const BuildingEditor = ({
       <div className="card-body gap-3">
         <h2 className="card-title text-lg">Building</h2>
         {venue ? <p className="text-xs text-base-content/70">Venue: {venue.name}</p> : null}
-        <label className="form-control gap-1">
-          <span className="label-text">Name</span>
+        <label className="fieldset">
+          <span className="fieldset-legend">Name</span>
           <input
             className="input input-bordered input-sm"
             type="text"
