@@ -6,12 +6,7 @@ import {
   featureLengthMeters,
 } from "../../../lib/geometry/measurements";
 import { getCategoryOptions } from "../../../lib/imdf/categories";
-import {
-  canContainChildren,
-  getContainmentParentId,
-  resolveFeatureType,
-  wouldCreateContainmentCycle,
-} from "../../../lib/imdf/containment";
+import { canContainChildren, resolveFeatureType } from "../../../lib/imdf/containment";
 import type { ImdfFeatureField } from "../../../lib/imdf/featureCatalog";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
 import { formatFeatureOptionLabel } from "../../../lib/imdf/featureDisplay";
@@ -205,7 +200,6 @@ export const GenericImdfFeatureEditor = ({
       ),
     [allFeatures, feature.id, feature.properties.level_id],
   );
-  const containmentParentId = getContainmentParentId(feature) ?? "";
   const isContainerType = canContainChildren(type);
   const childTypeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -215,12 +209,6 @@ export const GenericImdfFeatureEditor = ({
     }
     return counts;
   }, [sameFloorFeatures]);
-  const parentCandidates = useMemo(
-    () =>
-      sameFloorFeatures.filter((candidate) => canContainChildren(resolveFeatureType(candidate))),
-    [sameFloorFeatures],
-  );
-
   const candidatesForField = useMemo(() => {
     const byField: Record<string, FloorFeature[]> = {};
     for (const field of spec.fields) {
@@ -577,47 +565,6 @@ export const GenericImdfFeatureEditor = ({
               </label>
             );
           })}
-
-          {type !== "relationship" ? (
-            <label className="fieldset">
-              <span className="fieldset-legend">Containment parent</span>
-              <select
-                className="select select-bordered select-sm"
-                value={containmentParentId}
-                onChange={(event) => {
-                  const nextId = event.currentTarget.value;
-                  if (
-                    wouldCreateContainmentCycle(
-                      feature.id,
-                      nextId.length > 0 ? nextId : undefined,
-                      allFeatures,
-                    )
-                  ) {
-                    return;
-                  }
-                  onUpdateProperty("containmentParentId", nextId.length > 0 ? nextId : undefined);
-                  const nextType = parentCandidates.find(
-                    (candidate) => candidate.id === nextId,
-                  )?.feature_type;
-                  onUpdateProperty(
-                    "containmentParentType",
-                    typeof nextType === "string"
-                      ? nextType
-                      : nextId.length > 0
-                        ? "unit"
-                        : undefined,
-                  );
-                }}
-              >
-                <option value="">Default level containment</option>
-                {parentCandidates.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {formatFeatureOptionLabel(candidate)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
 
           <AddFeatureButtonGroups
             typeCounts={childTypeCounts}

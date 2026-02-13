@@ -27,6 +27,11 @@ import {
   exportVenueImdfZip,
 } from "./lib/imdf/archiveExport";
 import { importImdfArchiveZip } from "./lib/imdf/archiveImport";
+import {
+  applyContainmentParent,
+  type ContainmentParent,
+  resolvePendingContainmentParent,
+} from "./lib/imdf/containment";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
@@ -426,6 +431,9 @@ function App() {
   const [splitPathRequestVersion, setSplitPathRequestVersion] = useState(0);
   const [forkPathRequestVersion, setForkPathRequestVersion] = useState(0);
   const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
+  const [pendingContainmentParent, setPendingContainmentParent] = useState<
+    ContainmentParent | undefined
+  >();
   const [hasSelectedVertex, setHasSelectedVertex] = useState(false);
   const [mapStyleId, setMapStyleId] = useState<string>(DEFAULT_MAP_STYLE_ID);
   const [mapView, setMapView] = useState<{ center: Coordinates; zoom: number }>(initialMapView);
@@ -888,6 +896,7 @@ function App() {
     (mode: DrawMode) => {
       setDrawMode(mode);
       setPendingDrawFeatureType(undefined);
+      setPendingContainmentParent(undefined);
       setHasSelectedVertex(false);
       if (mode !== "select") {
         setEditorState((current) => selectFeature(current, undefined));
@@ -902,6 +911,7 @@ function App() {
   const cancelDrawMode = useCallback(() => {
     setDrawMode("select");
     setPendingDrawFeatureType(undefined);
+    setPendingContainmentParent(undefined);
     setHasSelectedVertex(false);
   }, []);
 
@@ -949,16 +959,19 @@ function App() {
           if (shouldApplyPendingTemplate) {
             consumedPendingTemplate = true;
           }
-          const mergedProperties = {
-            ...(existing?.properties ?? {}),
-            ...feature.properties,
-            ...(shouldApplyPendingTemplate
-              ? {
+          const mergedProperties = shouldApplyPendingTemplate
+            ? applyContainmentParent(
+                {
+                  ...feature.properties,
                   feature_type: pendingSchema.type,
                   name: pendingSchema.defaultName,
-                }
-              : {}),
-          };
+                },
+                pendingContainmentParent,
+              )
+            : {
+                ...(existing?.properties ?? {}),
+                ...feature.properties,
+              };
           const featureType =
             (typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type) ||
             (shouldApplyPendingTemplate ? pendingSchema?.type : undefined);
@@ -1028,9 +1041,16 @@ function App() {
 
       if (consumedPendingTemplate) {
         setPendingDrawFeatureType(undefined);
+        setPendingContainmentParent(undefined);
       }
     },
-    [activeLevel, activeBuilding, pendingDrawFeatureType, lockedFeatureIdsSet],
+    [
+      activeLevel,
+      activeBuilding,
+      pendingDrawFeatureType,
+      pendingContainmentParent,
+      lockedFeatureIdsSet,
+    ],
   );
 
   const onDrawSelectionChange = useCallback(
@@ -2445,21 +2465,25 @@ function App() {
   const onCreateFeature = useCallback(
     (type: SupportedImdfType) => {
       const schema = getImdfSchemaRule(type);
+      const nextContainmentParent = resolvePendingContainmentParent(selectedFeature);
       if (schema.geometryType === "Point") {
         startDrawMode("point");
         setPendingDrawFeatureType(type);
+        setPendingContainmentParent(nextContainmentParent);
         return;
       }
       if (schema.geometryType === "LineString") {
         startDrawMode("line");
         setPendingDrawFeatureType(type);
+        setPendingContainmentParent(nextContainmentParent);
         return;
       }
 
       startDrawMode("polygon");
       setPendingDrawFeatureType(type);
+      setPendingContainmentParent(nextContainmentParent);
     },
-    [startDrawMode],
+    [selectedFeature, startDrawMode],
   );
 
   const canUndo = projectUndoStack.length > 0 || editorState.undoStack.length > 0;
