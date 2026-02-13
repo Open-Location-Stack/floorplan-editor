@@ -1,16 +1,16 @@
 import { getImdfSchemaRule, type SupportedImdfType } from "../../lib/imdf/schema";
 import {
-  NAVIGATION_EDGE_CATEGORIES,
   NAVIGATION_NODE_CATEGORIES,
-  type NavigationEdgeCategory,
+  NAVIGATION_PATH_CATEGORIES,
   type NavigationNodeCategory,
+  type NavigationPathCategory,
 } from "../../lib/navigation/navigationModel";
 import { AppIcon } from "../icons/AppIcon";
 
 export type AddFeatureRequest =
   | { type: SupportedImdfType }
-  | { type: "formation:navigation-node"; category: NavigationNodeCategory }
-  | { type: "formation:navigation-edge"; category: NavigationEdgeCategory };
+  | { type: "opening"; mode: "node"; category: NavigationNodeCategory }
+  | { type: "opening"; mode: "path"; category: NavigationPathCategory };
 
 type AddFeatureButtonGroupsProps = {
   typeCounts?: Map<string, number>;
@@ -39,7 +39,7 @@ const NODE_LABELS: Record<NavigationNodeCategory, string> = {
   exit: "Exit",
 };
 
-const EDGE_LABELS: Record<NavigationEdgeCategory, string> = {
+const EDGE_LABELS: Record<NavigationPathCategory, string> = {
   pedestrian: "Pedestrian path",
   wheelchair: "Wheelchair path",
 };
@@ -83,7 +83,7 @@ export const AddFeatureButtonGroups = ({
               key={category}
               className="btn btn-xs gap-1"
               type="button"
-              onClick={() => onCreateFeature({ type: "formation:navigation-node", category })}
+              onClick={() => onCreateFeature({ type: "opening", mode: "node", category })}
               disabled={disabled}
               title={NODE_LABELS[category]}
             >
@@ -96,12 +96,12 @@ export const AddFeatureButtonGroups = ({
       <div>
         <div className="mb-1 text-xs text-base-content/60">Navigation Paths</div>
         <div className="flex flex-wrap gap-2">
-          {NAVIGATION_EDGE_CATEGORIES.map((category) => (
+          {NAVIGATION_PATH_CATEGORIES.map((category) => (
             <button
               key={category}
               className="btn btn-xs gap-1"
               type="button"
-              onClick={() => onCreateFeature({ type: "formation:navigation-edge", category })}
+              onClick={() => onCreateFeature({ type: "opening", mode: "path", category })}
               disabled={disabled}
               title={EDGE_LABELS[category]}
             >

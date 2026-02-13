@@ -170,8 +170,7 @@ export const normalizeFeature = (
   if (normalizedType === "opening") {
     if (
       typeof normalized.properties.category !== "string" ||
-      normalized.properties.category.trim().length === 0 ||
-      normalized.properties.category === "door"
+      normalized.properties.category.trim().length === 0
     ) {
       normalized.properties.category = "pedestrian";
     }

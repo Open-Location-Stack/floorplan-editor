@@ -1,9 +1,10 @@
 import { readImdfType } from "../imdf/featureCatalog";
 import {
-  type NavigationEdgeCategory,
   type NavigationNodeCategory,
+  type NavigationPathCategory,
   readFeatureTypeString,
   readNavigationNodeCategory,
+  readNavigationPathCategory,
 } from "../navigation/navigationModel";
 import type { FloorFeature, ImdfFeatureType } from "../types";
 
@@ -35,31 +36,22 @@ export type UiActionIconKey =
   | "directory"
   | "entry";
 
-export type FeatureIconKey =
-  | ImdfFeatureType
-  | "formation:navigation-node"
-  | "formation:navigation-edge"
-  | "unknown";
+export type FeatureIconKey = ImdfFeatureType | "unknown";
 
 export type NavigationNodeIconKey = NavigationNodeCategory;
-export type NavigationEdgeIconKey = NavigationEdgeCategory;
+export type NavigationEdgeIconKey = NavigationPathCategory;
 
 export const getNavigationNodeCategoryIconKey = (
   category: NavigationNodeCategory,
 ): NavigationNodeIconKey => category;
 
 export const getNavigationEdgeCategoryIconKey = (
-  category: NavigationEdgeCategory,
+  category: NavigationPathCategory,
 ): NavigationEdgeIconKey => category;
 
 export const getFeatureIconKey = (feature: FloorFeature): FeatureIconKey => {
-  const type = readFeatureTypeString(feature);
-  if (type === "formation:navigation-node" || type === "formation:navigation-edge") {
-    return type;
-  }
-
   const imdfType =
-    readImdfType(feature.feature_type) ??
+    readImdfType(readFeatureTypeString(feature)) ??
     readImdfType(feature.properties.imdfType) ??
     readImdfType(feature.properties.kind);
 
@@ -96,34 +88,34 @@ export type MapPointIconId =
 
 export const mapPointIconIdForFeature = (feature: FloorFeature): MapPointIconId => {
   const type = getFeatureIconKey(feature);
-  if (type === "formation:navigation-node") {
-    const category = readNavigationNodeCategory(feature);
-    if (category === "entrance") {
-      return "point-icon-nav-entrance";
-    }
-    if (category === "door") {
-      return "point-icon-nav-door";
-    }
-    if (category === "stairs") {
-      return "point-icon-nav-stairs";
-    }
-    if (category === "elevator") {
-      return "point-icon-nav-elevator";
-    }
-    if (category === "escalator") {
-      return "point-icon-nav-escalator";
-    }
-    if (category === "revolving_door") {
-      return "point-icon-nav-revolving-door";
-    }
-    if (category === "exit") {
-      return "point-icon-nav-exit";
-    }
-    return "point-icon-nav";
-  }
 
   if (type === "opening") {
+    const navigationNodeCategory = readNavigationNodeCategory(feature);
+    if (navigationNodeCategory === "entrance") {
+      return "point-icon-nav-entrance";
+    }
+    if (navigationNodeCategory === "door") {
+      return "point-icon-nav-door";
+    }
+    if (navigationNodeCategory === "stairs") {
+      return "point-icon-nav-stairs";
+    }
+    if (navigationNodeCategory === "elevator") {
+      return "point-icon-nav-elevator";
+    }
+    if (navigationNodeCategory === "escalator") {
+      return "point-icon-nav-escalator";
+    }
+    if (navigationNodeCategory === "revolving_door") {
+      return "point-icon-nav-revolving-door";
+    }
+    if (navigationNodeCategory === "exit") {
+      return "point-icon-nav-exit";
+    }
     const category = readOpeningCategory(feature);
+    if (category === "pedestrian" && readNavigationPathCategory(feature) === "wheelchair") {
+      return "point-icon-nav";
+    }
     if (category === "entrance") {
       return "point-icon-opening-entrance";
     }

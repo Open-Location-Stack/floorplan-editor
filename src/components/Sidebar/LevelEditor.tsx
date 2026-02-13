@@ -75,7 +75,7 @@ export const LevelEditor = ({
     const navigationEdges = levelFeatures.filter((feature) => {
       const type =
         typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
-      return type === "formation:navigation-edge";
+      return type === "opening" && feature.properties.category === "pedestrian";
     });
     for (const edge of navigationEdges) {
       if (edge.geometry.type !== "LineString" || edge.geometry.coordinates.length < 2) {

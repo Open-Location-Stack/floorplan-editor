@@ -79,24 +79,18 @@ const featureTypeExpression: unknown[] = [
 ];
 const featureCategoryExpression: unknown[] = [
   "coalesce",
-  ["get", "user_formation:navigation_category"],
-  ["get", "user_formation:path_category"],
+  ["get", "wheelchair", ["get", "user_accessibility"]],
   ["get", "user_category"],
-  ["get", "formation:navigation_category"],
-  ["get", "formation:path_category"],
+  ["get", "wheelchair", ["get", "accessibility"]],
   ["get", "category"],
   "",
 ];
 
 const drawLineColorExpression: unknown[] = [
   "case",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-edge"],
-    ["==", featureCategoryExpression, "wheelchair"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, true]],
   "#0f766e",
-  ["==", featureTypeExpression, "formation:navigation-edge"],
+  ["==", featureTypeExpression, "opening"],
   "#0ea5e9",
   "#dc2626",
 ];
@@ -109,47 +103,23 @@ const geofenceFillColorExpression: unknown[] = [
 
 const pointIconImageExpression: unknown[] = [
   "case",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "entrance"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "entrance"]],
   "point-icon-nav-entrance",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "door"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "door"]],
   "point-icon-nav-door",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "stairs"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "stairs"]],
   "point-icon-nav-stairs",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "elevator"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "elevator"]],
   "point-icon-nav-elevator",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "escalator"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "escalator"]],
   "point-icon-nav-escalator",
   [
     "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureTypeExpression, "opening"],
     ["==", featureCategoryExpression, "revolving_door"],
   ],
   "point-icon-nav-revolving-door",
-  [
-    "all",
-    ["==", featureTypeExpression, "formation:navigation-node"],
-    ["==", featureCategoryExpression, "exit"],
-  ],
+  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "exit"]],
   "point-icon-nav-exit",
   ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "entrance"]],
   "point-icon-opening-entrance",
@@ -179,8 +149,6 @@ const pointIconImageExpression: unknown[] = [
   "point-icon-opening",
   ["==", featureTypeExpression, "relationship"],
   "point-icon-relationship",
-  ["==", featureTypeExpression, "formation:navigation-node"],
-  "point-icon-nav",
   "point-icon-default",
 ];
 

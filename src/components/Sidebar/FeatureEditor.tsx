@@ -1,4 +1,8 @@
 import { readImdfType } from "../../lib/imdf/featureCatalog";
+import {
+  isNavigationNodeOpening,
+  isNavigationPathOpening,
+} from "../../lib/navigation/navigationModel";
 import type { FloorFeature, ImdfFeatureType, JsonObject, JsonValue, Level } from "../../lib/types";
 import type { AddFeatureRequest } from "./AddFeatureButtonGroups";
 import { AmenityFeatureEditor } from "./FeatureEditors/AmenityFeatureEditor";
@@ -56,8 +60,6 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
       return <SectionFeatureEditor {...props} type="section" />;
     case "geofence":
       return <GeofenceFeatureEditor {...props} type="geofence" />;
-    case "opening":
-      return <OpeningFeatureEditor {...props} type="opening" />;
     case "amenity":
       return <AmenityFeatureEditor {...props} type="amenity" />;
     case "anchor":
@@ -70,35 +72,40 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
       return <KioskFeatureEditor {...props} type="kiosk" />;
     case "occupant":
       return <OccupantFeatureEditor {...props} type="occupant" />;
-    case "formation:navigation-node":
-      return (
-        <NavigationNodeFeatureEditor
-          feature={props.feature}
-          levels={props.levels}
-          locked={props.locked}
-          onUpdateProperty={props.onUpdateProperty}
-          onDelete={props.onDelete}
-          onClone={props.onClone}
-          onToggleLock={props.onToggleLock}
-          rawGeoJsonFeature={props.rawGeoJsonFeature}
-          {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
-        />
-      );
-    case "formation:navigation-edge":
-      return (
-        <NavigationEdgeFeatureEditor
-          feature={props.feature}
-          allFeatures={props.allFeatures}
-          levels={props.levels}
-          locked={props.locked}
-          onUpdateProperty={props.onUpdateProperty}
-          onDelete={props.onDelete}
-          onClone={props.onClone}
-          onToggleLock={props.onToggleLock}
-          rawGeoJsonFeature={props.rawGeoJsonFeature}
-          {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
-        />
-      );
+    case "opening":
+      if (isNavigationPathOpening(props.feature)) {
+        return (
+          <NavigationEdgeFeatureEditor
+            feature={props.feature}
+            allFeatures={props.allFeatures}
+            levels={props.levels}
+            locked={props.locked}
+            onUpdateProperty={props.onUpdateProperty}
+            onDelete={props.onDelete}
+            onClone={props.onClone}
+            onToggleLock={props.onToggleLock}
+            rawGeoJsonFeature={props.rawGeoJsonFeature}
+            {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
+          />
+        );
+      }
+      if (isNavigationNodeOpening(props.feature)) {
+        return (
+          <NavigationNodeFeatureEditor
+            feature={props.feature}
+            allFeatures={props.allFeatures}
+            levels={props.levels}
+            locked={props.locked}
+            onUpdateProperty={props.onUpdateProperty}
+            onDelete={props.onDelete}
+            onClone={props.onClone}
+            onToggleLock={props.onToggleLock}
+            rawGeoJsonFeature={props.rawGeoJsonFeature}
+            {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
+          />
+        );
+      }
+      return <OpeningFeatureEditor {...props} type="opening" />;
     default:
       return (
         <GenericImdfFeatureEditor

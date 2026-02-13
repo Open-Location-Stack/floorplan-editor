@@ -5,8 +5,9 @@ import { getChildrenByParent } from "../../lib/imdf/containment";
 import { sortFeaturesForRendering } from "../../lib/imdf/export";
 import { isLevelGeometryFeature } from "../../lib/imdf/levelGeometry";
 import {
-  readNavigationEdgeCategory,
+  isNavigationPathOpening,
   readNavigationNodeCategory,
+  readNavigationPathCategory,
 } from "../../lib/navigation/navigationModel";
 import type { Building, FloorFeature, Level, Venue } from "../../lib/types";
 import { AppIcon } from "../icons/AppIcon";
@@ -39,11 +40,11 @@ const featureLabel = (feature: FloorFeature): string => {
 
 const featureIconName = (feature: FloorFeature) => {
   const base = getFeatureIconKey(feature);
-  if (base === "formation:navigation-node") {
+  if (base === "opening") {
+    if (isNavigationPathOpening(feature)) {
+      return readNavigationPathCategory(feature);
+    }
     return readNavigationNodeCategory(feature) ?? base;
-  }
-  if (base === "formation:navigation-edge") {
-    return readNavigationEdgeCategory(feature) ?? base;
   }
   return base;
 };

@@ -1,10 +1,9 @@
 import type { Coordinates, FloorFeature } from "../types";
 import {
-  coordinatesEqual,
-  isNavigationEdgeFeature,
-  isNavigationNodeFeature,
-  readFeatureTypeString,
-  readNavigationLevels,
+  isNavigationNodeOpening,
+  isNavigationPathOpening,
+  isRelationshipFeature,
+  openingRepresentativePoint,
   readNavigationNodeCategory,
   VERTICAL_NAVIGATION_NODE_CATEGORIES,
 } from "./navigationModel";
@@ -35,6 +34,38 @@ const haversineMeters = (from: Coordinates, to: Coordinates): number => {
   return earthRadiusMeters * c;
 };
 
+const readLevelId = (feature: FloorFeature): string | undefined =>
+  typeof feature.properties.level_id === "string"
+    ? feature.properties.level_id
+    : typeof feature.properties.floorId === "string"
+      ? feature.properties.floorId
+      : undefined;
+
+const readRelationshipRefId = (value: unknown): string | undefined => {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return (value as { id: string }).id;
+  }
+  return undefined;
+};
+
+const lineLengthMeters = (coordinates: Coordinates[]): number => {
+  let total = 0;
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    const from = coordinates[index];
+    const to = coordinates[index + 1];
+    if (!from || !to) {
+      continue;
+    }
+    total += haversineMeters(from, to);
+  }
+  return total;
+};
+
 const coordinateKey = (coordinate: Coordinates): string =>
   `${Math.round(coordinate[0] / COORDINATE_EPSILON)}:${Math.round(coordinate[1] / COORDINATE_EPSILON)}`;
 
@@ -43,21 +74,21 @@ const interpolate = (from: Coordinates, to: Coordinates, t: number): Coordinates
   from[1] + (to[1] - from[1]) * t,
 ];
 
-const isRoutableLegacyLineType = (type: string): boolean => type === "opening";
-
 const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
   const segments: Segment[] = [];
   for (const feature of features) {
-    if (
-      !isRoutableLegacyLineType(readFeatureTypeString(feature)) ||
-      feature.geometry.type !== "LineString"
-    ) {
+    const featureType =
+      typeof feature.feature_type === "string"
+        ? feature.feature_type
+        : typeof feature.properties.feature_type === "string"
+          ? feature.properties.feature_type
+          : typeof feature.properties.kind === "string"
+            ? feature.properties.kind
+            : "";
+    if (featureType !== "opening" || feature.geometry.type !== "LineString") {
       continue;
     }
-    const level_id =
-      typeof feature.properties.level_id === "string"
-        ? feature.properties.level_id
-        : feature.properties.floorId;
+    const level_id = readLevelId(feature);
     for (let index = 0; index < feature.geometry.coordinates.length - 1; index += 1) {
       const from = feature.geometry.coordinates[index];
       const to = feature.geometry.coordinates[index + 1];
@@ -203,147 +234,154 @@ const buildLegacyOpeningLineGraph = (features: FloorFeature[]): NavigationGraph 
   };
 };
 
-const levelNodeId = (sourceNodeId: string, levelId: string): string => `${sourceNodeId}:${levelId}`;
-
-const buildNavigationFeatureGraph = (features: FloorFeature[]): NavigationGraph => {
+const buildImdfOpeningRelationshipGraph = (features: FloorFeature[]): NavigationGraph => {
   const nodes: NavigationNode[] = [];
   const edges: NavigationEdge[] = [];
-  const perLevelNodeBySourceId = new Map<string, Map<string, NavigationNode>>();
   const nodeById = new Map<string, NavigationNode>();
   let edgeIndex = 0;
 
-  for (const feature of features) {
-    if (!isNavigationNodeFeature(feature) || feature.geometry.type !== "Point") {
+  const navigationNodes = features.filter(isNavigationNodeOpening);
+  const navigationPaths = features.filter(isNavigationPathOpening);
+
+  for (const feature of navigationNodes) {
+    const point = openingRepresentativePoint(feature);
+    if (!point) {
       continue;
     }
-    const levels = readNavigationLevels(feature);
-    for (const level of levels) {
-      const nodeId = levelNodeId(feature.id, level);
-      const node: NavigationNode = {
-        id: nodeId,
-        coordinate: feature.geometry.coordinates,
-        floorId: level,
-      };
-      nodes.push(node);
-      nodeById.set(nodeId, node);
-      const byLevel = perLevelNodeBySourceId.get(feature.id) ?? new Map<string, NavigationNode>();
-      byLevel.set(level, node);
-      perLevelNodeBySourceId.set(feature.id, byLevel);
-    }
+    const levelId = readLevelId(feature);
+    const node: NavigationNode = {
+      id: feature.id,
+      coordinate: point,
+      ...(levelId ? { floorId: levelId } : {}),
+    };
+    nodes.push(node);
+    nodeById.set(feature.id, node);
   }
 
-  for (const feature of features) {
-    if (!isNavigationEdgeFeature(feature) || feature.geometry.type !== "LineString") {
+  for (const pathFeature of navigationPaths) {
+    if (pathFeature.geometry.type !== "LineString") {
       continue;
     }
-    const levelId =
-      typeof feature.properties.level_id === "string"
-        ? feature.properties.level_id
-        : typeof feature.properties.floorId === "string"
-          ? feature.properties.floorId
-          : undefined;
+    const levelId = readLevelId(pathFeature);
     if (!levelId) {
       continue;
     }
-
-    let fromNodeId =
-      typeof feature.properties["formation:from_node_id"] === "string"
-        ? feature.properties["formation:from_node_id"]
-        : undefined;
-    let toNodeId =
-      typeof feature.properties["formation:to_node_id"] === "string"
-        ? feature.properties["formation:to_node_id"]
-        : undefined;
-
-    if (!fromNodeId || !toNodeId) {
-      const first = feature.geometry.coordinates[0];
-      const last = feature.geometry.coordinates[feature.geometry.coordinates.length - 1];
-      if (first && last) {
-        const sameLevelNodes = nodes.filter((node) => node.floorId === levelId);
-        if (!fromNodeId) {
-          fromNodeId = sameLevelNodes.find((node) => coordinatesEqual(node.coordinate, first))?.id;
+    const linkedNodeIds = features
+      .filter(isRelationshipFeature)
+      .map((relationship) => {
+        const origin = readRelationshipRefId(relationship.properties.origin);
+        const destination = readRelationshipRefId(relationship.properties.destination);
+        if (origin === pathFeature.id && destination) {
+          return destination;
         }
-        if (!toNodeId) {
-          toNodeId = sameLevelNodes.find((node) => coordinatesEqual(node.coordinate, last))?.id;
+        if (destination === pathFeature.id && origin) {
+          return origin;
         }
-      }
-    }
+        return undefined;
+      })
+      .filter((id): id is string => Boolean(id))
+      .filter((id) => nodeById.has(id));
 
-    if (!fromNodeId || !toNodeId) {
+    if (linkedNodeIds.length < 2) {
       continue;
     }
 
-    const fromPerLevel =
-      perLevelNodeBySourceId.get(fromNodeId)?.get(levelId) ??
-      nodeById.get(levelNodeId(fromNodeId, levelId)) ??
-      nodeById.get(fromNodeId);
-    const toPerLevel =
-      perLevelNodeBySourceId.get(toNodeId)?.get(levelId) ??
-      nodeById.get(levelNodeId(toNodeId, levelId)) ??
-      nodeById.get(toNodeId);
-    if (!fromPerLevel || !toPerLevel) {
+    const start = pathFeature.geometry.coordinates[0];
+    const end = pathFeature.geometry.coordinates[pathFeature.geometry.coordinates.length - 1];
+    if (!start || !end) {
+      continue;
+    }
+
+    const uniqueNodeIds = [...new Set(linkedNodeIds)];
+    const byStart = [...uniqueNodeIds].sort((left, right) => {
+      const leftPoint = nodeById.get(left)?.coordinate ?? start;
+      const rightPoint = nodeById.get(right)?.coordinate ?? start;
+      return (
+        Math.hypot(start[0] - leftPoint[0], start[1] - leftPoint[1]) -
+        Math.hypot(start[0] - rightPoint[0], start[1] - rightPoint[1])
+      );
+    });
+    const fromNodeId = byStart[0];
+    const remaining = uniqueNodeIds.filter((id) => id !== fromNodeId);
+    const byEnd = [...remaining].sort((left, right) => {
+      const leftPoint = nodeById.get(left)?.coordinate ?? end;
+      const rightPoint = nodeById.get(right)?.coordinate ?? end;
+      return (
+        Math.hypot(end[0] - leftPoint[0], end[1] - leftPoint[1]) -
+        Math.hypot(end[0] - rightPoint[0], end[1] - rightPoint[1])
+      );
+    });
+    const toNodeId = byEnd[0];
+
+    if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) {
+      continue;
+    }
+
+    const fromNode = nodeById.get(fromNodeId);
+    const toNode = nodeById.get(toNodeId);
+    if (!fromNode || !toNode) {
       continue;
     }
 
     edges.push({
-      id: `edge-${edgeIndex}`,
-      fromNodeId: fromPerLevel.id,
-      toNodeId: toPerLevel.id,
-      weightMeters: haversineMeters(fromPerLevel.coordinate, toPerLevel.coordinate),
+      id: `opening-edge-${edgeIndex}`,
+      fromNodeId,
+      toNodeId,
+      weightMeters: Math.max(0.001, lineLengthMeters(pathFeature.geometry.coordinates)),
       floorId: levelId,
-      coordinates: [fromPerLevel.coordinate, toPerLevel.coordinate],
+      coordinates: [fromNode.coordinate, toNode.coordinate],
     });
     edgeIndex += 1;
   }
 
-  for (const feature of features) {
-    if (!isNavigationNodeFeature(feature) || feature.geometry.type !== "Point") {
+  for (const relationship of features.filter(isRelationshipFeature)) {
+    const origin = readRelationshipRefId(relationship.properties.origin);
+    const destination = readRelationshipRefId(relationship.properties.destination);
+    if (!origin || !destination || origin === destination) {
       continue;
     }
-    const category = readNavigationNodeCategory(feature);
-    if (!category || !VERTICAL_NAVIGATION_NODE_CATEGORIES.has(category)) {
+    const fromNode = nodeById.get(origin);
+    const toNode = nodeById.get(destination);
+    if (!fromNode || !toNode) {
       continue;
     }
-    const levels = readNavigationLevels(feature);
-    if (levels.length < 2) {
+    const originFeature = navigationNodes.find((feature) => feature.id === origin);
+    const destinationFeature = navigationNodes.find((feature) => feature.id === destination);
+    const originCategory = originFeature ? readNavigationNodeCategory(originFeature) : undefined;
+    const destinationCategory = destinationFeature
+      ? readNavigationNodeCategory(destinationFeature)
+      : undefined;
+    if (
+      !originCategory ||
+      !destinationCategory ||
+      !VERTICAL_NAVIGATION_NODE_CATEGORIES.has(originCategory) ||
+      !VERTICAL_NAVIGATION_NODE_CATEGORIES.has(destinationCategory)
+    ) {
       continue;
     }
-    for (let i = 0; i < levels.length; i += 1) {
-      for (let j = i + 1; j < levels.length; j += 1) {
-        const fromLevel = levels[i];
-        const toLevel = levels[j];
-        if (!fromLevel || !toLevel) {
-          continue;
-        }
-        const from = perLevelNodeBySourceId.get(feature.id)?.get(fromLevel);
-        const to = perLevelNodeBySourceId.get(feature.id)?.get(toLevel);
-        if (!from || !to) {
-          continue;
-        }
-        edges.push({
-          id: `vertical-edge-${edgeIndex}`,
-          fromNodeId: from.id,
-          toNodeId: to.id,
-          weightMeters: 1,
-          coordinates: [from.coordinate, to.coordinate],
-        });
-        edgeIndex += 1;
-      }
+    if (fromNode.floorId === toNode.floorId) {
+      continue;
     }
+
+    edges.push({
+      id: `vertical-edge-${edgeIndex}`,
+      fromNodeId: fromNode.id,
+      toNodeId: toNode.id,
+      weightMeters: 1,
+      coordinates: [fromNode.coordinate, toNode.coordinate],
+    });
+    edgeIndex += 1;
   }
 
-  return {
-    nodes,
-    edges,
-  };
+  return { nodes, edges };
 };
 
 export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
-  const hasNavigationModelFeatures = features.some(
-    (feature) => isNavigationNodeFeature(feature) || isNavigationEdgeFeature(feature),
+  const hasImdfNavigationFeatures = features.some(
+    (feature) => isNavigationNodeOpening(feature) || isNavigationPathOpening(feature),
   );
-  if (hasNavigationModelFeatures) {
-    return buildNavigationFeatureGraph(features);
+  if (hasImdfNavigationFeatures) {
+    return buildImdfOpeningRelationshipGraph(features);
   }
   return buildLegacyOpeningLineGraph(features);
 };

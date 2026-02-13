@@ -1,8 +1,5 @@
 import type { Coordinates, FloorFeature } from "../types";
 
-export const NAVIGATION_NODE_FEATURE_TYPE = "formation:navigation-node";
-export const NAVIGATION_EDGE_FEATURE_TYPE = "formation:navigation-edge";
-
 export const NAVIGATION_NODE_CATEGORIES = [
   "entrance",
   "door",
@@ -15,8 +12,8 @@ export const NAVIGATION_NODE_CATEGORIES = [
 
 export type NavigationNodeCategory = (typeof NAVIGATION_NODE_CATEGORIES)[number];
 
-export const NAVIGATION_EDGE_CATEGORIES = ["pedestrian", "wheelchair"] as const;
-export type NavigationEdgeCategory = (typeof NAVIGATION_EDGE_CATEGORIES)[number];
+export const NAVIGATION_PATH_CATEGORIES = ["pedestrian", "wheelchair"] as const;
+export type NavigationPathCategory = (typeof NAVIGATION_PATH_CATEGORIES)[number];
 
 export const VERTICAL_NAVIGATION_NODE_CATEGORIES = new Set<NavigationNodeCategory>([
   "stairs",
@@ -33,41 +30,27 @@ export const readFeatureTypeString = (feature: FloorFeature): string =>
         ? feature.properties.kind
         : "";
 
-export const isNavigationNodeFeature = (feature: FloorFeature): boolean =>
-  readFeatureTypeString(feature) === NAVIGATION_NODE_FEATURE_TYPE;
+export const readOpeningCategory = (feature: FloorFeature): string | undefined =>
+  typeof feature.properties.category === "string" ? feature.properties.category : undefined;
 
-export const isNavigationEdgeFeature = (feature: FloorFeature): boolean =>
-  readFeatureTypeString(feature) === NAVIGATION_EDGE_FEATURE_TYPE;
+export const isOpeningFeature = (feature: FloorFeature): boolean =>
+  readFeatureTypeString(feature) === "opening";
 
-export const readNavigationLevels = (feature: FloorFeature): string[] => {
-  const raw = feature.properties["formation:navigation_levels"];
-  if (Array.isArray(raw)) {
-    return raw.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
-  }
-  const levelId =
-    typeof feature.properties.level_id === "string"
-      ? feature.properties.level_id
-      : typeof feature.properties.floorId === "string"
-        ? feature.properties.floorId
-        : undefined;
-  return levelId ? [levelId] : [];
-};
+export const isRelationshipFeature = (feature: FloorFeature): boolean =>
+  readFeatureTypeString(feature) === "relationship";
 
-export const featureHasLevel = (feature: FloorFeature, levelId: string): boolean => {
-  if (isNavigationNodeFeature(feature)) {
-    return readNavigationLevels(feature).includes(levelId);
-  }
-  return (
-    feature.properties.level_id === levelId ||
-    feature.properties.floorId === levelId ||
-    (!feature.properties.level_id && !feature.properties.floorId)
-  );
-};
+export const isNavigationNodeOpening = (feature: FloorFeature): boolean =>
+  isOpeningFeature(feature) &&
+  typeof feature.properties.category === "string" &&
+  (NAVIGATION_NODE_CATEGORIES as readonly string[]).includes(feature.properties.category);
+
+export const isNavigationPathOpening = (feature: FloorFeature): boolean =>
+  isOpeningFeature(feature) && feature.properties.category === "pedestrian";
 
 export const readNavigationNodeCategory = (
   feature: FloorFeature,
 ): NavigationNodeCategory | undefined => {
-  const category = feature.properties["formation:navigation_category"];
+  const category = readOpeningCategory(feature);
   if (
     typeof category === "string" &&
     (NAVIGATION_NODE_CATEGORIES as readonly string[]).includes(category)
@@ -77,18 +60,57 @@ export const readNavigationNodeCategory = (
   return undefined;
 };
 
-export const readNavigationEdgeCategory = (
-  feature: FloorFeature,
-): NavigationEdgeCategory | undefined => {
-  const category = feature.properties["formation:path_category"];
+export const readNavigationPathCategory = (feature: FloorFeature): NavigationPathCategory => {
   if (
-    typeof category === "string" &&
-    (NAVIGATION_EDGE_CATEGORIES as readonly string[]).includes(category)
+    feature.properties.accessibility &&
+    typeof feature.properties.accessibility === "object" &&
+    !Array.isArray(feature.properties.accessibility) &&
+    (feature.properties.accessibility as { wheelchair?: unknown }).wheelchair === true
   ) {
-    return category as NavigationEdgeCategory;
+    return "wheelchair";
   }
-  return undefined;
+  return "pedestrian";
 };
+
+export const featureHasLevel = (feature: FloorFeature, levelId: string): boolean =>
+  feature.properties.level_id === levelId ||
+  feature.properties.floorId === levelId ||
+  (!feature.properties.level_id && !feature.properties.floorId);
 
 export const coordinatesEqual = (left: Coordinates, right: Coordinates, epsilon = 1e-7): boolean =>
   Math.abs(left[0] - right[0]) <= epsilon && Math.abs(left[1] - right[1]) <= epsilon;
+
+export const openingPointToLine = (
+  point: Coordinates,
+  span = 0.00003,
+): Extract<FloorFeature["geometry"], { type: "LineString" }> => ({
+  type: "LineString",
+  coordinates: [
+    [point[0] - span, point[1]],
+    [point[0] + span, point[1]],
+  ],
+});
+
+export const openingRepresentativePoint = (feature: FloorFeature): Coordinates | undefined => {
+  if (feature.geometry.type === "Point") {
+    return feature.geometry.coordinates;
+  }
+  if (feature.geometry.type === "LineString") {
+    const first = feature.geometry.coordinates[0];
+    const last = feature.geometry.coordinates[feature.geometry.coordinates.length - 1];
+    if (!first || !last) {
+      return undefined;
+    }
+    return [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2];
+  }
+  const ring = feature.geometry.coordinates[0];
+  if (!ring || ring.length === 0) {
+    return undefined;
+  }
+  const first = ring[0];
+  const last = ring[ring.length - 1] ?? first;
+  if (!first || !last) {
+    return undefined;
+  }
+  return [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2];
+};

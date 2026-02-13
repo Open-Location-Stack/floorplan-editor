@@ -1352,7 +1352,7 @@ describe("App browser smoke", () => {
         [5.201, 52.201],
         [5.202, 52.202],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("formation:navigation-edge");
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
       expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Path 1" });
     });
   });

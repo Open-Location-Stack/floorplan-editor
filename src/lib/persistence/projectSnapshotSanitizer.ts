@@ -181,8 +181,22 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
         })
       : {};
 
+  const disallowedNavigationKeys = new Set([
+    "formation:navigation_category",
+    "formation:path_category",
+    "formation:navigation_levels",
+    "formation:from_node_id",
+    "formation:to_node_id",
+    "__navigation_levels",
+    "__navigation_path_category",
+    "__navigation_from_opening_id",
+    "__navigation_to_opening_id",
+  ]);
   const normalizedProperties = Object.entries(rawProperties).reduce<Record<string, JsonValue>>(
     (accumulator, [key, propertyValue]) => {
+      if (disallowedNavigationKeys.has(key)) {
+        return accumulator;
+      }
       const normalized = normalizeJsonValue(propertyValue);
       if (normalized !== undefined) {
         accumulator[key] = normalized;
@@ -192,12 +206,16 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
     {},
   );
 
-  const featureType: Exclude<FloorFeature["feature_type"], undefined> =
+  const rawFeatureType =
     isNonEmptyString(raw.feature_type) && typeof raw.feature_type === "string"
-      ? (raw.feature_type as Exclude<FloorFeature["feature_type"], undefined>)
+      ? raw.feature_type
       : isNonEmptyString(rawProperties.kind)
-        ? (rawProperties.kind as Exclude<FloorFeature["feature_type"], undefined>)
+        ? rawProperties.kind
         : "unit";
+  const featureType: Exclude<FloorFeature["feature_type"], undefined> =
+    rawFeatureType === "formation:navigation-node" || rawFeatureType === "formation:navigation-edge"
+      ? "opening"
+      : (rawFeatureType as Exclude<FloorFeature["feature_type"], undefined>);
   const name = isNonEmptyString(rawProperties.name) ? rawProperties.name : undefined;
   const level_id = isNonEmptyString(rawProperties.level_id) ? rawProperties.level_id : undefined;
   const properties: FloorFeature["properties"] = { ...normalizedProperties, kind: featureType };

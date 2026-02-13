@@ -1,12 +1,26 @@
 import { useMemo } from "react";
 import {
-  isNavigationNodeFeature,
-  NAVIGATION_EDGE_CATEGORIES,
-  type NavigationEdgeCategory,
-  readNavigationLevels,
+  isNavigationNodeOpening,
+  isRelationshipFeature,
+  NAVIGATION_PATH_CATEGORIES,
+  type NavigationPathCategory,
+  openingRepresentativePoint,
+  readNavigationPathCategory,
 } from "../../../lib/navigation/navigationModel";
 import type { FloorFeature, JsonValue, Level } from "../../../lib/types";
 import { AppIcon } from "../../icons/AppIcon";
+
+const readRelationshipRefId = (value: unknown): string | undefined => {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return (value as { id: string }).id;
+  }
+  return undefined;
+};
 
 type NavigationEdgeFeatureEditorProps = {
   feature: FloorFeature;
@@ -21,7 +35,7 @@ type NavigationEdgeFeatureEditorProps = {
   rawGeoJsonWarning?: string;
 };
 
-const EDGE_CATEGORY_LABELS: Record<NavigationEdgeCategory, string> = {
+const EDGE_CATEGORY_LABELS: Record<NavigationPathCategory, string> = {
   pedestrian: "Pedestrian",
   wheelchair: "Wheelchair",
 };
@@ -56,30 +70,73 @@ export const NavigationEdgeFeatureEditor = ({
     typeof feature.properties.level_id === "string"
       ? feature.properties.level_id
       : (levels[0]?.id ?? "");
-  const category = feature.properties["formation:path_category"];
-  const selectedCategory =
-    typeof category === "string" &&
-    (NAVIGATION_EDGE_CATEGORIES as readonly string[]).includes(category)
-      ? (category as NavigationEdgeCategory)
-      : "pedestrian";
+  const selectedCategory = readNavigationPathCategory(feature);
   const nodeCandidates = useMemo(
     () =>
       allFeatures.filter(
         (candidate) =>
-          isNavigationNodeFeature(candidate) &&
-          readNavigationLevels(candidate).includes(currentLevelId),
+          isNavigationNodeOpening(candidate) && candidate.properties.level_id === currentLevelId,
       ),
     [allFeatures, currentLevelId],
   );
 
-  const fromNodeId =
-    typeof feature.properties["formation:from_node_id"] === "string"
-      ? feature.properties["formation:from_node_id"]
-      : "";
-  const toNodeId =
-    typeof feature.properties["formation:to_node_id"] === "string"
-      ? feature.properties["formation:to_node_id"]
-      : "";
+  const { fromNodeId, toNodeId } = useMemo(() => {
+    if (feature.geometry.type !== "LineString" || feature.geometry.coordinates.length < 2) {
+      return { fromNodeId: "", toNodeId: "" };
+    }
+    const start = feature.geometry.coordinates[0];
+    const end = feature.geometry.coordinates[feature.geometry.coordinates.length - 1];
+    if (!start || !end) {
+      return { fromNodeId: "", toNodeId: "" };
+    }
+    const links = allFeatures
+      .filter(isRelationshipFeature)
+      .map((relationship) => {
+        const origin = readRelationshipRefId(relationship.properties.origin);
+        const destination = readRelationshipRefId(relationship.properties.destination);
+        if (origin === feature.id && destination) {
+          return destination;
+        }
+        if (destination === feature.id && origin) {
+          return origin;
+        }
+        return undefined;
+      })
+      .filter((entry): entry is string => Boolean(entry))
+      .map((id) => {
+        const node = allFeatures.find((candidate) => candidate.id === id);
+        return {
+          id,
+          point: node ? openingRepresentativePoint(node) : undefined,
+        };
+      })
+      .filter((entry) => entry.point);
+    if (links.length === 0) {
+      return { fromNodeId: "", toNodeId: "" };
+    }
+    const from = [...links].sort((left, right) => {
+      const leftPoint = left.point ?? start;
+      const rightPoint = right.point ?? start;
+      return (
+        Math.hypot(start[0] - leftPoint[0], start[1] - leftPoint[1]) -
+        Math.hypot(start[0] - rightPoint[0], start[1] - rightPoint[1])
+      );
+    })[0]?.id;
+    const to = [...links]
+      .filter((entry) => entry.id !== from)
+      .sort((left, right) => {
+        const leftPoint = left.point ?? end;
+        const rightPoint = right.point ?? end;
+        return (
+          Math.hypot(end[0] - leftPoint[0], end[1] - leftPoint[1]) -
+          Math.hypot(end[0] - rightPoint[0], end[1] - rightPoint[1])
+        );
+      })[0]?.id;
+    return {
+      fromNodeId: from ?? "",
+      toNodeId: to ?? "",
+    };
+  }, [allFeatures, feature]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -109,12 +166,12 @@ export const NavigationEdgeFeatureEditor = ({
               value={selectedCategory}
               onChange={(event) =>
                 onUpdateProperty(
-                  "formation:path_category",
-                  event.currentTarget.value as NavigationEdgeCategory,
+                  "__navigation_path_category",
+                  event.currentTarget.value as NavigationPathCategory,
                 )
               }
             >
-              {NAVIGATION_EDGE_CATEGORIES.map((entry) => (
+              {NAVIGATION_PATH_CATEGORIES.map((entry) => (
                 <option key={entry} value={entry}>
                   {EDGE_CATEGORY_LABELS[entry]}
                 </option>
@@ -141,7 +198,10 @@ export const NavigationEdgeFeatureEditor = ({
               className="select select-bordered select-sm"
               value={fromNodeId}
               onChange={(event) =>
-                onUpdateProperty("formation:from_node_id", event.currentTarget.value || undefined)
+                onUpdateProperty(
+                  "__navigation_from_opening_id",
+                  event.currentTarget.value || undefined,
+                )
               }
             >
               <option value="">Select node</option>
@@ -158,7 +218,10 @@ export const NavigationEdgeFeatureEditor = ({
               className="select select-bordered select-sm"
               value={toNodeId}
               onChange={(event) =>
-                onUpdateProperty("formation:to_node_id", event.currentTarget.value || undefined)
+                onUpdateProperty(
+                  "__navigation_to_opening_id",
+                  event.currentTarget.value || undefined,
+                )
               }
             >
               <option value="">Select node</option>

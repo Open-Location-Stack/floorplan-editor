@@ -1,14 +1,17 @@
 import { useMemo } from "react";
 import {
+  isNavigationNodeOpening,
   NAVIGATION_NODE_CATEGORIES,
   type NavigationNodeCategory,
-  readNavigationLevels,
+  openingRepresentativePoint,
+  readNavigationNodeCategory,
 } from "../../../lib/navigation/navigationModel";
 import type { FloorFeature, JsonValue, Level } from "../../../lib/types";
 import { AppIcon } from "../../icons/AppIcon";
 
 type NavigationNodeFeatureEditorProps = {
   feature: FloorFeature;
+  allFeatures: FloorFeature[];
   levels: Level[];
   locked: boolean;
   onUpdateProperty: (key: string, value: JsonValue | undefined) => void;
@@ -31,6 +34,7 @@ const CATEGORY_LABELS: Record<NavigationNodeCategory, string> = {
 
 export const NavigationNodeFeatureEditor = ({
   feature,
+  allFeatures,
   levels,
   locked,
   onUpdateProperty,
@@ -40,13 +44,48 @@ export const NavigationNodeFeatureEditor = ({
   rawGeoJsonFeature,
   rawGeoJsonWarning,
 }: NavigationNodeFeatureEditorProps) => {
-  const selectedLevels = useMemo(() => readNavigationLevels(feature), [feature]);
-  const category = feature.properties["formation:navigation_category"];
-  const selectedCategory =
-    typeof category === "string" &&
-    (NAVIGATION_NODE_CATEGORIES as readonly string[]).includes(category)
-      ? (category as NavigationNodeCategory)
-      : "entrance";
+  const groupKey = useMemo(() => {
+    const category = readNavigationNodeCategory(feature) ?? "entrance";
+    const point = openingRepresentativePoint(feature) ?? [0, 0];
+    const rounded = `${Math.round(point[0] * 1e7)}:${Math.round(point[1] * 1e7)}`;
+    const name =
+      typeof feature.properties.name === "string"
+        ? feature.properties.name
+        : typeof feature.properties.name === "object" &&
+            feature.properties.name &&
+            !Array.isArray(feature.properties.name) &&
+            typeof (feature.properties.name as { en?: unknown }).en === "string"
+          ? ((feature.properties.name as { en: string }).en ?? "")
+          : "";
+    return `${category}:${name}:${rounded}`;
+  }, [feature]);
+  const selectedLevels = useMemo(() => {
+    const entries = allFeatures
+      .filter((candidate) => isNavigationNodeOpening(candidate))
+      .filter((candidate) => {
+        const category = readNavigationNodeCategory(candidate) ?? "entrance";
+        const point = openingRepresentativePoint(candidate) ?? [0, 0];
+        const rounded = `${Math.round(point[0] * 1e7)}:${Math.round(point[1] * 1e7)}`;
+        const name =
+          typeof candidate.properties.name === "string"
+            ? candidate.properties.name
+            : typeof candidate.properties.name === "object" &&
+                candidate.properties.name &&
+                !Array.isArray(candidate.properties.name) &&
+                typeof (candidate.properties.name as { en?: unknown }).en === "string"
+              ? ((candidate.properties.name as { en: string }).en ?? "")
+              : "";
+        return `${category}:${name}:${rounded}` === groupKey;
+      })
+      .map((candidate) =>
+        typeof candidate.properties.level_id === "string"
+          ? candidate.properties.level_id
+          : undefined,
+      )
+      .filter((levelId): levelId is string => Boolean(levelId));
+    return [...new Set(entries)];
+  }, [allFeatures, groupKey]);
+  const selectedCategory = readNavigationNodeCategory(feature) ?? "entrance";
 
   return (
     <div className="flex flex-col gap-3">
@@ -75,10 +114,7 @@ export const NavigationNodeFeatureEditor = ({
               className="select select-bordered select-sm"
               value={selectedCategory}
               onChange={(event) =>
-                onUpdateProperty(
-                  "formation:navigation_category",
-                  event.currentTarget.value as NavigationNodeCategory,
-                )
+                onUpdateProperty("category", event.currentTarget.value as NavigationNodeCategory)
               }
             >
               {NAVIGATION_NODE_CATEGORIES.map((entry) => (
@@ -107,7 +143,7 @@ export const NavigationNodeFeatureEditor = ({
                         const next = event.currentTarget.checked
                           ? [...new Set([...selectedLevels, level.id])]
                           : selectedLevels.filter((entry) => entry !== level.id);
-                        onUpdateProperty("formation:navigation_levels", next);
+                        onUpdateProperty("__navigation_levels", next);
                       }}
                     />
                   </label>

@@ -47,7 +47,6 @@ import {
   Undo2,
   UserRound,
   WavesLadder,
-  Waypoints,
   Wrench,
 } from "lucide-react";
 import type {
@@ -102,8 +101,6 @@ const ICONS: Record<AppIconName, LucideIcon> = {
   fixture: Wrench,
   kiosk: Monitor,
   occupant: UserRound,
-  "formation:navigation-node": MapPin,
-  "formation:navigation-edge": Waypoints,
   entrance: DoorOpen,
   door: DoorClosed,
   stairs: WavesLadder,

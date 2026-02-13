@@ -107,57 +107,80 @@ describe("path graph + point routing", () => {
     expect(route.found).toBe(false);
   });
 
-  it("builds graph from navigation nodes and edges across levels", () => {
+  it("builds graph from IMDF openings and relationships across levels", () => {
     const features: FloorFeature[] = [
       {
         type: "Feature",
         id: "stairs-a",
-        feature_type: "formation:navigation-node",
+        feature_type: "opening",
         geometry: {
-          type: "Point",
-          coordinates: [5.12, 52.09],
+          type: "LineString",
+          coordinates: [
+            [5.1199, 52.09],
+            [5.1201, 52.09],
+          ],
         },
         properties: {
           level_id: "f1",
           floorId: "f1",
-          "formation:navigation_category": "stairs",
-          "formation:navigation_levels": ["f1", "f2"],
+          category: "stairs",
         },
       },
       {
         type: "Feature",
         id: "f1-node",
-        feature_type: "formation:navigation-node",
+        feature_type: "opening",
         geometry: {
-          type: "Point",
-          coordinates: [5.121, 52.09],
+          type: "LineString",
+          coordinates: [
+            [5.1209, 52.09],
+            [5.1211, 52.09],
+          ],
         },
         properties: {
           level_id: "f1",
           floorId: "f1",
-          "formation:navigation_category": "entrance",
-          "formation:navigation_levels": ["f1"],
+          category: "entrance",
         },
       },
       {
         type: "Feature",
         id: "f2-node",
-        feature_type: "formation:navigation-node",
+        feature_type: "opening",
         geometry: {
-          type: "Point",
-          coordinates: [5.121, 52.0905],
+          type: "LineString",
+          coordinates: [
+            [5.1209, 52.0905],
+            [5.1211, 52.0905],
+          ],
         },
         properties: {
           level_id: "f2",
           floorId: "f2",
-          "formation:navigation_category": "entrance",
-          "formation:navigation_levels": ["f2"],
+          category: "entrance",
+        },
+      },
+      {
+        type: "Feature",
+        id: "stairs-b",
+        feature_type: "opening",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.1199, 52.0905],
+            [5.1201, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          category: "stairs",
         },
       },
       {
         type: "Feature",
         id: "edge-f1",
-        feature_type: "formation:navigation-edge",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -168,28 +191,119 @@ describe("path graph + point routing", () => {
         properties: {
           level_id: "f1",
           floorId: "f1",
-          "formation:path_category": "pedestrian",
-          "formation:from_node_id": "f1-node",
-          "formation:to_node_id": "stairs-a",
+          category: "pedestrian",
         },
       },
       {
         type: "Feature",
         id: "edge-f2",
-        feature_type: "formation:navigation-edge",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
-            [5.12, 52.09],
+            [5.12, 52.0905],
             [5.121, 52.0905],
           ],
         },
         properties: {
           level_id: "f2",
           floorId: "f2",
-          "formation:path_category": "pedestrian",
-          "formation:from_node_id": "stairs-a",
-          "formation:to_node_id": "f2-node",
+          category: "pedestrian",
+        },
+      },
+      {
+        type: "Feature",
+        id: "rel-edge-f1-a",
+        feature_type: "relationship",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.121, 52.09],
+            [5.12, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          direction: "undirected",
+          origin: { id: "edge-f1", feature_type: "opening" },
+          destination: { id: "f1-node", feature_type: "opening" },
+        },
+      },
+      {
+        type: "Feature",
+        id: "rel-edge-f1-b",
+        feature_type: "relationship",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.121, 52.09],
+            [5.12, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          direction: "undirected",
+          origin: { id: "edge-f1", feature_type: "opening" },
+          destination: { id: "stairs-a", feature_type: "opening" },
+        },
+      },
+      {
+        type: "Feature",
+        id: "rel-edge-f2-a",
+        feature_type: "relationship",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.0905],
+            [5.121, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          direction: "undirected",
+          origin: { id: "edge-f2", feature_type: "opening" },
+          destination: { id: "stairs-b", feature_type: "opening" },
+        },
+      },
+      {
+        type: "Feature",
+        id: "rel-edge-f2-b",
+        feature_type: "relationship",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.0905],
+            [5.121, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          direction: "undirected",
+          origin: { id: "edge-f2", feature_type: "opening" },
+          destination: { id: "f2-node", feature_type: "opening" },
+        },
+      },
+      {
+        type: "Feature",
+        id: "rel-vertical",
+        feature_type: "relationship",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.09],
+            [5.12, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          direction: "undirected",
+          origin: { id: "stairs-a", feature_type: "opening" },
+          destination: { id: "stairs-b", feature_type: "opening" },
         },
       },
     ];

@@ -37,7 +37,7 @@ import {
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
-import { migrateProjectSnapshotToNavigationGraphV5 } from "./lib/imdf/migrations/v5";
+import { migrateProjectSnapshotToImdfNavigationV7 } from "./lib/imdf/migrations/v7";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule } from "./lib/imdf/schema";
 import {
@@ -51,15 +51,16 @@ import { cloneLevelWithReferences } from "./lib/levelClone";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
 import {
-  coordinatesEqual,
   featureHasLevel,
-  isNavigationEdgeFeature,
-  isNavigationNodeFeature,
-  NAVIGATION_EDGE_FEATURE_TYPE,
-  NAVIGATION_NODE_FEATURE_TYPE,
-  type NavigationEdgeCategory,
+  isNavigationNodeOpening,
+  isNavigationPathOpening,
+  isRelationshipFeature,
   type NavigationNodeCategory,
-  readNavigationLevels,
+  type NavigationPathCategory,
+  openingPointToLine,
+  openingRepresentativePoint,
+  readNavigationNodeCategory,
+  VERTICAL_NAVIGATION_NODE_CATEGORIES,
 } from "./lib/navigation/navigationModel";
 import { findRouteBetweenPoints } from "./lib/navigation/pointRouting";
 import { projectRepository } from "./lib/persistence/projectRepository";
@@ -79,7 +80,7 @@ import type {
 const THEME_STORAGE_KEY = "floorplan-editor-theme";
 const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
 const PROJECT_ID = "default-project";
-const PROJECT_SCHEMA_VERSION = 6;
+const PROJECT_SCHEMA_VERSION = 7;
 
 const isThemeId = (value: string | null): value is ThemeId =>
   value === "qr-light" || value === "qr-dark";
@@ -361,7 +362,7 @@ const nameForGeometry = (geometryType: GeometryType): string => {
 const navigationNodeName = (category: NavigationNodeCategory): string =>
   `${category.replaceAll("_", " ")} node`;
 
-const navigationEdgeName = (category: NavigationEdgeCategory): string =>
+const navigationEdgeName = (category: NavigationPathCategory): string =>
   category === "wheelchair" ? "Wheelchair path" : "Pedestrian path";
 
 const PATH_NAME_PATTERN = /^Path (\d+)$/;
@@ -388,7 +389,7 @@ const nextPathNumberForLevel = (features: FloorFeature[], level_id: string): num
     }
     const type =
       typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
-    if (type !== "opening" && type !== NAVIGATION_EDGE_FEATURE_TYPE) {
+    if (type !== "opening") {
       continue;
     }
     const name = readFeatureName(feature);
@@ -410,49 +411,177 @@ const nextPathNumberForLevel = (features: FloorFeature[], level_id: string): num
 const isFeatureOnLevel = (feature: FloorFeature, level_id: string): boolean =>
   featureHasLevel(feature, level_id);
 
-const ensureNavigationEdgeEndpoints = (
-  edge: FloorFeature,
-  nodeCandidates: FloorFeature[],
+const readRelationshipRefId = (value: unknown): string | undefined => {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return (value as { id: string }).id;
+  }
+  return undefined;
+};
+
+const defaultOpeningLine = (
   levelId: string,
-): FloorFeature => {
-  if (!isNavigationEdgeFeature(edge) || edge.geometry.type !== "LineString") {
-    return edge;
+): Extract<FloorFeature["geometry"], { type: "LineString" }> =>
+  openingPointToLine([0, 0], levelId.length > 0 ? 0.000001 : 0.00003);
+
+const readLabelName = (value: unknown): string | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
   }
-  const first = edge.geometry.coordinates[0];
-  const last = edge.geometry.coordinates[edge.geometry.coordinates.length - 1];
-  if (!first || !last) {
-    return edge;
+  const english = (value as { en?: unknown }).en;
+  return typeof english === "string" && english.trim().length > 0 ? english.trim() : undefined;
+};
+
+const stableNodeGroupKey = (feature: FloorFeature): string => {
+  const category =
+    typeof feature.properties.category === "string" ? feature.properties.category : "unknown";
+  const point = openingRepresentativePoint(feature) ?? [0, 0];
+  const rounded = `${Math.round(point[0] * 1e7)}:${Math.round(point[1] * 1e7)}`;
+  const name = readFeatureName(feature) ?? readLabelName(feature.properties.name) ?? "";
+  return `${category}:${name}:${rounded}`;
+};
+
+const relationshipNodeIdForEdgeEndpoint = (
+  relationship: FloorFeature,
+  edgeId: string,
+): string | undefined => {
+  if (!isRelationshipFeature(relationship)) {
+    return undefined;
   }
-  const sameLevelNodes = nodeCandidates.filter((candidate) =>
-    readNavigationLevels(candidate).includes(levelId),
-  );
-  const fromNode = sameLevelNodes.find(
+  const origin = readRelationshipRefId(relationship.properties.origin);
+  const destination = readRelationshipRefId(relationship.properties.destination);
+  if (origin === edgeId && destination && destination !== edgeId) {
+    return destination;
+  }
+  if (destination === edgeId && origin && origin !== edgeId) {
+    return origin;
+  }
+  return undefined;
+};
+
+const syncEdgeEndpointRelationships = (
+  features: FloorFeature[],
+  edge: FloorFeature,
+  fromNodeId: string | undefined,
+  toNodeId: string | undefined,
+): FloorFeature[] => {
+  const existing = features.filter(
     (candidate) =>
-      candidate.geometry.type === "Point" &&
-      coordinatesEqual(candidate.geometry.coordinates, first),
+      isRelationshipFeature(candidate) &&
+      relationshipNodeIdForEdgeEndpoint(candidate, edge.id) !== undefined,
   );
-  const toNode = sameLevelNodes.find(
+  const existingByNode = new Map<string, FloorFeature>();
+  for (const relation of existing) {
+    const linkedNodeId = relationshipNodeIdForEdgeEndpoint(relation, edge.id);
+    if (linkedNodeId) {
+      existingByNode.set(linkedNodeId, relation);
+    }
+  }
+
+  const desiredNodeIds = [fromNodeId, toNodeId].filter((value): value is string => Boolean(value));
+  const desiredSet = new Set(desiredNodeIds);
+  const next: FloorFeature[] = features.filter(
     (candidate) =>
-      candidate.geometry.type === "Point" && coordinatesEqual(candidate.geometry.coordinates, last),
+      !(
+        isRelationshipFeature(candidate) &&
+        relationshipNodeIdForEdgeEndpoint(candidate, edge.id) !== undefined &&
+        !desiredSet.has(relationshipNodeIdForEdgeEndpoint(candidate, edge.id) ?? "")
+      ),
   );
-  const nextProperties: FloorFeature["properties"] = {
-    ...edge.properties,
-    level_id: levelId,
-    floorId: levelId,
-  };
-  if (fromNode) {
-    nextProperties["formation:from_node_id"] = fromNode.id;
-  } else {
-    delete nextProperties["formation:from_node_id"];
+
+  const edgeGeometry = edge.geometry.type === "LineString" ? edge.geometry.coordinates : [];
+  const edgeStart = edgeGeometry[0];
+  const edgeEnd = edgeGeometry[edgeGeometry.length - 1];
+
+  const buildRelationship = (nodeId: string, anchor: Coordinates | undefined): FloorFeature => ({
+    type: "Feature",
+    id: createId(),
+    feature_type: "relationship",
+    geometry: {
+      type: "LineString",
+      coordinates: anchor ? [anchor, anchor] : defaultOpeningLine("").coordinates,
+    },
+    properties: {
+      name: { en: "Navigation link" },
+      ...(typeof edge.properties.level_id === "string"
+        ? { level_id: edge.properties.level_id, floorId: edge.properties.level_id }
+        : {}),
+      direction: "undirected",
+      origin: { id: edge.id, feature_type: "opening" },
+      destination: { id: nodeId, feature_type: "opening" },
+    },
+  });
+
+  if (fromNodeId) {
+    const existingRelation = existingByNode.get(fromNodeId);
+    if (!existingRelation) {
+      next.push(buildRelationship(fromNodeId, edgeStart));
+    }
   }
-  if (toNode) {
-    nextProperties["formation:to_node_id"] = toNode.id;
-  } else {
-    delete nextProperties["formation:to_node_id"];
+  if (toNodeId) {
+    const existingRelation = existingByNode.get(toNodeId);
+    if (!existingRelation) {
+      next.push(buildRelationship(toNodeId, edgeEnd));
+    }
   }
+
+  return next;
+};
+
+const readEdgeEndpointNodeIds = (
+  allFeatures: FloorFeature[],
+  edge: FloorFeature,
+): { fromNodeId?: string; toNodeId?: string } => {
+  const links = allFeatures
+    .filter((feature) => isRelationshipFeature(feature))
+    .map((relationship) => {
+      const nodeId = relationshipNodeIdForEdgeEndpoint(relationship, edge.id);
+      if (!nodeId) {
+        return undefined;
+      }
+      const node = allFeatures.find((candidate) => candidate.id === nodeId);
+      if (!node) {
+        return undefined;
+      }
+      return { nodeId, point: openingRepresentativePoint(node) };
+    })
+    .filter((entry): entry is { nodeId: string; point: Coordinates | undefined } => Boolean(entry));
+
+  const line = edge.geometry.type === "LineString" ? edge.geometry.coordinates : [];
+  const start = line[0];
+  const end = line[line.length - 1];
+  if (!start || !end || links.length === 0) {
+    return {};
+  }
+
+  const sortedByStart = [...links]
+    .filter((entry) => entry.point)
+    .sort((left, right) => {
+      const leftPoint = left.point as Coordinates;
+      const rightPoint = right.point as Coordinates;
+      const leftDistance = Math.hypot(start[0] - leftPoint[0], start[1] - leftPoint[1]);
+      const rightDistance = Math.hypot(start[0] - rightPoint[0], start[1] - rightPoint[1]);
+      return leftDistance - rightDistance;
+    });
+  const sortedByEnd = [...links]
+    .filter((entry) => entry.point)
+    .sort((left, right) => {
+      const leftPoint = left.point as Coordinates;
+      const rightPoint = right.point as Coordinates;
+      const leftDistance = Math.hypot(end[0] - leftPoint[0], end[1] - leftPoint[1]);
+      const rightDistance = Math.hypot(end[0] - rightPoint[0], end[1] - rightPoint[1]);
+      return leftDistance - rightDistance;
+    });
+
+  const fromNodeId = sortedByStart[0]?.nodeId;
+  const toNodeId = sortedByEnd[0]?.nodeId;
   return {
-    ...edge,
-    properties: nextProperties,
+    ...(fromNodeId ? { fromNodeId } : {}),
+    ...(toNodeId ? { toNodeId } : {}),
   };
 };
 
@@ -576,7 +705,7 @@ function App() {
       }
       const migratedProject =
         project.version < PROJECT_SCHEMA_VERSION
-          ? migrateProjectSnapshotToNavigationGraphV5(project)
+          ? migrateProjectSnapshotToImdfNavigationV7(project)
           : project;
       const sanitizedProject = sanitizeProjectSnapshot(migratedProject);
       const loadedVenues = sanitizedProject.venues ?? [];
@@ -1054,18 +1183,24 @@ function App() {
             (typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type) ||
             (shouldApplyPendingTemplate ? pendingDrawTemplate?.featureType : undefined);
           const isNewPath =
-            !existing &&
-            feature.geometry.type === "LineString" &&
-            (featureType === "opening" || featureType === NAVIGATION_EDGE_FEATURE_TYPE);
+            !existing && feature.geometry.type === "LineString" && featureType === "opening";
           const resolvedName = isNewPath
             ? `Path ${nextPathNumber++}`
             : typeof mergedProperties.name === "string" && mergedProperties.name
               ? mergedProperties.name
               : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
+          const normalizedGeometry =
+            shouldApplyPendingTemplate &&
+            pendingDrawTemplate?.featureType === "opening" &&
+            pendingDrawTemplate.geometryType === "Point" &&
+            feature.geometry.type === "Point"
+              ? openingPointToLine(feature.geometry.coordinates)
+              : feature.geometry;
 
           return normalizeFeature(
             {
               ...feature,
+              geometry: normalizedGeometry,
               feature_type: ((typeof feature.feature_type === "string" && feature.feature_type) ||
                 (typeof mergedProperties.feature_type === "string"
                   ? mergedProperties.feature_type
@@ -1081,7 +1216,7 @@ function App() {
                 feature_type:
                   typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type
                     ? mergedProperties.feature_type
-                    : kindForGeometry(feature.geometry.type),
+                    : kindForGeometry(normalizedGeometry.type),
                 name: resolvedName,
               },
             },
@@ -1102,24 +1237,14 @@ function App() {
           nextVisible.push(existing);
         }
 
-        const nodeCandidates = [...current.features, ...nextVisible].filter(
-          isNavigationNodeFeature,
-        );
-        const constrainedVisible = nextVisible.map((feature) => {
-          if (!isNavigationEdgeFeature(feature)) {
-            return feature;
-          }
-          return ensureNavigationEdgeEndpoints(feature, nodeCandidates, activeLevel.id);
-        });
-
-        if (areFeatureListsEqual(currentVisible, constrainedVisible)) {
+        if (areFeatureListsEqual(currentVisible, nextVisible)) {
           return current;
         }
 
         const nonVisible = current.features.filter(
           (feature) => !isFeatureOnLevel(feature, activeLevel.id),
         );
-        const nextFeatures = [...nonVisible, ...constrainedVisible];
+        const nextFeatures = [...nonVisible, ...nextVisible];
         const nextSelectedFeatureId =
           current.selectedFeatureId &&
           nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
@@ -2563,31 +2688,31 @@ function App() {
         return;
       }
       const nextContainmentParent = resolvePendingContainmentParent(selectedFeature);
-      if (request.type === NAVIGATION_NODE_FEATURE_TYPE) {
+      if ("mode" in request && request.mode === "node") {
         startDrawMode("point");
         setPendingContainmentParent(undefined);
         setPendingDrawTemplate({
-          featureType: NAVIGATION_NODE_FEATURE_TYPE,
+          featureType: "opening",
           geometryType: "Point",
           defaultName: navigationNodeName(request.category),
           properties: {
-            "formation:navigation_category": request.category,
-            "formation:navigation_levels": [activeLevel.id],
+            category: request.category,
             level_id: activeLevel.id,
             floorId: activeLevel.id,
           },
         });
         return;
       }
-      if (request.type === NAVIGATION_EDGE_FEATURE_TYPE) {
+      if ("mode" in request && request.mode === "path") {
         startDrawMode("line");
         setPendingContainmentParent(undefined);
         setPendingDrawTemplate({
-          featureType: NAVIGATION_EDGE_FEATURE_TYPE,
+          featureType: "opening",
           geometryType: "LineString",
           defaultName: navigationEdgeName(request.category),
           properties: {
-            "formation:path_category": request.category,
+            category: "pedestrian",
+            ...(request.category === "wheelchair" ? { accessibility: { wheelchair: true } } : {}),
             level_id: activeLevel.id,
             floorId: activeLevel.id,
           },
@@ -3080,9 +3205,205 @@ function App() {
                   const building = level
                     ? buildings.find((current) => current.id === level.buildingId)
                     : undefined;
+                  setEditorState((current) => {
+                    const target = current.features.find((feature) => feature.id === featureId);
+                    if (!target) {
+                      return current;
+                    }
 
-                  setEditorState((current) =>
-                    updateFeature(current, featureId, (feature) => {
+                    if (key === "__navigation_path_category" && isNavigationPathOpening(target)) {
+                      const nextCategory = value === "wheelchair" ? "wheelchair" : "pedestrian";
+                      return updateFeature(current, featureId, (feature) =>
+                        normalizeFeature(
+                          {
+                            ...feature,
+                            properties: {
+                              ...feature.properties,
+                              category: "pedestrian",
+                              ...(nextCategory === "wheelchair"
+                                ? { accessibility: { wheelchair: true } }
+                                : { accessibility: null }),
+                            },
+                          },
+                          {
+                            level_id:
+                              level?.id ?? activeLevel?.id ?? feature.properties.level_id ?? "",
+                            buildingId:
+                              building?.id ??
+                              activeBuilding?.id ??
+                              (Array.isArray(feature.properties.building_ids)
+                                ? feature.properties.building_ids[0]
+                                : undefined) ??
+                              "",
+                          },
+                        ),
+                      );
+                    }
+
+                    if (
+                      (key === "__navigation_from_opening_id" ||
+                        key === "__navigation_to_opening_id") &&
+                      isNavigationPathOpening(target)
+                    ) {
+                      const endpoints = readEdgeEndpointNodeIds(current.features, target);
+                      const fromNodeId =
+                        key === "__navigation_from_opening_id"
+                          ? typeof value === "string"
+                            ? value
+                            : undefined
+                          : endpoints.fromNodeId;
+                      const toNodeId =
+                        key === "__navigation_to_opening_id"
+                          ? typeof value === "string"
+                            ? value
+                            : undefined
+                          : endpoints.toNodeId;
+                      const updatedFeatures = syncEdgeEndpointRelationships(
+                        current.features,
+                        target,
+                        fromNodeId,
+                        toNodeId,
+                      );
+                      return replaceAllFeatures(current, updatedFeatures);
+                    }
+
+                    if (key === "__navigation_levels" && isNavigationNodeOpening(target)) {
+                      const selectedLevels = Array.isArray(value)
+                        ? value.filter((entry): entry is string => typeof entry === "string")
+                        : [];
+                      if (selectedLevels.length === 0) {
+                        return current;
+                      }
+                      const groupKey = stableNodeGroupKey(target);
+                      const grouped = current.features.filter(
+                        (feature) =>
+                          isNavigationNodeOpening(feature) &&
+                          stableNodeGroupKey(feature) === groupKey,
+                      );
+                      const groupedByLevel = new Map<string, FloorFeature>();
+                      for (const node of grouped) {
+                        const nodeLevel =
+                          typeof node.properties.level_id === "string"
+                            ? node.properties.level_id
+                            : undefined;
+                        if (nodeLevel) {
+                          groupedByLevel.set(nodeLevel, node);
+                        }
+                      }
+
+                      const preserved = current.features.filter(
+                        (feature) => !grouped.some((node) => node.id === feature.id),
+                      );
+                      const nextNodes: FloorFeature[] = [];
+                      const targetCategory = readNavigationNodeCategory(target);
+                      const targetPoint = openingRepresentativePoint(target);
+
+                      for (const levelId of selectedLevels) {
+                        const existingNode = groupedByLevel.get(levelId);
+                        if (existingNode) {
+                          nextNodes.push(existingNode);
+                          continue;
+                        }
+                        const levelBuilding = levels.find(
+                          (item) => item.id === levelId,
+                        )?.buildingId;
+                        nextNodes.push(
+                          normalizeFeature(
+                            {
+                              ...target,
+                              id: createId(),
+                              geometry: targetPoint
+                                ? openingPointToLine(targetPoint)
+                                : target.geometry.type === "LineString"
+                                  ? target.geometry
+                                  : openingPointToLine([0, 0]),
+                              properties: {
+                                ...target.properties,
+                                level_id: levelId,
+                                floorId: levelId,
+                              },
+                            },
+                            {
+                              level_id: levelId,
+                              buildingId:
+                                levelBuilding ??
+                                activeBuilding?.id ??
+                                building?.id ??
+                                (Array.isArray(target.properties.building_ids)
+                                  ? target.properties.building_ids[0]
+                                  : undefined) ??
+                                "",
+                            },
+                          ),
+                        );
+                      }
+
+                      let nextFeatures = [...preserved, ...nextNodes];
+                      if (
+                        targetCategory &&
+                        VERTICAL_NAVIGATION_NODE_CATEGORIES.has(targetCategory)
+                      ) {
+                        const nodeIds = new Set(nextNodes.map((node) => node.id));
+                        nextFeatures = nextFeatures.filter((feature) => {
+                          if (!isRelationshipFeature(feature)) {
+                            return true;
+                          }
+                          const origin = readRelationshipRefId(feature.properties.origin);
+                          const destination = readRelationshipRefId(feature.properties.destination);
+                          return !(
+                            origin &&
+                            destination &&
+                            nodeIds.has(origin) &&
+                            nodeIds.has(destination)
+                          );
+                        });
+                        for (let leftIndex = 0; leftIndex < nextNodes.length; leftIndex += 1) {
+                          const left = nextNodes[leftIndex];
+                          if (!left) {
+                            continue;
+                          }
+                          for (
+                            let rightIndex = leftIndex + 1;
+                            rightIndex < nextNodes.length;
+                            rightIndex += 1
+                          ) {
+                            const right = nextNodes[rightIndex];
+                            if (!right) {
+                              continue;
+                            }
+                            const leftPoint = openingRepresentativePoint(left);
+                            const rightPoint = openingRepresentativePoint(right);
+                            nextFeatures.push({
+                              type: "Feature",
+                              id: createId(),
+                              feature_type: "relationship",
+                              geometry: {
+                                type: "LineString",
+                                coordinates:
+                                  leftPoint && rightPoint
+                                    ? [leftPoint, rightPoint]
+                                    : defaultOpeningLine("").coordinates,
+                              },
+                              properties: {
+                                name: { en: "Vertical connector" },
+                                ...(typeof left.properties.level_id === "string"
+                                  ? {
+                                      level_id: left.properties.level_id,
+                                      floorId: left.properties.level_id,
+                                    }
+                                  : {}),
+                                direction: "undirected",
+                                origin: { id: left.id, feature_type: "opening" },
+                                destination: { id: right.id, feature_type: "opening" },
+                              },
+                            });
+                          }
+                        }
+                      }
+                      return replaceAllFeatures(current, nextFeatures);
+                    }
+
+                    return updateFeature(current, featureId, (feature) => {
                       const patched: FloorFeature = {
                         ...feature,
                         properties: {
@@ -3090,12 +3411,6 @@ function App() {
                           [key]: value,
                         },
                       };
-                      if (
-                        typeof patched.feature_type === "string" &&
-                        patched.feature_type.startsWith("formation:")
-                      ) {
-                        return patched;
-                      }
                       return normalizeFeature(patched, {
                         level_id: level?.id ?? activeLevel?.id ?? feature.properties.level_id ?? "",
                         buildingId:
@@ -3106,8 +3421,8 @@ function App() {
                             : undefined) ??
                           "",
                       });
-                    }),
-                  );
+                    });
+                  });
                 }}
                 onUpdateFeatureMetadata={(featureId, metadata) => {
                   setEditorState((current) =>

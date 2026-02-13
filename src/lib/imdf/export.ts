@@ -1,10 +1,5 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 
-import {
-  isNavigationNodeFeature,
-  NAVIGATION_EDGE_FEATURE_TYPE,
-  readNavigationLevels,
-} from "../navigation/navigationModel";
 import type { Building, FeatureCollection, Floor, FloorFeature } from "../types";
 import { normalizeFeature } from "./normalize";
 import { sortOrderForFeatureType } from "./renderRules";
@@ -406,9 +401,7 @@ export const exportFloorGeoJson = ({
   const floorFeatures = features
     .filter(
       (feature) =>
-        feature.properties.level_id === floor.id ||
-        feature.properties.floorId === floor.id ||
-        (isNavigationNodeFeature(feature) && readNavigationLevels(feature).includes(floor.id)),
+        feature.properties.level_id === floor.id || feature.properties.floorId === floor.id,
     )
     .map((feature) => normalizeFeature(feature, { buildingId: building.id, level_id: floor.id }));
 
@@ -452,9 +445,7 @@ export const exportImdfDataset = ({
 
   const openingSourceFeatures = normalizedFloorFeatures.filter(
     (feature) =>
-      feature.geometry.type === "LineString" &&
-      (resolveInternalType(feature) === "opening" ||
-        resolveInternalType(feature) === NAVIGATION_EDGE_FEATURE_TYPE),
+      feature.geometry.type === "LineString" && resolveInternalType(feature) === "opening",
   );
   const polygonSourceFeatures = normalizedFloorFeatures.filter(
     (feature) => feature.geometry.type === "Polygon" && resolveInternalType(feature) !== "level",
@@ -656,21 +647,15 @@ export const exportImdfDataset = ({
         name: createLabel(sourceFeature.properties.name, `Opening ${index + 1}`, defaultLocale),
         level_id: primaryLevelId,
         category:
-          resolveInternalType(sourceFeature) === NAVIGATION_EDGE_FEATURE_TYPE
-            ? "pedestrian"
-            : typeof sourceFeature.properties.category === "string" &&
-                sourceFeature.properties.category.trim().length > 0
-              ? sourceFeature.properties.category
-              : "pedestrian",
+          typeof sourceFeature.properties.category === "string" &&
+          sourceFeature.properties.category.trim().length > 0
+            ? sourceFeature.properties.category
+            : "pedestrian",
         ...(sourceFeature.properties.door !== undefined
           ? { door: sourceFeature.properties.door }
           : {}),
         ...(sourceFeature.properties.accessibility !== undefined
           ? { accessibility: sourceFeature.properties.accessibility }
-          : {}),
-        ...(resolveInternalType(sourceFeature) === NAVIGATION_EDGE_FEATURE_TYPE &&
-        sourceFeature.properties["formation:path_category"] === "wheelchair"
-          ? { accessibility: { wheelchair: true } }
           : {}),
       },
     });
