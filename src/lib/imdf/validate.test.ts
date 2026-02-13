@@ -132,6 +132,27 @@ describe("validateFloor", () => {
 
     expect(result.errors).toEqual([]);
   });
+
+  it("includes feature name in warnings when available", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "fixture-1",
+        geometry: {
+          type: "Point",
+          coordinates: [0, 0],
+        },
+        properties: {
+          kind: "unknown-type",
+          floorId: "f1",
+          level_id: "f1",
+          name: { en: "Coffee Cart" },
+        },
+      },
+    ]);
+
+    expect(result.warnings).toContain('Feature "Coffee Cart" (id: fixture-1) has no IMDF type.');
+  });
 });
 
 describe("validateImdfDatasetFiles", () => {

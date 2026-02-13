@@ -25,6 +25,33 @@ const isLabel = (value: unknown): value is Record<string, string> =>
   Object.keys(value).length > 0 &&
   Object.values(value).every((entry) => typeof entry === "string" && entry.trim().length > 0);
 
+const readFeatureName = (feature: FloorFeature): string | undefined => {
+  const { name } = feature.properties;
+  if (typeof name === "string" && name.trim().length > 0) {
+    return name.trim();
+  }
+  if (name && typeof name === "object" && !Array.isArray(name)) {
+    const english = name["en"];
+    if (typeof english === "string" && english.trim().length > 0) {
+      return english.trim();
+    }
+    for (const value of Object.values(name)) {
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+  return undefined;
+};
+
+const describeFeature = (feature: FloorFeature): string => {
+  const featureName = readFeatureName(feature);
+  if (featureName) {
+    return `Feature "${featureName}" (id: ${feature.id})`;
+  }
+  return `Feature ${feature.id}`;
+};
+
 export const validateFloor = (floorId: string, features: FloorFeature[]): FloorValidationResult => {
   const floorFeatures = features.filter((feature) => feature.properties.floorId === floorId);
   const allIds = new Set(features.map((feature) => feature.id));
@@ -32,45 +59,46 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
   const warnings: string[] = [];
 
   for (const feature of floorFeatures) {
+    const featureDescription = describeFeature(feature);
     const featureType =
       readImdfType(feature.properties.imdfType) ?? readImdfType(feature.properties.kind);
     if (feature.properties.level_id !== floorId) {
-      errors.push(`Feature ${feature.id} is not assigned to level_id ${floorId}.`);
+      errors.push(`${featureDescription} is not assigned to level_id ${floorId}.`);
     }
     if (!featureType) {
-      warnings.push(`Feature ${feature.id} has no IMDF type.`);
+      warnings.push(`${featureDescription} has no IMDF type.`);
       continue;
     }
     const spec = getFeatureSpec(featureType);
     for (const field of spec.fields.filter((entry) => entry.required)) {
       const value = feature.properties[field.key];
       if (value === undefined || value === null) {
-        errors.push(`Feature ${feature.id} is missing required ${field.key}.`);
+        errors.push(`${featureDescription} is missing required ${field.key}.`);
         continue;
       }
       if (field.type === "string" || field.type === "uuid") {
         if (typeof value !== "string" || value.trim().length === 0) {
           errors.push(
-            `Feature ${feature.id} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty string.`,
+            `${featureDescription} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty string.`,
           );
         }
       }
       if (field.type === "number") {
         if (typeof value !== "number" || !Number.isFinite(value)) {
           errors.push(
-            `Feature ${feature.id} has invalid ${field.key}: ${describeValue(value)}. Expected a finite number.`,
+            `${featureDescription} has invalid ${field.key}: ${describeValue(value)}. Expected a finite number.`,
           );
         }
       }
       if (field.type === "boolean" && typeof value !== "boolean") {
         errors.push(
-          `Feature ${feature.id} has invalid ${field.key}: ${describeValue(value)}. Expected true or false.`,
+          `${featureDescription} has invalid ${field.key}: ${describeValue(value)}. Expected true or false.`,
         );
       }
       if (field.type === "label") {
         if (!isLabel(value)) {
           errors.push(
-            `Feature ${feature.id} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty label object like {"en":"Name"}.`,
+            `${featureDescription} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty label object like {"en":"Name"}.`,
           );
         }
       }
@@ -81,7 +109,7 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
           value.some((entry) => typeof entry !== "string" || entry.trim().length === 0))
       ) {
         errors.push(
-          `Feature ${feature.id} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty array of non-empty strings.`,
+          `${featureDescription} has invalid ${field.key}: ${describeValue(value)}. Expected a non-empty array of non-empty strings.`,
         );
       }
       if (field.type === "reference") {
@@ -93,7 +121,7 @@ export const validateFloor = (floorId: string, features: FloorFeature[]): FloorV
           typeof value["id"] !== "string" ||
           !allIds.has(value["id"])
         ) {
-          errors.push(`Feature ${feature.id} has ${field.key} reference to missing feature id.`);
+          errors.push(`${featureDescription} has ${field.key} reference to missing feature id.`);
         }
       }
     }
