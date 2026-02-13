@@ -7,7 +7,8 @@ export type FeatureFieldType =
   | "label"
   | "string[]"
   | "uuid"
-  | "references";
+  | "json"
+  | "reference";
 
 export type EditorControlType =
   | "text"
@@ -16,7 +17,8 @@ export type EditorControlType =
   | "label-json"
   | "uuid-ref"
   | "string-list"
-  | "enum";
+  | "enum"
+  | "json";
 
 export type ImdfFeatureField = {
   key: string;
@@ -184,18 +186,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       { key: "category", type: "string", required: true, editorControl: "enum" },
       {
         key: "door",
-        type: "number",
-        required: true,
-        editorControl: "enum",
-        defaultValue: 0,
-        enumOptions: ["-1", "0", "1"],
+        type: "json",
+        required: false,
+        editorControl: "json",
       },
       {
         key: "accessibility",
-        type: "string",
+        type: "json",
         required: false,
-        editorControl: "enum",
-        enumOptions: ["unknown", "wheelchair", "limited", "none"],
+        editorControl: "json",
       },
     ],
   },
@@ -208,22 +207,31 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     fields: [
       { key: "name", type: "label", required: true, editorControl: "label-json" },
       {
-        key: "category",
-        type: "string",
+        key: "origin",
+        type: "reference",
         required: true,
-        editorControl: "enum",
-        enumOptions: ["contains"],
-        defaultValue: "contains",
+        editorControl: "uuid-ref",
+      },
+      {
+        key: "intermediary",
+        type: "reference",
+        required: false,
+        editorControl: "uuid-ref",
+      },
+      {
+        key: "destination",
+        type: "reference",
+        required: true,
+        editorControl: "uuid-ref",
       },
       {
         key: "direction",
-        type: "number",
+        type: "string",
         required: true,
         editorControl: "enum",
-        defaultValue: 1,
-        enumOptions: ["-1", "0", "1"],
+        defaultValue: "directed",
+        enumOptions: ["directed", "undirected"],
       },
-      { key: "references", type: "references", required: true, editorControl: "string-list" },
     ],
   },
   amenity: {

@@ -53,18 +53,29 @@ const isEmpty = (value: JsonValue | undefined): boolean => {
   return false;
 };
 
-const labelTextFromValue = (value: JsonValue | undefined): string => {
+const readEnglishLabel = (value: JsonValue | undefined): string => {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return JSON.stringify(value, null, 2);
+    const english = (value as { en?: unknown }).en;
+    if (typeof english === "string") {
+      return english;
+    }
   }
-  if (typeof value === "string" && value.trim().length > 0) {
-    return JSON.stringify({ en: value }, null, 2);
+  if (typeof value === "string") {
+    return value;
   }
-  return '{\n  "en": ""\n}';
+  return "";
 };
 
 const readString = (properties: FeatureProperties, key: string): string => {
   const value = properties[key];
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return (value as { id: string }).id;
+  }
   if (typeof value === "string") {
     return value;
   }
@@ -119,8 +130,22 @@ const validateField = (
   if (field.type === "string[]" && !Array.isArray(value)) {
     return "Must be a comma-separated list.";
   }
-  if (field.type === "references" && !Array.isArray(value)) {
-    return "Must be a references array.";
+  if (field.type === "json") {
+    if (typeof value === "undefined") {
+      return undefined;
+    }
+    return undefined;
+  }
+  if (field.type === "reference") {
+    if (
+      typeof value !== "object" ||
+      !value ||
+      Array.isArray(value) ||
+      typeof (value as { id?: unknown }).id !== "string" ||
+      typeof (value as { feature_type?: unknown }).feature_type !== "string"
+    ) {
+      return "Must be a reference object.";
+    }
   }
   return undefined;
 };
@@ -318,7 +343,60 @@ export const GenericImdfFeatureEditor = ({
 
             if (field.type === "label") {
               const textValue =
-                fieldText[field.key] ?? labelTextFromValue(feature.properties[field.key]);
+                fieldText[field.key] ?? readEnglishLabel(feature.properties[field.key]);
+              return (
+                <label className="form-control gap-1" key={field.key}>
+                  <span className="label-text">{label}</span>
+                  <input
+                    className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
+                    type="text"
+                    value={textValue}
+                    onChange={(event) =>
+                      setFieldText((current) => ({
+                        ...current,
+                        [field.key]: event.currentTarget.value,
+                      }))
+                    }
+                    onBlur={() => {
+                      const value = fieldText[field.key] ?? textValue;
+                      const trimmed = value.trim();
+                      onUpdateProperty(
+                        field.key,
+                        trimmed.length > 0 ? ({ en: trimmed } as JsonObject) : undefined,
+                      );
+                    }}
+                  />
+                  {hasError ? <span className="text-xs text-error">{error}</span> : null}
+                </label>
+              );
+            }
+
+            if (field.type === "string[]") {
+              const currentValue = readListValue(feature.properties, field.key);
+              return (
+                <label className="form-control gap-1" key={field.key}>
+                  <span className="label-text">{label}</span>
+                  <input
+                    className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
+                    type="text"
+                    value={currentValue}
+                    onChange={(event) => {
+                      const list = event.currentTarget.value
+                        .split(",")
+                        .map((entry) => entry.trim())
+                        .filter((entry) => entry.length > 0);
+                      onUpdateProperty(field.key, list.length > 0 ? list : undefined);
+                    }}
+                  />
+                  {hasError ? <span className="text-xs text-error">{error}</span> : null}
+                </label>
+              );
+            }
+
+            if (field.type === "json") {
+              const textValue =
+                fieldText[field.key] ??
+                JSON.stringify(feature.properties[field.key] ?? {}, null, 2);
               return (
                 <label className="form-control gap-1" key={field.key}>
                   <span className="label-text">{label}</span>
@@ -333,53 +411,18 @@ export const GenericImdfFeatureEditor = ({
                     }
                     onBlur={() => {
                       const value = fieldText[field.key] ?? textValue;
+                      if (value.trim().length === 0) {
+                        onUpdateProperty(field.key, undefined);
+                        return;
+                      }
                       try {
-                        const parsed = JSON.parse(value) as unknown;
-                        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-                          setFieldErrors((current) => ({
-                            ...current,
-                            [field.key]: "Must be a label JSON object.",
-                          }));
-                          return;
-                        }
-                        onUpdateProperty(field.key, parsed as JsonObject);
+                        onUpdateProperty(field.key, JSON.parse(value) as JsonValue);
                       } catch {
                         setFieldErrors((current) => ({
                           ...current,
-                          [field.key]: "Invalid JSON object.",
+                          [field.key]: "Invalid JSON value.",
                         }));
                       }
-                    }}
-                  />
-                  {hasError ? <span className="text-xs text-error">{error}</span> : null}
-                </label>
-              );
-            }
-
-            if (field.type === "string[]" || field.type === "references") {
-              const currentValue = readListValue(feature.properties, field.key);
-              return (
-                <label className="form-control gap-1" key={field.key}>
-                  <span className="label-text">{label}</span>
-                  <input
-                    className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
-                    type="text"
-                    value={currentValue}
-                    onChange={(event) => {
-                      const list = event.currentTarget.value
-                        .split(",")
-                        .map((entry) => entry.trim())
-                        .filter((entry) => entry.length > 0);
-                      if (field.type === "references") {
-                        onUpdateProperty(
-                          field.key,
-                          list.length > 0
-                            ? list.map((id) => ({ id, feature_type: "unknown" }))
-                            : undefined,
-                        );
-                        return;
-                      }
-                      onUpdateProperty(field.key, list.length > 0 ? list : undefined);
                     }}
                   />
                   {hasError ? <span className="text-xs text-error">{error}</span> : null}
@@ -415,6 +458,48 @@ export const GenericImdfFeatureEditor = ({
                   </label>
                 );
               }
+            }
+
+            if (field.type === "reference") {
+              const reference = feature.properties[field.key];
+              const currentValue =
+                reference &&
+                typeof reference === "object" &&
+                !Array.isArray(reference) &&
+                typeof (reference as { id?: unknown }).id === "string"
+                  ? ((reference as { id: string }).id ?? "")
+                  : "";
+              return (
+                <label className="form-control gap-1" key={field.key}>
+                  <span className="label-text">{label}</span>
+                  <select
+                    className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
+                    value={currentValue}
+                    onChange={(event) => {
+                      const nextId = event.currentTarget.value;
+                      if (nextId.length === 0) {
+                        onUpdateProperty(field.key, undefined);
+                        return;
+                      }
+                      const nextType =
+                        sameFloorFeatures.find((candidate) => candidate.id === nextId)?.properties
+                          .imdfType ?? "unit";
+                      onUpdateProperty(field.key, {
+                        id: nextId,
+                        feature_type: nextType,
+                      });
+                    }}
+                  >
+                    <option value="">Select feature</option>
+                    {sameFloorFeatures.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.id}
+                      </option>
+                    ))}
+                  </select>
+                  {hasError ? <span className="text-xs text-error">{error}</span> : null}
+                </label>
+              );
             }
 
             return (

@@ -44,12 +44,6 @@ export const migrateProjectSnapshotToImdfV4 = (snapshot: ProjectSnapshot): Proje
                     typeof feature.properties.category === "string"
                       ? feature.properties.category
                       : "pedestrian",
-                  door:
-                    feature.properties.door === -1 ||
-                    feature.properties.door === 0 ||
-                    feature.properties.door === 1
-                      ? feature.properties.door
-                      : 0,
                 }
               : {}),
             ...(floorId ? { floorId } : {}),

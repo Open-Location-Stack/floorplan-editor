@@ -1,7 +1,16 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import JSZip from "jszip";
 import { createId } from "../id";
-import type { Building, Floor, FloorFeature, FloorOverlay, ImdfFeatureType, Venue } from "../types";
+import type {
+  Building,
+  Floor,
+  FloorFeature,
+  FloorOverlay,
+  ImdfFeatureType,
+  ImdfReference,
+  JsonValue,
+  Venue,
+} from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
 import { validateImdfDatasetFiles } from "./validate";
 
@@ -29,6 +38,22 @@ const isCoordinate = (value: unknown): value is [number, number] =>
   typeof value[1] === "number" &&
   Number.isFinite(value[1]);
 
+const isJsonValue = (value: unknown): value is JsonValue => {
+  if (value === null) {
+    return true;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+  if (typeof value === "object") {
+    return Object.values(value).every(isJsonValue);
+  }
+  return false;
+};
+
 const labelToString = (value: unknown): string | undefined => {
   if (!isRecord(value)) {
     return undefined;
@@ -41,6 +66,21 @@ const labelToString = (value: unknown): string | undefined => {
     (entry) => typeof entry === "string" && entry.trim().length > 0,
   );
   return typeof first === "string" ? first : undefined;
+};
+
+const toLabelObject = (value: unknown, fallback?: string): Record<string, string> | undefined => {
+  if (isRecord(value)) {
+    const entries = Object.entries(value).filter(
+      ([, entry]) => typeof entry === "string" && entry.trim().length > 0,
+    );
+    if (entries.length > 0) {
+      return Object.fromEntries(entries) as Record<string, string>;
+    }
+  }
+  if (typeof fallback === "string" && fallback.trim().length > 0) {
+    return { en: fallback.trim() };
+  }
+  return undefined;
 };
 
 const toDataUrl = (bytes: Uint8Array, path: string): string => {
@@ -87,6 +127,33 @@ const geometryFromImdf = (geometry: unknown): FloorFeature["geometry"] | undefin
     return undefined;
   }
   return undefined;
+};
+
+const readRelationshipRefId = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (
+    isRecord(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["feature_type"] === "string"
+  ) {
+    return value["id"];
+  }
+  return undefined;
+};
+
+const toImdfReference = (value: unknown, fallbackType = "unit"): ImdfReference | undefined => {
+  if (!isRecord(value) || typeof value["id"] !== "string") {
+    return undefined;
+  }
+  return {
+    id: value["id"],
+    feature_type:
+      typeof value["feature_type"] === "string" && value["feature_type"].trim().length > 0
+        ? value["feature_type"]
+        : fallbackType,
+  };
 };
 
 const readCollection = (files: Record<string, unknown>, name: string): RawFeature[] => {
@@ -258,6 +325,8 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     const geometry = geometryFromImdf(levelFeature["geometry"]);
     if (geometry) {
       const levelName = labelToString(properties["name"]);
+      const levelLabel = toLabelObject(properties["name"], levelName);
+      const shortNameLabel = toLabelObject(properties["short_name"], levelName);
       features.push({
         type: "Feature",
         id: levelFeature["id"],
@@ -266,16 +335,15 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           kind: "level",
           imdfType: "level",
           imdf_feature_type: "level",
-          ...(levelName ? { name: levelName } : {}),
-          ...(isRecord(properties["short_name"])
-            ? { short_name: properties["short_name"] as Record<string, string> }
-            : {}),
+          ...(levelLabel ? { name: levelLabel } : {}),
+          ...(shortNameLabel ? { short_name: shortNameLabel } : {}),
           ordinal: typeof properties["ordinal"] === "number" ? properties["ordinal"] : 0,
           outdoor: Boolean(properties["outdoor"]),
           floorId: levelFeature["id"],
           level_id: levelFeature["id"],
           buildingId,
           building_id: buildingId,
+          building_ids: [buildingId],
         },
       });
     }
@@ -312,15 +380,21 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         continue;
       }
       const featureName = labelToString(properties["name"]);
+      const featureNameLabel = toLabelObject(properties["name"], featureName);
       const buildingId = levelToBuildingId.get(floorId);
       const originId =
-        typeof properties["origin_id"] === "string" ? properties["origin_id"] : undefined;
+        readRelationshipRefId(properties["origin"]) ??
+        (typeof properties["origin_id"] === "string" ? properties["origin_id"] : undefined);
       const intermediaryId =
-        typeof properties["intermediary_id"] === "string"
+        readRelationshipRefId(properties["intermediary"]) ??
+        (typeof properties["intermediary_id"] === "string"
           ? properties["intermediary_id"]
-          : undefined;
+          : undefined);
       const destinationId =
-        typeof properties["destination_id"] === "string" ? properties["destination_id"] : undefined;
+        readRelationshipRefId(properties["destination"]) ??
+        (typeof properties["destination_id"] === "string"
+          ? properties["destination_id"]
+          : undefined);
       features.push({
         type: "Feature",
         id: raw["id"],
@@ -333,14 +407,12 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           level_id: floorId,
           ...(buildingId ? { buildingId } : {}),
           ...(buildingId ? { building_id: buildingId } : {}),
-          ...(featureName ? { name: featureName } : {}),
+          ...(featureNameLabel ? { name: featureNameLabel } : {}),
           ...(typeof properties["category"] === "string"
             ? { category: properties["category"] }
             : {}),
-          ...(properties["door"] === -1 || properties["door"] === 0 || properties["door"] === 1
-            ? { door: properties["door"] }
-            : {}),
-          ...(typeof properties["accessibility"] === "string"
+          ...(isJsonValue(properties["door"]) ? { door: properties["door"] } : {}),
+          ...(isJsonValue(properties["accessibility"])
             ? { accessibility: properties["accessibility"] }
             : {}),
           ...(typeof properties["restriction"] === "string"
@@ -356,16 +428,28 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ...(typeof properties["address_id"] === "string"
             ? { address_id: properties["address_id"] }
             : {}),
-          ...(originId ? { origin: originId, origin_id: originId } : {}),
-          ...(intermediaryId
-            ? { intermediary: intermediaryId, intermediary_id: intermediaryId }
+          ...(originId
+            ? { origin: { id: originId, feature_type: "unit" }, origin_id: originId }
             : {}),
-          ...(destinationId ? { destination: destinationId, destination_id: destinationId } : {}),
-          ...(originId && intermediaryId && destinationId
+          ...(intermediaryId
+            ? {
+                intermediary: { id: intermediaryId, feature_type: "unit" },
+                intermediary_id: intermediaryId,
+              }
+            : {}),
+          ...(destinationId
+            ? {
+                destination: { id: destinationId, feature_type: "unit" },
+                destination_id: destinationId,
+              }
+            : {}),
+          ...(originId && destinationId
             ? {
                 relation: {
                   origin: { featureId: originId },
-                  intermediary: { featureId: intermediaryId, floorId },
+                  ...(intermediaryId
+                    ? { intermediary: { featureId: intermediaryId, floorId } }
+                    : {}),
                   destination: { featureId: destinationId },
                 },
               }
@@ -391,25 +475,91 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       continue;
     }
     const properties = isRecord(raw.properties) ? raw.properties : {};
-    if (properties["category"] !== "contains" || !Array.isArray(properties["references"])) {
+    const originId =
+      readRelationshipRefId(properties["origin"]) ??
+      (typeof properties["origin_id"] === "string" ? properties["origin_id"] : undefined);
+    const destinationId =
+      readRelationshipRefId(properties["destination"]) ??
+      (typeof properties["destination_id"] === "string" ? properties["destination_id"] : undefined);
+    const intermediaryId =
+      readRelationshipRefId(properties["intermediary"]) ??
+      (typeof properties["intermediary_id"] === "string"
+        ? properties["intermediary_id"]
+        : undefined);
+    if (!originId || !destinationId) {
       continue;
     }
-    const refs = properties["references"].filter((entry): entry is Record<string, unknown> =>
-      isRecord(entry),
-    );
-    const parent = refs[0];
-    const child = refs[1];
-    if (
-      !parent ||
-      !child ||
-      typeof parent["id"] !== "string" ||
-      typeof child["id"] !== "string" ||
-      typeof parent["feature_type"] !== "string"
-    ) {
-      continue;
-    }
-    const childFeature = features.find((feature) => feature.id === child["id"]);
+    const childFeature = features.find((feature) => feature.id === destinationId);
     if (!childFeature) {
+      continue;
+    }
+    const originRef = toImdfReference(properties["origin"]) ?? {
+      id: originId,
+      feature_type: "unit",
+    };
+    const destinationRef = toImdfReference(properties["destination"]) ?? {
+      id: destinationId,
+      feature_type: "unit",
+    };
+    const relationshipGeometry = geometryFromImdf(raw["geometry"]);
+    if (relationshipGeometry && relationshipGeometry.type === "LineString") {
+      features.push({
+        type: "Feature",
+        id: raw["id"],
+        geometry: relationshipGeometry,
+        properties: {
+          kind: "relationship",
+          imdfType: "relationship",
+          imdf_feature_type: "relationship",
+          ...(typeof childFeature.properties.floorId === "string"
+            ? { floorId: childFeature.properties.floorId }
+            : {}),
+          ...(typeof childFeature.properties.level_id === "string"
+            ? { level_id: childFeature.properties.level_id }
+            : {}),
+          ...(typeof childFeature.properties.buildingId === "string"
+            ? {
+                buildingId: childFeature.properties.buildingId,
+                building_id: childFeature.properties.buildingId,
+              }
+            : {}),
+          name: labelToString(properties["name"]) ?? "Relationship",
+          origin: originRef,
+          destination: destinationRef,
+          ...(intermediaryId
+            ? {
+                intermediary: toImdfReference(properties["intermediary"]) ?? {
+                  id: intermediaryId,
+                  feature_type: "unit",
+                },
+              }
+            : {}),
+          direction:
+            properties["direction"] === "directed" || properties["direction"] === "undirected"
+              ? properties["direction"]
+              : "directed",
+          relation: {
+            origin: { featureId: originId },
+            ...(intermediaryId
+              ? {
+                  intermediary: {
+                    featureId: intermediaryId,
+                    ...(typeof childFeature.properties.floorId === "string"
+                      ? { floorId: childFeature.properties.floorId }
+                      : {}),
+                  },
+                }
+              : {}),
+            destination: { featureId: destinationId },
+          },
+        },
+      });
+    }
+    const originType =
+      isRecord(properties["origin"]) && typeof properties["origin"]["feature_type"] === "string"
+        ? (properties["origin"]["feature_type"] as string)
+        : "unit";
+    if (!["level", "unit", "section", "geofence"].includes(originType)) {
       continue;
     }
     const metadata =
@@ -418,11 +568,11 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         : {};
     childFeature.properties.metadata = {
       ...metadata,
-      imdfRelationshipParentId: parent["id"],
-      imdfRelationshipParentType: parent["feature_type"],
+      imdfRelationshipParentId: originId,
+      imdfRelationshipParentType: originType,
     };
-    childFeature.properties.containmentParentId = parent["id"];
-    childFeature.properties.containmentParentType = parent["feature_type"] as ImdfFeatureType;
+    childFeature.properties.containmentParentId = originId;
+    childFeature.properties.containmentParentType = originType as ImdfFeatureType;
   }
 
   const overlays: FloorOverlay[] = [];

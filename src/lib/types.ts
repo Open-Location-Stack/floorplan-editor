@@ -52,6 +52,8 @@ export type ImdfReference = {
   feature_type: string;
 };
 
+export type ImdfRelationshipDirection = "directed" | "undirected";
+
 export type RelationshipFeatureRef = {
   featureId: string;
   floorId?: string;
@@ -59,7 +61,7 @@ export type RelationshipFeatureRef = {
 
 export type RelationshipRefs = {
   origin: RelationshipFeatureRef;
-  intermediary: RelationshipFeatureRef;
+  intermediary?: RelationshipFeatureRef;
   destination: RelationshipFeatureRef;
 };
 
@@ -93,14 +95,13 @@ export type FeatureProperties = {
   display_point?: Coordinates;
   ordinal?: number;
   outdoor?: boolean;
-  door?: -1 | 0 | 1;
-  direction?: -1 | 0 | 1;
-  references?: ImdfReference[];
+  door?: JsonValue;
+  direction?: ImdfRelationshipDirection;
   restriction?: string;
   section_id?: string;
   unit_id?: string;
   anchor_id?: string;
-  accessibility?: string;
+  accessibility?: JsonValue;
   website?: string;
   phone?: string;
   hours?: string;
@@ -108,9 +109,9 @@ export type FeatureProperties = {
   venue_id?: string;
   unit_ids?: string[];
   building_ids?: string[];
-  origin?: string;
-  intermediary?: string;
-  destination?: string;
+  origin?: string | ImdfReference;
+  intermediary?: string | ImdfReference;
+  destination?: string | ImdfReference;
   origin_id?: string;
   intermediary_id?: string;
   destination_id?: string;

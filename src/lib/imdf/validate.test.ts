@@ -123,12 +123,9 @@ describe("validateFloor", () => {
           floorId: "f1",
           level_id: "f1",
           name: { en: "contains" },
-          category: "contains",
-          direction: 1,
-          references: [
-            { id: "unit-a", feature_type: "unit" },
-            { id: "unit-b", feature_type: "unit" },
-          ],
+          direction: "directed",
+          origin: { id: "unit-a", feature_type: "unit" },
+          destination: { id: "unit-b", feature_type: "unit" },
         },
       },
     ]);

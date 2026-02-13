@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay, Venue } from "../types";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
 import { getImdfSchemaRule } from "./schema";
+import { validateImdfDatasetFiles } from "./validate";
 
 export const IMDF_STANDARD_DATASET_TYPES = [
   "address",
@@ -309,6 +310,28 @@ const extensionForMime = (mime: string): string => {
   return "bin";
 };
 
+const readRelationshipReference = (
+  value: unknown,
+): { id: string; feature_type?: string } | undefined => {
+  if (typeof value === "string") {
+    return { id: value };
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return {
+      id: (value as { id: string }).id,
+      ...(typeof (value as { feature_type?: unknown }).feature_type === "string"
+        ? { feature_type: (value as { feature_type: string }).feature_type }
+        : {}),
+    };
+  }
+  return undefined;
+};
+
 type BuildInput = {
   building: Building;
   floors: Floor[];
@@ -456,8 +479,7 @@ export const buildImdfArchivePayload = ({
       mappedType === "venue" ||
       mappedType === "building" ||
       mappedType === "address" ||
-      mappedType === "footprint" ||
-      mappedType === "relationship"
+      mappedType === "footprint"
     ) {
       continue;
     }
@@ -498,36 +520,60 @@ export const buildImdfArchivePayload = ({
       }
     }
     const relation = feature.properties.relation;
-    const originId =
-      relation?.origin?.featureId ??
-      (typeof feature.properties.origin === "string" ? feature.properties.origin : undefined) ??
-      (typeof feature.properties.origin_id === "string" ? feature.properties.origin_id : undefined);
-    const intermediaryId =
-      relation?.intermediary?.featureId ??
-      (typeof feature.properties.intermediary === "string"
-        ? feature.properties.intermediary
-        : undefined) ??
+    const originRef =
+      readRelationshipReference(feature.properties.origin) ??
+      (typeof feature.properties.origin_id === "string"
+        ? { id: feature.properties.origin_id }
+        : undefined);
+    const intermediaryRef =
+      readRelationshipReference(feature.properties.intermediary) ??
       (typeof feature.properties.intermediary_id === "string"
-        ? feature.properties.intermediary_id
+        ? { id: feature.properties.intermediary_id }
         : undefined);
-    const destinationId =
-      relation?.destination?.featureId ??
-      (typeof feature.properties.destination === "string"
-        ? feature.properties.destination
-        : undefined) ??
+    const destinationRef =
+      readRelationshipReference(feature.properties.destination) ??
       (typeof feature.properties.destination_id === "string"
-        ? feature.properties.destination_id
+        ? { id: feature.properties.destination_id }
         : undefined);
-    if (originId) {
-      baseProperties["origin_id"] = featureUuidById.get(originId) ?? resolveUuid(originId);
-    }
-    if (intermediaryId) {
-      baseProperties["intermediary_id"] =
-        featureUuidById.get(intermediaryId) ?? resolveUuid(intermediaryId);
-    }
-    if (destinationId) {
-      baseProperties["destination_id"] =
-        featureUuidById.get(destinationId) ?? resolveUuid(destinationId);
+    const resolvedOriginId = relation?.origin?.featureId ?? originRef?.id;
+    const resolvedIntermediaryId = relation?.intermediary?.featureId ?? intermediaryRef?.id;
+    const resolvedDestinationId = relation?.destination?.featureId ?? destinationRef?.id;
+    if (mappedType === "relationship") {
+      if (resolvedOriginId) {
+        baseProperties["origin"] = {
+          id: featureUuidById.get(resolvedOriginId) ?? resolveUuid(resolvedOriginId),
+          feature_type: originRef?.feature_type ?? "unit",
+        };
+      }
+      if (resolvedIntermediaryId) {
+        baseProperties["intermediary"] = {
+          id: featureUuidById.get(resolvedIntermediaryId) ?? resolveUuid(resolvedIntermediaryId),
+          feature_type: intermediaryRef?.feature_type ?? "unit",
+        };
+      }
+      if (resolvedDestinationId) {
+        baseProperties["destination"] = {
+          id: featureUuidById.get(resolvedDestinationId) ?? resolveUuid(resolvedDestinationId),
+          feature_type: destinationRef?.feature_type ?? "unit",
+        };
+      }
+      baseProperties["direction"] =
+        typeof feature.properties.direction === "string"
+          ? feature.properties.direction
+          : "directed";
+    } else {
+      if (resolvedOriginId) {
+        baseProperties["origin_id"] =
+          featureUuidById.get(resolvedOriginId) ?? resolveUuid(resolvedOriginId);
+      }
+      if (resolvedIntermediaryId) {
+        baseProperties["intermediary_id"] =
+          featureUuidById.get(resolvedIntermediaryId) ?? resolveUuid(resolvedIntermediaryId);
+      }
+      if (resolvedDestinationId) {
+        baseProperties["destination_id"] =
+          featureUuidById.get(resolvedDestinationId) ?? resolveUuid(resolvedDestinationId);
+      }
     }
     for (const field of featureSpec.fields) {
       if (baseProperties[field.key] === undefined && field.defaultValue !== undefined) {
@@ -554,13 +600,17 @@ export const buildImdfArchivePayload = ({
       }
       geometry = normalized;
     }
-    if (spec.geometryType === "LineString") {
+    if (spec.geometryType === "LineString" && mappedType !== "relationship") {
       const normalized = normalizeLine(feature.geometry);
       if (!normalized) {
         warnings.push(`Feature ${feature.id} skipped: invalid line geometry for ${mappedType}.`);
         continue;
       }
       geometry = normalized;
+    }
+    if (mappedType === "relationship") {
+      const normalized = normalizeLine(feature.geometry);
+      geometry = normalized ?? null;
     }
     if (spec.geometryType === "Point") {
       if (feature.geometry.type !== "Point") {
@@ -627,12 +677,9 @@ export const buildImdfArchivePayload = ({
       geometry: null,
       properties: {
         name: createLabel("Contains relationship", "Contains relationship", defaultLocale),
-        category: "contains",
-        direction: 1,
-        references: [
-          { id: parentId, feature_type: parentType },
-          { id: childId, feature_type: mappedType },
-        ],
+        direction: "directed",
+        origin: { id: parentId, feature_type: parentType },
+        destination: { id: childId, feature_type: mappedType },
       },
     });
   }
@@ -912,6 +959,11 @@ const stableSortKeys = (input: unknown): unknown => {
 const buildZipFromPayload = async (
   payload: ImdfArchivePayload,
 ): Promise<{ blob: Blob; warnings: string[] }> => {
+  const validation = validateImdfDatasetFiles(payload.files);
+  if (validation.errors.length > 0) {
+    const details = validation.errors.map((error) => `- ${error}`).join("\n");
+    throw new Error(`IMDF export blocked: dataset validation failed.\n${details}`);
+  }
   const zip = new JSZip();
   for (const [filename, content] of Object.entries(payload.files)) {
     if (filename === "formation_assets.json") {
@@ -929,7 +981,7 @@ const buildZipFromPayload = async (
     zip.file(asset.path, asset.bytes);
   }
   const blob = await zip.generateAsync({ type: "blob" });
-  return { blob, warnings: payload.warnings };
+  return { blob, warnings: [...payload.warnings, ...validation.warnings] };
 };
 
 const exportMultiBuildingImdfZip = async (

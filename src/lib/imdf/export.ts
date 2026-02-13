@@ -447,8 +447,17 @@ export const exportImdfDataset = ({
     (feature) =>
       feature.geometry.type === "LineString" && resolveInternalType(feature) === "opening",
   );
-  const unitSourceFeatures = normalizedFloorFeatures.filter(
+  const polygonSourceFeatures = normalizedFloorFeatures.filter(
     (feature) => feature.geometry.type === "Polygon" && resolveInternalType(feature) !== "level",
+  );
+  const unitSourceFeatures = polygonSourceFeatures.filter(
+    (feature) => resolveInternalType(feature) === "unit",
+  );
+  const sectionSourceFeatures = polygonSourceFeatures.filter(
+    (feature) => resolveInternalType(feature) === "section",
+  );
+  const geofenceSourceFeatures = polygonSourceFeatures.filter(
+    (feature) => resolveInternalType(feature) === "geofence",
   );
 
   const allCoordinates = normalizedFloorFeatures.flatMap((feature) =>
@@ -531,7 +540,7 @@ export const exportImdfDataset = ({
 
   const primaryLevelId = collections.level.features[0]?.id ?? resolveUuid(`level:${floor.id}`);
 
-  const unitIdBySource = new Map<string, string>();
+  const exportedBySourceId = new Map<string, { id: string; type: ImdfDatasetType }>();
   for (const sourceFeature of unitSourceFeatures) {
     const geometry = normalizePolygonGeometry(sourceFeature.geometry);
     if (!geometry) {
@@ -558,10 +567,69 @@ export const exportImdfDataset = ({
       },
     });
 
-    unitIdBySource.set(sourceFeature.id, id);
+    exportedBySourceId.set(sourceFeature.id, { id, type: "unit" });
   }
 
-  const openingIdBySource = new Map<string, string>();
+  for (const sourceFeature of sectionSourceFeatures) {
+    const geometry = normalizePolygonGeometry(sourceFeature.geometry);
+    if (!geometry) {
+      continue;
+    }
+    const id = toExportId(sourceFeature.id, "section");
+    const displayPoint = displayPointForGeometry(geometry);
+    collections.section.features.push({
+      type: "Feature",
+      id,
+      feature_type: "section",
+      geometry,
+      properties: {
+        name: createLabel(sourceFeature.properties.name, "Section", defaultLocale),
+        level_id: primaryLevelId,
+        category:
+          typeof sourceFeature.properties.category === "string" &&
+          sourceFeature.properties.category.trim().length > 0
+            ? sourceFeature.properties.category
+            : "area",
+        section_id:
+          typeof sourceFeature.properties.section_id === "string"
+            ? sourceFeature.properties.section_id
+            : id,
+        display_point: displayPoint,
+      },
+    });
+    exportedBySourceId.set(sourceFeature.id, { id, type: "section" });
+  }
+
+  for (const sourceFeature of geofenceSourceFeatures) {
+    const geometry = normalizePolygonGeometry(sourceFeature.geometry);
+    if (!geometry) {
+      continue;
+    }
+    const id = toExportId(sourceFeature.id, "geofence");
+    const displayPoint = displayPointForGeometry(geometry);
+    collections.geofence.features.push({
+      type: "Feature",
+      id,
+      feature_type: "geofence",
+      geometry,
+      properties: {
+        name: createLabel(sourceFeature.properties.name, "Geofence", defaultLocale),
+        level_id: primaryLevelId,
+        category:
+          typeof sourceFeature.properties.category === "string" &&
+          sourceFeature.properties.category.trim().length > 0
+            ? sourceFeature.properties.category
+            : "zone",
+        restriction:
+          typeof sourceFeature.properties.restriction === "string"
+            ? sourceFeature.properties.restriction
+            : "none",
+        display_point: displayPoint,
+      },
+    });
+    exportedBySourceId.set(sourceFeature.id, { id, type: "geofence" });
+  }
+
   for (const [index, sourceFeature] of openingSourceFeatures.entries()) {
     const lineGeometry = normalizeLineGeometry(sourceFeature.geometry);
     if (!lineGeometry) {
@@ -583,44 +651,45 @@ export const exportImdfDataset = ({
           sourceFeature.properties.category.trim().length > 0
             ? sourceFeature.properties.category
             : "pedestrian",
-        door:
-          sourceFeature.properties.door === -1 ||
-          sourceFeature.properties.door === 0 ||
-          sourceFeature.properties.door === 1
-            ? sourceFeature.properties.door
-            : 0,
+        ...(sourceFeature.properties.door !== undefined
+          ? { door: sourceFeature.properties.door }
+          : {}),
+        ...(sourceFeature.properties.accessibility !== undefined
+          ? { accessibility: sourceFeature.properties.accessibility }
+          : {}),
       },
     });
-    openingIdBySource.set(sourceFeature.id, openingId);
+    exportedBySourceId.set(sourceFeature.id, { id: openingId, type: "opening" });
   }
 
   const sourceById = new Map(normalizedFloorFeatures.map((feature) => [feature.id, feature]));
-  const childFeatures = [...unitSourceFeatures, ...openingSourceFeatures];
+  const childFeatures = [
+    ...unitSourceFeatures,
+    ...sectionSourceFeatures,
+    ...geofenceSourceFeatures,
+    ...openingSourceFeatures,
+  ];
   for (const sourceFeature of childFeatures) {
-    const childType =
-      sourceFeature.geometry.type === "LineString"
-        ? "opening"
-        : sourceFeature.properties.kind === "unit"
-          ? "unit"
-          : "unit";
-    const childId =
-      childType === "opening"
-        ? openingIdBySource.get(sourceFeature.id)
-        : unitIdBySource.get(sourceFeature.id);
+    const child = exportedBySourceId.get(sourceFeature.id);
+    const childType = child?.type;
+    const childId = child?.id;
     if (!childId) {
       continue;
     }
     const containment = resolveContainmentParent(sourceFeature);
     const parentSource = containment.parentId ? sourceById.get(containment.parentId) : undefined;
     const parentType = containment.parentType ?? resolveInternalType(parentSource ?? sourceFeature);
+    const resolvedParent = containment.parentId
+      ? exportedBySourceId.get(containment.parentId)
+      : undefined;
     const parentId =
       !containment.parentId || containment.parentId === floor.id
         ? primaryLevelId
-        : parentType === "opening"
-          ? (openingIdBySource.get(containment.parentId) ?? primaryLevelId)
-          : parentType === "unit" || parentType === "section" || parentType === "geofence"
-            ? (unitIdBySource.get(containment.parentId) ?? primaryLevelId)
-            : primaryLevelId;
+        : (resolvedParent?.id ?? primaryLevelId);
+    const resolvedParentType =
+      !containment.parentId || containment.parentId === floor.id
+        ? "level"
+        : (resolvedParent?.type ?? parentType ?? "level");
     collections.relationship.features.push({
       type: "Feature",
       id: toExportId(`contains:${parentId}:${childId}`, "relationship"),
@@ -628,22 +697,9 @@ export const exportImdfDataset = ({
       geometry: null,
       properties: {
         name: createLabel("Contains relationship", "Contains relationship", defaultLocale),
-        category: "contains",
-        direction: 1,
-        references: [
-          {
-            id: parentId,
-            feature_type:
-              parentId === primaryLevelId
-                ? "level"
-                : parentType === "section" || parentType === "geofence"
-                  ? "unit"
-                  : parentType === "opening"
-                    ? "opening"
-                    : "unit",
-          },
-          { id: childId, feature_type: childType },
-        ],
+        direction: "directed",
+        origin: { id: parentId, feature_type: resolvedParentType },
+        destination: { id: childId, feature_type: childType },
       },
     });
   }

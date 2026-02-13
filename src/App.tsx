@@ -1677,23 +1677,38 @@ function App() {
       if (!building) {
         return;
       }
-      const result = await exportBuildingImdfZip({
-        building,
-        floors: levels,
-        features: editorState.features,
-        overlays,
-      });
-      setArchiveNotices([
-        ...result.warnings.map((warning) => ({
-          level: "warning" as const,
-          message: warning,
-        })),
-        {
-          level: "info",
-          message: `Exported building "${building.name}".`,
-        },
-      ]);
-      downloadBlob(result.blob, `${building.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
+      try {
+        const result = await exportBuildingImdfZip({
+          building,
+          floors: levels,
+          features: editorState.features,
+          overlays,
+        });
+        setArchiveNotices([
+          ...result.warnings.map((warning) => ({
+            level: "warning" as const,
+            message: warning,
+          })),
+          {
+            level: "info",
+            message: `Exported building "${building.name}".`,
+          },
+        ]);
+        downloadBlob(
+          result.blob,
+          `${building.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`,
+        );
+      } catch (error) {
+        setArchiveNotices([
+          {
+            level: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "IMDF export blocked due to validation errors.",
+          },
+        ]);
+      }
     },
     [buildings, editorState.features, levels, overlays],
   );
@@ -1704,8 +1719,44 @@ function App() {
       if (!venue) {
         return;
       }
-      const result = await exportVenueImdfZip({
-        venue,
+      try {
+        const result = await exportVenueImdfZip({
+          venue,
+          buildings,
+          floors: levels,
+          features: editorState.features,
+          overlays,
+        });
+        setArchiveNotices([
+          ...result.warnings.map((warning) => ({
+            level: "warning" as const,
+            message: warning,
+          })),
+          {
+            level: "info",
+            message: `Exported venue "${venue.name}".`,
+          },
+        ]);
+        downloadBlob(result.blob, `${venue.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
+      } catch (error) {
+        setArchiveNotices([
+          {
+            level: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "IMDF export blocked due to validation errors.",
+          },
+        ]);
+      }
+    },
+    [venues, buildings, editorState.features, levels, overlays],
+  );
+
+  const onExportProjectArchive = useCallback(async () => {
+    try {
+      const result = await exportProjectImdfZip({
+        venues,
         buildings,
         floors: levels,
         features: editorState.features,
@@ -1718,33 +1769,21 @@ function App() {
         })),
         {
           level: "info",
-          message: `Exported venue "${venue.name}".`,
+          message: "Exported project archive.",
         },
       ]);
-      downloadBlob(result.blob, `${venue.name.replaceAll(/\s+/g, "-").toLowerCase()}.imdf.zip`);
-    },
-    [venues, buildings, editorState.features, levels, overlays],
-  );
-
-  const onExportProjectArchive = useCallback(async () => {
-    const result = await exportProjectImdfZip({
-      venues,
-      buildings,
-      floors: levels,
-      features: editorState.features,
-      overlays,
-    });
-    setArchiveNotices([
-      ...result.warnings.map((warning) => ({
-        level: "warning" as const,
-        message: warning,
-      })),
-      {
-        level: "info",
-        message: "Exported project archive.",
-      },
-    ]);
-    downloadBlob(result.blob, "project.imdf.zip");
+      downloadBlob(result.blob, "project.imdf.zip");
+    } catch (error) {
+      setArchiveNotices([
+        {
+          level: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "IMDF export blocked due to validation errors.",
+        },
+      ]);
+    }
   }, [venues, buildings, editorState.features, levels, overlays]);
 
   const onImportArchives = useCallback(
@@ -1964,11 +2003,28 @@ function App() {
   const onRenameLevel = useCallback(
     (levelId: string, name: string) => {
       applyProjectMutation("Level renamed", () => {
+        const resolvedName = name.trim().length > 0 ? name.trim() : "Untitled level";
         setLevels((current) =>
-          current.map((level) =>
-            level.id === levelId ? { ...level, name: name || "Untitled level" } : level,
-          ),
+          current.map((level) => (level.id === levelId ? { ...level, name: resolvedName } : level)),
         );
+        setEditorState((current) => {
+          const nextFeatures = current.features.map((feature) => {
+            if (!isLevelGeometryFeature(feature) || feature.properties.floorId !== levelId) {
+              return feature;
+            }
+            return {
+              ...feature,
+              properties: {
+                ...feature.properties,
+                name: { en: resolvedName },
+              },
+            };
+          });
+          if (areFeatureListsEqual(current.features, nextFeatures)) {
+            return current;
+          }
+          return replaceAllFeatures(current, nextFeatures);
+        });
       });
     },
     [applyProjectMutation],

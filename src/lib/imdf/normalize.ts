@@ -6,6 +6,21 @@ export type NormalizeContext = {
   floorId: string;
 };
 
+const readReferenceId = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { id?: unknown }).id === "string"
+  ) {
+    return (value as { id: string }).id;
+  }
+  return undefined;
+};
+
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {
   const raw =
     typeof feature.properties.imdfType === "string"
@@ -53,28 +68,20 @@ export const normalizeFeature = (
   }
   const schema = getImdfSchemaRule(normalizedType);
   const origin =
-    typeof feature.properties.origin === "string"
-      ? feature.properties.origin
-      : typeof feature.properties.origin_id === "string"
-        ? feature.properties.origin_id
-        : undefined;
+    readReferenceId(feature.properties.origin) ?? readReferenceId(feature.properties.origin_id);
   const intermediary =
-    typeof feature.properties.intermediary === "string"
-      ? feature.properties.intermediary
-      : typeof feature.properties.intermediary_id === "string"
-        ? feature.properties.intermediary_id
-        : undefined;
+    readReferenceId(feature.properties.intermediary) ??
+    readReferenceId(feature.properties.intermediary_id);
   const destination =
-    typeof feature.properties.destination === "string"
-      ? feature.properties.destination
-      : typeof feature.properties.destination_id === "string"
-        ? feature.properties.destination_id
-        : undefined;
+    readReferenceId(feature.properties.destination) ??
+    readReferenceId(feature.properties.destination_id);
   const relation =
-    normalizedType === "relationship" && origin && intermediary && destination
+    normalizedType === "relationship" && origin && destination
       ? {
           origin: { featureId: origin },
-          intermediary: { featureId: intermediary, floorId: context.floorId },
+          ...(intermediary
+            ? { intermediary: { featureId: intermediary, floorId: context.floorId } }
+            : {}),
           destination: { featureId: destination },
         }
       : feature.properties.relation;
@@ -105,10 +112,20 @@ export const normalizeFeature = (
       buildingId: context.buildingId,
       building_id: context.buildingId,
       ...(normalizedType === "level" ? { building_ids: [context.buildingId] } : {}),
-      ...(origin ? { origin, origin_id: origin } : {}),
-      ...(intermediary ? { intermediary, intermediary_id: intermediary } : {}),
-      ...(destination ? { destination, destination_id: destination } : {}),
+      ...(origin ? { origin: { id: origin, feature_type: "unit" }, origin_id: origin } : {}),
+      ...(intermediary
+        ? {
+            intermediary: { id: intermediary, feature_type: "unit" },
+            intermediary_id: intermediary,
+          }
+        : {}),
+      ...(destination
+        ? { destination: { id: destination, feature_type: "unit" }, destination_id: destination }
+        : {}),
       ...(relation ? { relation } : {}),
+      ...(normalizedType === "relationship" && !feature.properties.direction
+        ? { direction: "directed" }
+        : {}),
       name: normalizedName,
     },
   };
@@ -132,13 +149,6 @@ export const normalizeFeature = (
       normalized.properties.category === "door"
     ) {
       normalized.properties.category = "pedestrian";
-    }
-    if (
-      normalized.properties.door !== -1 &&
-      normalized.properties.door !== 0 &&
-      normalized.properties.door !== 1
-    ) {
-      normalized.properties.door = 0;
     }
   }
 

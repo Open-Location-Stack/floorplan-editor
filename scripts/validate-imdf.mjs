@@ -58,6 +58,9 @@ const validateLineStringGeometry = (geometry, context, errors) => {
   }
 };
 
+const isRelationshipReference = (value) =>
+  isRecord(value) && isUuid(value.id) && typeof value.feature_type === "string";
+
 const ringSignedArea = (ring) => {
   let sum = 0;
   for (let index = 0; index < ring.length - 1; index += 1) {
@@ -221,8 +224,14 @@ const validateImdfDatasetFiles = (files) => {
         validatePolygonGeometry(featureRaw.geometry, context, errors, warnings);
       }
 
-      if (["opening", "relationship"].includes(expectedType)) {
+      if (expectedType === "opening") {
         validateLineStringGeometry(featureRaw.geometry, context, errors);
+      }
+
+      if (expectedType === "relationship") {
+        if (featureRaw.geometry !== null) {
+          validateLineStringGeometry(featureRaw.geometry, context, errors);
+        }
       }
 
       if (expectedType === "level") {
@@ -295,34 +304,44 @@ const validateImdfDatasetFiles = (files) => {
       }
 
       if (expectedType === "relationship") {
-        if (!isUuid(properties.origin_id)) {
-          errors.push(`${context} properties.origin_id must be a UUID.`);
+        if (!isRelationshipReference(properties.origin)) {
+          errors.push(`${context} properties.origin must be a reference object.`);
         } else {
           references.push({
             source: `${featureRaw.id}`,
-            target: properties.origin_id,
-            field: "origin_id",
+            target: properties.origin.id,
+            field: "origin",
           });
         }
 
-        if (!isUuid(properties.intermediary_id)) {
-          errors.push(`${context} properties.intermediary_id must be a UUID.`);
+        if (
+          properties.intermediary !== undefined &&
+          !isRelationshipReference(properties.intermediary)
+        ) {
+          errors.push(
+            `${context} properties.intermediary must be a reference object when present.`,
+          );
         } else {
-          references.push({
-            source: `${featureRaw.id}`,
-            target: properties.intermediary_id,
-            field: "intermediary_id",
-          });
+          if (isRelationshipReference(properties.intermediary)) {
+            references.push({
+              source: `${featureRaw.id}`,
+              target: properties.intermediary.id,
+              field: "intermediary",
+            });
+          }
         }
 
-        if (!isUuid(properties.destination_id)) {
-          errors.push(`${context} properties.destination_id must be a UUID.`);
+        if (!isRelationshipReference(properties.destination)) {
+          errors.push(`${context} properties.destination must be a reference object.`);
         } else {
           references.push({
             source: `${featureRaw.id}`,
-            target: properties.destination_id,
-            field: "destination_id",
+            target: properties.destination.id,
+            field: "destination",
           });
+        }
+        if (!["directed", "undirected"].includes(properties.direction)) {
+          errors.push(`${context} properties.direction must be directed or undirected.`);
         }
       }
     }

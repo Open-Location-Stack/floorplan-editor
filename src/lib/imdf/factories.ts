@@ -79,7 +79,6 @@ export const createImdfFeature = ({
   }
   if (type === "opening") {
     normalized.properties.category = "pedestrian";
-    normalized.properties.door = 0;
   }
   if (normalized.properties.category === undefined) {
     if (type === "unit") {
