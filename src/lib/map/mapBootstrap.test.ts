@@ -646,6 +646,66 @@ describe("createMapController", () => {
     );
   });
 
+  it("preserves level feature type in draw properties when kind is missing", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "level-shape-1",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.089],
+                [5.12, 52.089],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+
+    expect(draw.get("level-shape-1")).toEqual(
+      expect.objectContaining({
+        id: "level-shape-1",
+        properties: expect.objectContaining({
+          feature_type: "level",
+        }),
+      }),
+    );
+  });
+
   it("registers custom point icons on map load", async () => {
     const controller = await createMapController(
       document.createElement("div"),

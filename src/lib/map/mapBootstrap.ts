@@ -776,7 +776,14 @@ const toDrawFeature = (feature: FloorFeature): GeoJsonFeature => ({
   type: "Feature",
   id: feature.id,
   geometry: structuredClone(feature.geometry),
-  properties: structuredClone(feature.properties),
+  properties: {
+    ...structuredClone(feature.properties),
+    feature_type:
+      feature.feature_type ??
+      (typeof feature.properties.kind === "string"
+        ? (feature.properties.kind as FloorFeature["feature_type"])
+        : undefined),
+  },
 });
 
 const toInteractionMode = (mode: string): DrawMode => {
