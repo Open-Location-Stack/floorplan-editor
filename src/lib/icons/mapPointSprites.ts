@@ -34,6 +34,7 @@ export const MAP_POINT_ICON_SPECS: PointSpriteSpec[] = [
   { id: "point-icon-nav-escalator", color: "#0369a1", svg: moveUpRightIcon },
   { id: "point-icon-nav-revolving-door", color: "#155e75", svg: refreshCwIcon },
   { id: "point-icon-nav-exit", color: "#047857", svg: logOutIcon },
+  { id: "point-icon-connector", color: "#6b7280", svg: linkIcon },
   { id: "point-icon-amenity", color: "#0ea5e9", svg: sparklesIcon },
   { id: "point-icon-anchor", color: "#2563eb", svg: anchorIcon },
   { id: "point-icon-detail", color: "#4f46e5", svg: infoIcon },

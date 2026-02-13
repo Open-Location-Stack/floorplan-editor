@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import {
   isNavigationNodeOpening,
-  NAVIGATION_NODE_CATEGORIES,
   type NavigationNodeCategory,
   openingRepresentativePoint,
   readNavigationNodeCategory,
@@ -108,22 +107,15 @@ export const NavigationNodeFeatureEditor = ({
               aria-label="Lock feature geometry"
             />
           </label>
-          <label className="fieldset">
+          <div className="fieldset">
             <span className="fieldset-legend">Category</span>
-            <select
-              className="select select-bordered select-sm"
-              value={selectedCategory}
-              onChange={(event) =>
-                onUpdateProperty("category", event.currentTarget.value as NavigationNodeCategory)
-              }
-            >
-              {NAVIGATION_NODE_CATEGORIES.map((entry) => (
-                <option key={entry} value={entry}>
-                  {CATEGORY_LABELS[entry]}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="input input-bordered input-sm flex items-center">
+              {CATEGORY_LABELS[selectedCategory]}
+            </div>
+            <p className="text-xs text-base-content/70">
+              Node category is fixed when created from the navigation node button.
+            </p>
+          </div>
           <div className="rounded-box border border-base-300 p-3">
             <div className="mb-2 text-sm font-semibold">Levels</div>
             <div className="grid gap-2">

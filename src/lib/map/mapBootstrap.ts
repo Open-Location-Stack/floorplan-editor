@@ -2,8 +2,10 @@ import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
 import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
 import { rotateAroundPoint } from "../geometry/overlayTransforms";
+import { mapPointIconIdForOpeningEndpoint } from "../icons/iconRegistry";
 import { createPointIconImage, MAP_POINT_ICON_SPECS } from "../icons/mapPointSprites";
 import { createId } from "../id";
+import { isNavigationPathOpening, readNavigationNodeCategory } from "../navigation/navigationModel";
 import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 
 type MapLibreModule = typeof import("maplibre-gl");
@@ -53,6 +55,8 @@ const OVERLAY_LAYER_ID = "floor-overlay-layer";
 const ROUTE_SOURCE_ID = "route-overlay";
 const ROUTE_LINE_LAYER_ID = "route-overlay-line";
 const ROUTE_POINT_LAYER_ID = "route-overlay-point";
+const OPENING_ENDPOINT_SOURCE_ID = "opening-endpoint-overlay";
+const OPENING_ENDPOINT_LAYER_ID = "opening-endpoint-overlay-symbol";
 const OVERLAY_HANDLE_SIZE = 12;
 const OVERLAY_CENTER_HANDLE_SIZE = 16;
 const OVERLAY_ROTATE_HANDLE_SIZE = 14;
@@ -151,6 +155,165 @@ const pointIconImageExpression: unknown[] = [
   "point-icon-relationship",
   "point-icon-default",
 ];
+
+const openingEndpointIconExpression: unknown[] = [
+  "match",
+  ["get", "endpoint_role"],
+  "connector",
+  mapPointIconIdForOpeningEndpoint(undefined, "connector"),
+  [
+    "match",
+    ["get", "category"],
+    "entrance",
+    mapPointIconIdForOpeningEndpoint("entrance", "node"),
+    "door",
+    mapPointIconIdForOpeningEndpoint("door", "node"),
+    "stairs",
+    mapPointIconIdForOpeningEndpoint("stairs", "node"),
+    "elevator",
+    mapPointIconIdForOpeningEndpoint("elevator", "node"),
+    "escalator",
+    mapPointIconIdForOpeningEndpoint("escalator", "node"),
+    "revolving_door",
+    mapPointIconIdForOpeningEndpoint("revolving_door", "node"),
+    "exit",
+    mapPointIconIdForOpeningEndpoint("exit", "node"),
+    mapPointIconIdForOpeningEndpoint(undefined, "node"),
+  ],
+];
+
+type OpeningEndpointRole = "node" | "connector";
+const NAVIGATION_NODE_CATEGORY_VALUES = new Set([
+  "entrance",
+  "door",
+  "stairs",
+  "elevator",
+  "escalator",
+  "revolving_door",
+  "exit",
+]);
+
+type OpeningEndpointMarker = FloorFeature & {
+  geometry: {
+    type: "Point";
+    coordinates: Coordinates;
+  };
+  properties: FloorFeature["properties"] & {
+    source_opening_id: string;
+    endpoint_index: 0 | 1;
+    endpoint_role: OpeningEndpointRole;
+    category: string;
+    feature_type: "opening_endpoint_marker";
+  };
+};
+
+const createOpeningEndpointMarker = (
+  sourceFeature: FloorFeature,
+  category: string,
+  coordinate: Coordinates,
+  endpointIndex: 0 | 1,
+): OpeningEndpointMarker => ({
+  type: "Feature",
+  id: `${sourceFeature.id}:endpoint:${endpointIndex}`,
+  feature_type: "formation:opening_endpoint_marker",
+  geometry: {
+    type: "Point",
+    coordinates: coordinate,
+  },
+  properties: {
+    source_opening_id: sourceFeature.id,
+    endpoint_index: endpointIndex,
+    endpoint_role: endpointIndex === 0 ? "node" : "connector",
+    category,
+    feature_type: "opening_endpoint_marker",
+  },
+});
+
+const readFeatureName = (feature: FloorFeature): string | undefined => {
+  const name = feature.properties.name;
+  if (typeof name === "string" && name.trim().length > 0) {
+    return name.trim();
+  }
+  if (name && typeof name === "object" && !Array.isArray(name)) {
+    const english = (name as { en?: unknown }).en;
+    if (typeof english === "string" && english.trim().length > 0) {
+      return english.trim();
+    }
+  }
+  return undefined;
+};
+
+const readNodeCategoryFromProperties = (feature: FloorFeature): string | undefined => {
+  const category = feature.properties.category;
+  if (typeof category !== "string") {
+    return undefined;
+  }
+  return NAVIGATION_NODE_CATEGORY_VALUES.has(category) ? category : undefined;
+};
+
+const inferNavigationNodeCategoryFromName = (feature: FloorFeature): string | undefined => {
+  const name = readFeatureName(feature)?.toLowerCase();
+  if (!name) {
+    return undefined;
+  }
+  if (name.includes("revolving door") || name.includes("revolving_door")) {
+    return "revolving_door";
+  }
+  if (name.includes("entrance")) {
+    return "entrance";
+  }
+  if (name.includes("elevator")) {
+    return "elevator";
+  }
+  if (name.includes("escalator")) {
+    return "escalator";
+  }
+  if (name.includes("stairs") || name.includes("stair")) {
+    return "stairs";
+  }
+  if (name.includes("door")) {
+    return "door";
+  }
+  if (name.includes("exit")) {
+    return "exit";
+  }
+  return undefined;
+};
+
+const resolveEndpointCategory = (feature: FloorFeature): string | undefined =>
+  readNavigationNodeCategory(feature) ??
+  readNodeCategoryFromProperties(feature) ??
+  inferNavigationNodeCategoryFromName(feature);
+
+export const deriveNavigationOpeningEndpointMarkers = (
+  features: FloorFeature[],
+): FeatureCollection => {
+  const markers: FloorFeature[] = [];
+
+  for (const feature of features) {
+    if (feature.geometry.type !== "LineString" || isNavigationPathOpening(feature)) {
+      continue;
+    }
+
+    const category = resolveEndpointCategory(feature);
+    if (!category) {
+      continue;
+    }
+
+    const [first, second] = feature.geometry.coordinates;
+    if (!first || !second || feature.geometry.coordinates.length !== 2) {
+      continue;
+    }
+
+    markers.push(createOpeningEndpointMarker(feature, category, first, 0));
+    markers.push(createOpeningEndpointMarker(feature, category, second, 1));
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: markers,
+  };
+};
 
 const drawPolygonFillColorExpression: unknown[] = [
   "case",
@@ -1983,6 +2146,35 @@ export const createMapController = async (
     map.moveLayer(ROUTE_POINT_LAYER_ID);
   };
 
+  const applyOpeningEndpointOverlay = () => {
+    const endpointFeatures = deriveNavigationOpeningEndpointMarkers(currentFeatures.features);
+    const source = map.getSource(OPENING_ENDPOINT_SOURCE_ID);
+    if (isGeoJsonSourceWithSetData(source)) {
+      source.setData(endpointFeatures);
+    } else if (!source) {
+      map.addSource(OPENING_ENDPOINT_SOURCE_ID, {
+        type: "geojson",
+        data: endpointFeatures,
+      });
+    }
+
+    if (!map.getLayer(OPENING_ENDPOINT_LAYER_ID)) {
+      map.addLayer({
+        id: OPENING_ENDPOINT_LAYER_ID,
+        type: "symbol",
+        source: OPENING_ENDPOINT_SOURCE_ID,
+        layout: {
+          "icon-image": openingEndpointIconExpression as never,
+          "icon-size": 0.8,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
+    }
+
+    map.moveLayer(OPENING_ENDPOINT_LAYER_ID);
+  };
+
   const registerPointIcons = () => {
     for (const icon of MAP_POINT_ICON_SPECS) {
       if (map.hasImage(icon.id)) {
@@ -2001,6 +2193,7 @@ export const createMapController = async (
 
     withExternalSyncGuard(() => {
       applyFeatures();
+      applyOpeningEndpointOverlay();
       applyRouteOverlay();
       applyInteractionMode();
       applySelection();

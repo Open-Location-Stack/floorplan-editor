@@ -70,6 +70,7 @@ export type MapPointIconId =
   | "point-icon-nav-escalator"
   | "point-icon-nav-revolving-door"
   | "point-icon-nav-exit"
+  | "point-icon-connector"
   | "point-icon-amenity"
   | "point-icon-anchor"
   | "point-icon-detail"
@@ -85,6 +86,41 @@ export type MapPointIconId =
   | "point-icon-opening-exit"
   | "point-icon-relationship"
   | "point-icon-default";
+
+export type OpeningEndpointRole = "node" | "connector";
+
+export const mapPointIconIdForOpeningEndpoint = (
+  category: string | undefined,
+  role: OpeningEndpointRole,
+): MapPointIconId => {
+  if (role === "connector") {
+    return "point-icon-connector";
+  }
+
+  if (category === "entrance") {
+    return "point-icon-nav-entrance";
+  }
+  if (category === "door") {
+    return "point-icon-nav-door";
+  }
+  if (category === "stairs") {
+    return "point-icon-nav-stairs";
+  }
+  if (category === "elevator") {
+    return "point-icon-nav-elevator";
+  }
+  if (category === "escalator") {
+    return "point-icon-nav-escalator";
+  }
+  if (category === "revolving_door") {
+    return "point-icon-nav-revolving-door";
+  }
+  if (category === "exit") {
+    return "point-icon-nav-exit";
+  }
+
+  return "point-icon-nav";
+};
 
 export const mapPointIconIdForFeature = (feature: FloorFeature): MapPointIconId => {
   const type = getFeatureIconKey(feature);

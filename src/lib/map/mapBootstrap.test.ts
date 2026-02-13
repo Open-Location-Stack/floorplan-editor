@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureCollection, FloorOverlay } from "../types";
-import { createMapController } from "./mapBootstrap";
+import { createMapController, deriveNavigationOpeningEndpointMarkers } from "./mapBootstrap";
 
 type EventHandler = (payload?: unknown) => void;
 
@@ -103,7 +103,9 @@ class MockMap {
       return;
     }
 
-    this.sources.set(id, {});
+    this.sources.set(id, {
+      setData: vi.fn(),
+    });
   });
 
   getSource = vi.fn((id: string) => this.sources.get(id));
@@ -738,8 +740,228 @@ describe("createMapController", () => {
       { pixelRatio: 2 },
     );
     expect(map.hasImage("point-icon-kiosk")).toBe(true);
+    expect(map.hasImage("point-icon-connector")).toBe(true);
 
     controller.destroy();
+  });
+
+  it("derives endpoint markers only for two-point navigation nodes", () => {
+    const result = deriveNavigationOpeningEndpointMarkers([
+      {
+        type: "Feature",
+        id: "stairs-node",
+        feature_type: "opening",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.09],
+            [5.121, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          category: "stairs",
+        },
+      },
+      {
+        type: "Feature",
+        id: "stairs-polyline",
+        feature_type: "opening",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.0905],
+            [5.1205, 52.0906],
+            [5.121, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          category: "stairs",
+        },
+      },
+      {
+        type: "Feature",
+        id: "ped-path",
+        feature_type: "opening",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.122, 52.09],
+            [5.123, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          category: "pedestrian",
+        },
+      },
+      {
+        type: "Feature",
+        id: "amenity-point",
+        feature_type: "amenity",
+        geometry: {
+          type: "Point",
+          coordinates: [5.124, 52.09],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          category: "restroom",
+        },
+      },
+      {
+        type: "Feature",
+        id: "legacy-elevator-node",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.125, 52.09],
+            [5.126, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          name: "elevator node",
+        },
+      },
+    ]);
+
+    expect(result.features).toHaveLength(4);
+    expect(result.features[0]).toEqual(
+      expect.objectContaining({
+        id: "stairs-node:endpoint:0",
+        geometry: {
+          type: "Point",
+          coordinates: [5.12, 52.09],
+        },
+        properties: expect.objectContaining({
+          source_opening_id: "stairs-node",
+          endpoint_index: 0,
+          endpoint_role: "node",
+          category: "stairs",
+          feature_type: "opening_endpoint_marker",
+        }),
+      }),
+    );
+    expect(result.features[1]).toEqual(
+      expect.objectContaining({
+        id: "stairs-node:endpoint:1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.09],
+        },
+        properties: expect.objectContaining({
+          source_opening_id: "stairs-node",
+          endpoint_index: 1,
+          endpoint_role: "connector",
+          category: "stairs",
+          feature_type: "opening_endpoint_marker",
+        }),
+      }),
+    );
+    expect(result.features[2]).toEqual(
+      expect.objectContaining({
+        id: "legacy-elevator-node:endpoint:0",
+        properties: expect.objectContaining({
+          source_opening_id: "legacy-elevator-node",
+          endpoint_role: "node",
+          category: "elevator",
+        }),
+      }),
+    );
+    expect(result.features[3]).toEqual(
+      expect.objectContaining({
+        id: "legacy-elevator-node:endpoint:1",
+        properties: expect.objectContaining({
+          source_opening_id: "legacy-elevator-node",
+          endpoint_role: "connector",
+          category: "elevator",
+        }),
+      }),
+    );
+  });
+
+  it("renders opening endpoint overlay source for navigation node openings", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "stairs-node",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.09],
+            ],
+          },
+          properties: {
+            level_id: "f1",
+            floorId: "f1",
+            category: "stairs",
+          },
+        },
+      ],
+    });
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    map.emit("load");
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      "opening-endpoint-overlay",
+      expect.objectContaining({
+        type: "geojson",
+        data: expect.objectContaining({
+          features: expect.arrayContaining([
+            expect.objectContaining({
+              id: "stairs-node:endpoint:0",
+              properties: expect.objectContaining({
+                endpoint_role: "node",
+                category: "stairs",
+              }),
+            }),
+            expect.objectContaining({
+              id: "stairs-node:endpoint:1",
+              properties: expect.objectContaining({
+                endpoint_role: "connector",
+                category: "stairs",
+              }),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "opening-endpoint-overlay-symbol",
+        type: "symbol",
+        source: "opening-endpoint-overlay",
+      }),
+    );
   });
 
   it("emits draw feature mutations", async () => {
