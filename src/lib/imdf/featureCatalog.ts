@@ -29,6 +29,9 @@ export type ImdfFeatureField = {
   editorControl?: EditorControlType;
   defaultValue?: JsonValue;
   enumOptions?: string[];
+  referenceTypes?: ImdfFeatureType[];
+  scope?: "same-level" | "same-building" | "global";
+  placeholder?: string;
   derive?: (
     properties: FeatureProperties,
     context: { floorId?: string; buildingId?: string },
@@ -99,6 +102,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       { key: "building_ids", type: "string[]", required: true, readOnly: true, derived: true },
     ],
   },
+  directory: {
+    type: "directory",
+    geometryType: "Point",
+    defaultName: "Directory",
+    sortOrder: 5,
+    floorBound: false,
+    fields: [],
+  },
   level: {
     type: "level",
     geometryType: "Polygon",
@@ -154,7 +165,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     fields: [
       ...baseFloorFields,
       { key: "category", type: "string", required: true, editorControl: "text" },
-      { key: "section_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "section_id",
+        type: "uuid",
+        required: true,
+        editorControl: "uuid-ref",
+        referenceTypes: ["section"],
+        scope: "same-level",
+      },
     ],
   },
   geofence: {
@@ -211,18 +229,21 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
         type: "reference",
         required: true,
         editorControl: "uuid-ref",
+        scope: "same-level",
       },
       {
         key: "intermediary",
         type: "reference",
         required: false,
         editorControl: "uuid-ref",
+        scope: "same-level",
       },
       {
         key: "destination",
         type: "reference",
         required: true,
         editorControl: "uuid-ref",
+        scope: "same-level",
       },
       {
         key: "direction",
@@ -244,7 +265,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       ...baseFloorFields,
       { key: "category", type: "string", required: true, editorControl: "enum" },
       { key: "unit_ids", type: "string[]", required: false, editorControl: "string-list" },
-      { key: "anchor_id", type: "uuid", required: false, editorControl: "uuid-ref" },
+      {
+        key: "anchor_id",
+        type: "uuid",
+        required: false,
+        editorControl: "uuid-ref",
+        referenceTypes: ["anchor"],
+        scope: "same-level",
+      },
     ],
   },
   anchor: {
@@ -255,8 +283,22 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     floorBound: true,
     fields: [
       { key: "name", type: "label", required: true, editorControl: "label-json" },
-      { key: "unit_id", type: "uuid", required: true, editorControl: "uuid-ref" },
-      { key: "address_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "unit_id",
+        type: "uuid",
+        required: true,
+        editorControl: "uuid-ref",
+        referenceTypes: ["unit"],
+        scope: "same-level",
+      },
+      {
+        key: "address_id",
+        type: "uuid",
+        required: false,
+        editorControl: "uuid-ref",
+        referenceTypes: ["address"],
+        scope: "global",
+      },
     ],
   },
   detail: {
@@ -267,7 +309,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     floorBound: true,
     fields: [
       ...baseFloorFields,
-      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "anchor_id",
+        type: "uuid",
+        required: true,
+        editorControl: "uuid-ref",
+        referenceTypes: ["anchor"],
+        scope: "same-level",
+      },
     ],
   },
   fixture: {
@@ -279,7 +328,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     fields: [
       ...baseFloorFields,
       { key: "category", type: "string", required: true, editorControl: "enum" },
-      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "anchor_id",
+        type: "uuid",
+        required: true,
+        editorControl: "uuid-ref",
+        referenceTypes: ["anchor"],
+        scope: "same-level",
+      },
     ],
   },
   kiosk: {
@@ -290,7 +346,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     floorBound: true,
     fields: [
       ...baseFloorFields,
-      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "anchor_id",
+        type: "uuid",
+        required: false,
+        editorControl: "uuid-ref",
+        referenceTypes: ["anchor"],
+        scope: "same-level",
+      },
     ],
   },
   occupant: {
@@ -305,7 +368,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       { key: "website", type: "string", required: false, editorControl: "text" },
       { key: "phone", type: "string", required: false, editorControl: "text" },
       { key: "hours", type: "string", required: false, editorControl: "text" },
-      { key: "anchor_id", type: "uuid", required: true, editorControl: "uuid-ref" },
+      {
+        key: "anchor_id",
+        type: "uuid",
+        required: true,
+        editorControl: "uuid-ref",
+        referenceTypes: ["anchor"],
+        scope: "same-level",
+      },
     ],
   },
 };

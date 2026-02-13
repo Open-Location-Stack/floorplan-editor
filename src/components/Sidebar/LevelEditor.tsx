@@ -27,6 +27,7 @@ type LevelEditorProps = {
   onOverlayRecenter: () => void;
   onOverlayToggleVisibility: () => void;
   onOverlayToggleLock: () => void;
+  rawGeoJsonPreview?: unknown;
 };
 
 export const LevelEditor = ({
@@ -53,6 +54,7 @@ export const LevelEditor = ({
   onOverlayRecenter,
   onOverlayToggleVisibility,
   onOverlayToggleLock,
+  rawGeoJsonPreview,
 }: LevelEditorProps) => {
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
   const typeCounts = useMemo(() => {
@@ -277,6 +279,13 @@ export const LevelEditor = ({
               </ul>
             )}
           </div>
+        </details>
+
+        <details className="rounded-box border border-base-300 p-3">
+          <summary className="cursor-pointer font-medium">Raw exported GeoJSON</summary>
+          <pre className="mt-3 max-h-56 overflow-auto rounded-box border border-base-300 bg-base-200 p-2 font-mono text-xs">
+            {JSON.stringify(rawGeoJsonPreview ?? {}, null, 2)}
+          </pre>
         </details>
       </div>
     </section>

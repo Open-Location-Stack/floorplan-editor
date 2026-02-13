@@ -228,6 +228,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   const venueFeatures = readCollection(files, "venue.geojson");
   const addressFeatures = readCollection(files, "address.geojson");
   const buildingFeatures = readCollection(files, "building.geojson");
+  const directoryFeatures = readCollection(files, "directory.geojson");
   const levelFeatures = readCollection(files, "level.geojson");
 
   for (const venueFeature of venueFeatures) {
@@ -293,6 +294,55 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ? { postal_code: addressProperties["postal_code"] }
           : {}),
       };
+    }
+    const directoryEntries = directoryFeatures
+      .filter((candidate) => {
+        if (!isRecord(candidate.properties)) {
+          return false;
+        }
+        return candidate.properties["building_id"] === buildingFeature["id"];
+      })
+      .map((candidate) => {
+        const directoryProperties = isRecord(candidate.properties) ? candidate.properties : {};
+        const name = toLabelObject(directoryProperties["name"], "Directory entry");
+        const metadata =
+          isRecord(directoryProperties["metadata"]) && directoryProperties["metadata"]
+            ? (Object.fromEntries(
+                Object.entries(directoryProperties["metadata"]).filter(([, value]) =>
+                  isJsonValue(value),
+                ),
+              ) as Record<string, JsonValue>)
+            : undefined;
+        return {
+          id: typeof candidate["id"] === "string" ? candidate["id"] : createId(),
+          name: name ?? { en: "Directory entry" },
+          ...(typeof directoryProperties["category"] === "string"
+            ? { category: directoryProperties["category"] }
+            : {}),
+          ...(typeof directoryProperties["phone"] === "string"
+            ? { phone: directoryProperties["phone"] }
+            : {}),
+          ...(typeof directoryProperties["website"] === "string"
+            ? { website: directoryProperties["website"] }
+            : {}),
+          ...(typeof directoryProperties["hours"] === "string"
+            ? { hours: directoryProperties["hours"] }
+            : {}),
+          ...(Array.isArray(directoryProperties["unit_ids"])
+            ? {
+                unit_ids: directoryProperties["unit_ids"].filter(
+                  (value): value is string => typeof value === "string",
+                ),
+              }
+            : {}),
+          ...(typeof directoryProperties["anchor_id"] === "string"
+            ? { anchor_id: directoryProperties["anchor_id"] }
+            : {}),
+          ...(metadata ? { metadata } : {}),
+        };
+      });
+    if (directoryEntries.length > 0) {
+      imdf.directory = directoryEntries;
     }
 
     buildingsById.set(buildingFeature["id"], {

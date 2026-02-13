@@ -1592,6 +1592,105 @@ function App() {
     [applyProjectMutation],
   );
 
+  const onAddBuildingDirectoryEntry = useCallback(
+    (buildingId: string) => {
+      applyProjectMutation("Building directory entry added", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? {
+                  ...building,
+                  imdf: {
+                    ...building.imdf,
+                    directory: [
+                      ...(building.imdf?.directory ?? []),
+                      {
+                        id: createId(),
+                        name: { en: "Directory entry" },
+                      },
+                    ],
+                  },
+                }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onUpdateBuildingDirectoryEntry = useCallback(
+    (
+      buildingId: string,
+      entryId: string,
+      field: "name" | "category" | "phone" | "website" | "hours" | "anchor_id" | "unit_ids",
+      value: string | string[] | undefined,
+    ) => {
+      applyProjectMutation("Building directory entry updated", () => {
+        setBuildings((current) =>
+          current.map((building) => {
+            if (building.id !== buildingId) {
+              return building;
+            }
+            const directory = (building.imdf?.directory ?? []).map((entry) => {
+              if (entry.id !== entryId) {
+                return entry;
+              }
+              if (field === "name") {
+                const nextName = typeof value === "string" && value.trim().length > 0 ? value : "";
+                return {
+                  ...entry,
+                  name: { ...entry.name, en: nextName || "Directory entry" },
+                };
+              }
+              if (field === "unit_ids") {
+                return {
+                  ...entry,
+                  unit_ids: Array.isArray(value) ? value : [],
+                };
+              }
+              return {
+                ...entry,
+                [field]: typeof value === "string" && value.length > 0 ? value : undefined,
+              };
+            });
+            return {
+              ...building,
+              imdf: {
+                ...building.imdf,
+                directory,
+              },
+            };
+          }),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
+  const onDeleteBuildingDirectoryEntry = useCallback(
+    (buildingId: string, entryId: string) => {
+      applyProjectMutation("Building directory entry removed", () => {
+        setBuildings((current) =>
+          current.map((building) =>
+            building.id === buildingId
+              ? {
+                  ...building,
+                  imdf: {
+                    ...building.imdf,
+                    directory: (building.imdf?.directory ?? []).filter(
+                      (entry) => entry.id !== entryId,
+                    ),
+                  },
+                }
+              : building,
+          ),
+        );
+      });
+    },
+    [applyProjectMutation],
+  );
+
   const onReverseGeocodeBuildingAddress = useCallback(
     async (buildingId: string) => {
       if (!openCageApiKey) {
@@ -2740,10 +2839,12 @@ function App() {
                 selection={selection}
                 venue={selectedVenue}
                 building={resolvedSelection?.building}
+                buildings={buildings}
                 levels={levels}
                 level={activeLevel}
                 feature={selectedFeature}
                 allFeatures={editorState.features}
+                allOverlays={overlays}
                 overlay={selectedOverlayForMap}
                 featureLocked={Boolean(
                   selectedFeature && lockedFeatureIdsSet.has(selectedFeature.id),
@@ -2761,6 +2862,9 @@ function App() {
                 onAddBuilding={onAddBuilding}
                 onUpdateBuildingVenueCategory={onUpdateBuildingVenueCategory}
                 onUpdateBuildingAddressField={onUpdateBuildingAddressField}
+                onAddBuildingDirectoryEntry={onAddBuildingDirectoryEntry}
+                onUpdateBuildingDirectoryEntry={onUpdateBuildingDirectoryEntry}
+                onDeleteBuildingDirectoryEntry={onDeleteBuildingDirectoryEntry}
                 onReverseGeocodeBuildingAddress={onReverseGeocodeBuildingAddress}
                 onDeleteBuilding={onDeleteBuilding}
                 onAddLevel={onAddLevel}

@@ -5,6 +5,7 @@ import process from "node:process";
 const IMDF_DATASET_TYPES = [
   "venue",
   "building",
+  "directory",
   "footprint",
   "level",
   "unit",

@@ -10,6 +10,7 @@ export const IMDF_STANDARD_DATASET_TYPES = [
   "amenity",
   "anchor",
   "building",
+  "directory",
   "detail",
   "fixture",
   "footprint",
@@ -90,7 +91,7 @@ const deterministicUuid = (seed: string): string => {
   ].join("-");
 };
 
-const resolveUuid = (seedOrId: string): string =>
+export const resolveImdfUuid = (seedOrId: string): string =>
   isUuid(seedOrId) ? seedOrId.toLowerCase() : deterministicUuid(seedOrId);
 
 const createLabel = (value: unknown, fallback: string, locale: string): Record<string, string> => {
@@ -361,13 +362,13 @@ export const buildImdfArchivePayload = ({
     floorIds.has(feature.properties.floorId ?? ""),
   );
   const featureUuidById = new Map(
-    featuresInBuilding.map((feature) => [feature.id, resolveUuid(feature.id)]),
+    featuresInBuilding.map((feature) => [feature.id, resolveImdfUuid(feature.id)]),
   );
   const exportedFeatureIds = new Set<string>();
   const levelByFloor = new Map<string, string>();
-  const buildingId = resolveUuid(building.id);
-  const venueId = resolveUuid(building.imdf?.venue?.id ?? `venue:${building.id}`);
-  const addressId = resolveUuid(building.imdf?.address?.id ?? `address:${building.id}`);
+  const buildingId = resolveImdfUuid(building.id);
+  const venueId = resolveImdfUuid(building.imdf?.venue?.id ?? `venue:${building.id}`);
+  const addressId = resolveImdfUuid(building.imdf?.address?.id ?? `address:${building.id}`);
 
   const levelPolygons: Array<Extract<FloorFeature["geometry"], { type: "Polygon" }>> = [];
   const levelFeatures = featuresInBuilding.filter(
@@ -386,7 +387,7 @@ export const buildImdfArchivePayload = ({
     const fallbackPolygon = polygonFromBbox(bboxFromCoordinates(floorCoordinates), 0);
     const geometry = sourcePolygon ?? fallbackPolygon;
     levelPolygons.push(geometry);
-    const levelId = resolveUuid(floor.id);
+    const levelId = resolveImdfUuid(floor.id);
     levelByFloor.set(floor.id, levelId);
     collections.level.features.push({
       type: "Feature",
@@ -459,7 +460,7 @@ export const buildImdfArchivePayload = ({
 
   collections.footprint.features.push({
     type: "Feature",
-    id: resolveUuid(`footprint:${building.id}`),
+    id: resolveImdfUuid(`footprint:${building.id}`),
     feature_type: "footprint",
     geometry: footprintPolygon,
     properties: {
@@ -467,6 +468,33 @@ export const buildImdfArchivePayload = ({
       building_ids: [buildingId],
     },
   });
+
+  for (const entry of building.imdf?.directory ?? []) {
+    const directoryId = resolveImdfUuid(entry.id);
+    const directoryName =
+      entry.name && typeof entry.name === "object" && !Array.isArray(entry.name)
+        ? entry.name
+        : createLabel(building.name, "Directory entry", defaultLocale);
+    collections.directory.features.push({
+      type: "Feature",
+      id: directoryId,
+      feature_type: "directory",
+      geometry: { type: "Point", coordinates: centroid },
+      properties: {
+        name: directoryName,
+        building_id: buildingId,
+        ...(typeof entry.category === "string" ? { category: entry.category } : {}),
+        ...(typeof entry.phone === "string" ? { phone: entry.phone } : {}),
+        ...(typeof entry.website === "string" ? { website: entry.website } : {}),
+        ...(typeof entry.hours === "string" ? { hours: entry.hours } : {}),
+        ...(Array.isArray(entry.unit_ids) ? { unit_ids: entry.unit_ids } : {}),
+        ...(typeof entry.anchor_id === "string" ? { anchor_id: entry.anchor_id } : {}),
+        ...(entry.metadata && typeof entry.metadata === "object"
+          ? { metadata: entry.metadata }
+          : {}),
+      },
+    });
+  }
 
   const datasetTypeSet = new Set<string>(IMDF_STANDARD_DATASET_TYPES);
   for (const feature of featuresInBuilding) {
@@ -479,7 +507,8 @@ export const buildImdfArchivePayload = ({
       mappedType === "venue" ||
       mappedType === "building" ||
       mappedType === "address" ||
-      mappedType === "footprint"
+      mappedType === "footprint" ||
+      mappedType === "directory"
     ) {
       continue;
     }
@@ -491,7 +520,7 @@ export const buildImdfArchivePayload = ({
       warnings.push(`Feature ${feature.id} skipped: missing floor/level reference.`);
       continue;
     }
-    const id = resolveUuid(feature.id);
+    const id = resolveImdfUuid(feature.id);
     const baseProperties: Record<string, unknown> = {
       name: createLabel(feature.properties.name, spec.defaultName, defaultLocale),
     };
@@ -541,19 +570,20 @@ export const buildImdfArchivePayload = ({
     if (mappedType === "relationship") {
       if (resolvedOriginId) {
         baseProperties["origin"] = {
-          id: featureUuidById.get(resolvedOriginId) ?? resolveUuid(resolvedOriginId),
+          id: featureUuidById.get(resolvedOriginId) ?? resolveImdfUuid(resolvedOriginId),
           feature_type: originRef?.feature_type ?? "unit",
         };
       }
       if (resolvedIntermediaryId) {
         baseProperties["intermediary"] = {
-          id: featureUuidById.get(resolvedIntermediaryId) ?? resolveUuid(resolvedIntermediaryId),
+          id:
+            featureUuidById.get(resolvedIntermediaryId) ?? resolveImdfUuid(resolvedIntermediaryId),
           feature_type: intermediaryRef?.feature_type ?? "unit",
         };
       }
       if (resolvedDestinationId) {
         baseProperties["destination"] = {
-          id: featureUuidById.get(resolvedDestinationId) ?? resolveUuid(resolvedDestinationId),
+          id: featureUuidById.get(resolvedDestinationId) ?? resolveImdfUuid(resolvedDestinationId),
           feature_type: destinationRef?.feature_type ?? "unit",
         };
       }
@@ -564,15 +594,15 @@ export const buildImdfArchivePayload = ({
     } else {
       if (resolvedOriginId) {
         baseProperties["origin_id"] =
-          featureUuidById.get(resolvedOriginId) ?? resolveUuid(resolvedOriginId);
+          featureUuidById.get(resolvedOriginId) ?? resolveImdfUuid(resolvedOriginId);
       }
       if (resolvedIntermediaryId) {
         baseProperties["intermediary_id"] =
-          featureUuidById.get(resolvedIntermediaryId) ?? resolveUuid(resolvedIntermediaryId);
+          featureUuidById.get(resolvedIntermediaryId) ?? resolveImdfUuid(resolvedIntermediaryId);
       }
       if (resolvedDestinationId) {
         baseProperties["destination_id"] =
-          featureUuidById.get(resolvedDestinationId) ?? resolveUuid(resolvedDestinationId);
+          featureUuidById.get(resolvedDestinationId) ?? resolveImdfUuid(resolvedDestinationId);
       }
     }
     for (const field of featureSpec.fields) {
@@ -644,7 +674,7 @@ export const buildImdfArchivePayload = ({
     if (!levelId) {
       continue;
     }
-    const childId = featureUuidById.get(feature.id) ?? resolveUuid(feature.id);
+    const childId = featureUuidById.get(feature.id) ?? resolveImdfUuid(feature.id);
     const metadata =
       feature.properties.metadata && typeof feature.properties.metadata === "object"
         ? (feature.properties.metadata as {
@@ -667,12 +697,12 @@ export const buildImdfArchivePayload = ({
     const parentId = overrideParentRaw
       ? (featureUuidById.get(overrideParentRaw) ??
         levelByFloor.get(overrideParentRaw) ??
-        resolveUuid(overrideParentRaw))
+        resolveImdfUuid(overrideParentRaw))
       : levelId;
     const parentType = overrideParentRaw ? (overrideParentType ?? "unit") : "level";
     collections.relationship.features.push({
       type: "Feature",
-      id: resolveUuid(`contains:${parentId}:${childId}`),
+      id: resolveImdfUuid(`contains:${parentId}:${childId}`),
       feature_type: "relationship",
       geometry: null,
       properties: {
@@ -702,7 +732,7 @@ export const buildImdfArchivePayload = ({
     imageBytes.push({ path: imagePath, bytes: decoded.bytes });
     imageExtensionFeatures.push({
       type: "Feature",
-      id: resolveUuid(`overlay:${overlay.id}`),
+      id: resolveImdfUuid(`overlay:${overlay.id}`),
       geometry: {
         type: "Polygon",
         coordinates: [
@@ -729,19 +759,19 @@ export const buildImdfArchivePayload = ({
   const centroidFeatures = [
     {
       type: "Feature",
-      id: resolveUuid(`centroid:building:${building.id}`),
+      id: resolveImdfUuid(`centroid:building:${building.id}`),
       geometry: { type: "Point", coordinates: centroid },
       properties: { scope: "building", building_id: buildingId },
     },
     {
       type: "Feature",
-      id: resolveUuid(`centroid:venue:${building.id}`),
+      id: resolveImdfUuid(`centroid:venue:${building.id}`),
       geometry: { type: "Point", coordinates: centroid },
       properties: { scope: "venue", venue_id: venueId },
     },
     {
       type: "Feature",
-      id: resolveUuid(`centroid:address:${building.id}`),
+      id: resolveImdfUuid(`centroid:address:${building.id}`),
       geometry: { type: "Point", coordinates: centroid },
       properties: { scope: "address", address_id: addressId },
     },

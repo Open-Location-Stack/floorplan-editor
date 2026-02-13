@@ -4,9 +4,15 @@ type VenueEditorProps = {
   venue: Venue;
   onRenameVenue: (name: string) => void;
   onAddBuilding: () => void;
+  rawGeoJsonPreview?: unknown;
 };
 
-export const VenueEditor = ({ venue, onRenameVenue, onAddBuilding }: VenueEditorProps) => (
+export const VenueEditor = ({
+  venue,
+  onRenameVenue,
+  onAddBuilding,
+  rawGeoJsonPreview,
+}: VenueEditorProps) => (
   <section className="card bg-base-100 shadow">
     <div className="card-body gap-3">
       <h2 className="card-title text-lg">Venue</h2>
@@ -24,6 +30,12 @@ export const VenueEditor = ({ venue, onRenameVenue, onAddBuilding }: VenueEditor
           Add building
         </button>
       </div>
+      <details className="rounded-box border border-base-300 p-3">
+        <summary className="cursor-pointer font-medium">Raw exported GeoJSON</summary>
+        <pre className="mt-3 max-h-56 overflow-auto rounded-box border border-base-300 bg-base-200 p-2 font-mono text-xs">
+          {JSON.stringify(rawGeoJsonPreview ?? {}, null, 2)}
+        </pre>
+      </details>
     </div>
   </section>
 );

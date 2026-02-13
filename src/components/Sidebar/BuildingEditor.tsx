@@ -1,4 +1,5 @@
-import type { Building, Venue } from "../../lib/types";
+import { formatFeatureOptionLabel } from "../../lib/imdf/featureDisplay";
+import type { Building, FloorFeature, Venue } from "../../lib/types";
 
 type BuildingEditorProps = {
   venue: Venue | undefined;
@@ -9,6 +10,16 @@ type BuildingEditorProps = {
   onReverseGeocodeAddress: () => void;
   onDeleteBuilding: () => void;
   onAddLevel: () => void;
+  onAddDirectoryEntry: () => void;
+  onUpdateDirectoryEntry: (
+    entryId: string,
+    field: "name" | "category" | "phone" | "website" | "hours" | "anchor_id" | "unit_ids",
+    value: string | string[] | undefined,
+  ) => void;
+  onDeleteDirectoryEntry: (entryId: string) => void;
+  anchorCandidates: FloorFeature[];
+  unitCandidates: FloorFeature[];
+  rawGeoJsonPreview?: unknown;
 };
 
 export const BuildingEditor = ({
@@ -20,9 +31,16 @@ export const BuildingEditor = ({
   onReverseGeocodeAddress,
   onDeleteBuilding,
   onAddLevel,
+  onAddDirectoryEntry,
+  onUpdateDirectoryEntry,
+  onDeleteDirectoryEntry,
+  anchorCandidates,
+  unitCandidates,
+  rawGeoJsonPreview,
 }: BuildingEditorProps) => {
   const venueCategory = building.imdf?.venue?.category ?? "";
   const address = building.imdf?.address;
+  const directoryEntries = building.imdf?.directory ?? [];
 
   return (
     <section className="card bg-base-100 shadow">
@@ -102,6 +120,136 @@ export const BuildingEditor = ({
           </div>
         </div>
 
+        <div className="rounded-box border border-base-300 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Directory</h3>
+            <button className="btn btn-xs" type="button" onClick={onAddDirectoryEntry}>
+              Add entry
+            </button>
+          </div>
+          {directoryEntries.length === 0 ? (
+            <p className="text-xs text-base-content/70">No directory entries yet.</p>
+          ) : (
+            <div className="grid gap-3">
+              {directoryEntries.map((entry) => (
+                <div key={entry.id} className="rounded-box border border-base-300 p-2">
+                  <div className="mb-2 text-xs text-base-content/70">{entry.id}</div>
+                  <div className="grid gap-2">
+                    <label className="fieldset">
+                      <span className="fieldset-legend">Name</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        type="text"
+                        value={(entry.name as { en?: string }).en ?? ""}
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(entry.id, "name", event.currentTarget.value)
+                        }
+                      />
+                    </label>
+                    <label className="fieldset">
+                      <span className="fieldset-legend">Category</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        type="text"
+                        value={entry.category ?? ""}
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(entry.id, "category", event.currentTarget.value)
+                        }
+                      />
+                    </label>
+                    <label className="fieldset">
+                      <span className="fieldset-legend">Anchor</span>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={entry.anchor_id ?? ""}
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(
+                            entry.id,
+                            "anchor_id",
+                            event.currentTarget.value || undefined,
+                          )
+                        }
+                      >
+                        <option value="">Select anchor</option>
+                        {anchorCandidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {formatFeatureOptionLabel(candidate)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="fieldset">
+                      <span className="fieldset-legend">Units</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        type="text"
+                        value={(entry.unit_ids ?? []).join(", ")}
+                        placeholder="unit-1, unit-2"
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(
+                            entry.id,
+                            "unit_ids",
+                            event.currentTarget.value
+                              .split(",")
+                              .map((item) => item.trim())
+                              .filter((item) => item.length > 0),
+                          )
+                        }
+                        list={`directory-units-${entry.id}`}
+                      />
+                      <datalist id={`directory-units-${entry.id}`}>
+                        {unitCandidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {formatFeatureOptionLabel(candidate)}
+                          </option>
+                        ))}
+                      </datalist>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="input input-bordered input-sm"
+                        type="text"
+                        value={entry.phone ?? ""}
+                        placeholder="Phone"
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(entry.id, "phone", event.currentTarget.value)
+                        }
+                      />
+                      <input
+                        className="input input-bordered input-sm"
+                        type="text"
+                        value={entry.website ?? ""}
+                        placeholder="Website"
+                        onChange={(event) =>
+                          onUpdateDirectoryEntry(entry.id, "website", event.currentTarget.value)
+                        }
+                      />
+                    </div>
+                    <input
+                      className="input input-bordered input-sm"
+                      type="text"
+                      value={entry.hours ?? ""}
+                      placeholder="Hours"
+                      onChange={(event) =>
+                        onUpdateDirectoryEntry(entry.id, "hours", event.currentTarget.value)
+                      }
+                    />
+                    <div>
+                      <button
+                        className="btn btn-xs btn-error"
+                        type="button"
+                        onClick={() => onDeleteDirectoryEntry(entry.id)}
+                      >
+                        Remove entry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onAddLevel}>
             Add level
@@ -110,6 +258,13 @@ export const BuildingEditor = ({
             Delete building
           </button>
         </div>
+
+        <details className="rounded-box border border-base-300 p-3">
+          <summary className="cursor-pointer font-medium">Raw exported GeoJSON</summary>
+          <pre className="mt-3 max-h-56 overflow-auto rounded-box border border-base-300 bg-base-200 p-2 font-mono text-xs">
+            {JSON.stringify(rawGeoJsonPreview ?? {}, null, 2)}
+          </pre>
+        </details>
       </div>
     </section>
   );

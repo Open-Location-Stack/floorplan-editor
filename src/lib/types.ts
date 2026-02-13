@@ -32,6 +32,7 @@ export type ImdfFeatureType =
   | "amenity"
   | "anchor"
   | "building"
+  | "directory"
   | "detail"
   | "fixture"
   | "footprint"
@@ -175,6 +176,17 @@ export type Building = {
       region?: string;
       neighborhood?: string;
     };
+    directory?: Array<{
+      id: string;
+      name: ImdfLabel;
+      category?: string;
+      phone?: string;
+      website?: string;
+      hours?: string;
+      unit_ids?: string[];
+      anchor_id?: string;
+      metadata?: JsonObject;
+    }>;
   };
 };
 

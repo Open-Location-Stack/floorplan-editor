@@ -273,7 +273,7 @@ describe("imdf archive export/import", () => {
     expect(imported.value.buildings).toHaveLength(2);
   });
 
-  it("skips kiosk features missing anchor_id to keep exports valid", async () => {
+  it("exports kiosk features without anchor_id", async () => {
     const { blob, warnings } = await exportBuildingImdfZip({
       building: {
         id: "building-1",
@@ -323,7 +323,7 @@ describe("imdf archive export/import", () => {
 
     expect(
       warnings.some((warning) => warning.includes("kiosk") && warning.includes("anchor_id")),
-    ).toBe(true);
+    ).toBe(false);
 
     const imported = await importImdfArchiveZip(
       new File([blob], "kiosk-skip.imdf.zip", { type: "application/zip" }),
@@ -332,6 +332,8 @@ describe("imdf archive export/import", () => {
     if (!imported.ok) {
       return;
     }
-    expect(imported.value.features.some((feature) => feature.id === "kiosk-1")).toBe(false);
+    expect(imported.value.features.some((feature) => feature.properties.imdfType === "kiosk")).toBe(
+      true,
+    );
   });
 });

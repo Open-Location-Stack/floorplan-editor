@@ -24,6 +24,8 @@ type FeatureEditorProps = {
   onClone: () => void;
   locked: boolean;
   onToggleLock: () => void;
+  rawGeoJsonFeature?: unknown;
+  rawGeoJsonWarning?: string;
 };
 
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {

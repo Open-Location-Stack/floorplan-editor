@@ -14,6 +14,7 @@ import {
 } from "../../../lib/imdf/containment";
 import type { ImdfFeatureField } from "../../../lib/imdf/featureCatalog";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
+import { formatFeatureOptionLabel } from "../../../lib/imdf/featureDisplay";
 import type { SupportedImdfType } from "../../../lib/imdf/schema";
 import type {
   FeatureProperties,
@@ -35,6 +36,8 @@ export type ImdfFeatureEditorProps = {
   onDelete: () => void;
   onClone: () => void;
   onToggleLock: () => void;
+  rawGeoJsonFeature?: unknown;
+  rawGeoJsonWarning?: string;
 };
 
 const isEmpty = (value: JsonValue | undefined): boolean => {
@@ -161,6 +164,8 @@ export const GenericImdfFeatureEditor = ({
   onDelete,
   onClone,
   onToggleLock,
+  rawGeoJsonFeature,
+  rawGeoJsonWarning,
 }: ImdfFeatureEditorProps) => {
   const [metadataText, setMetadataText] = useState("{}");
   const [metadataError, setMetadataError] = useState<string | undefined>();
@@ -215,6 +220,59 @@ export const GenericImdfFeatureEditor = ({
       sameFloorFeatures.filter((candidate) => canContainChildren(resolveFeatureType(candidate))),
     [sameFloorFeatures],
   );
+
+  const candidatesForField = useMemo(() => {
+    const byField: Record<string, FloorFeature[]> = {};
+    for (const field of spec.fields) {
+      const scopeFeatures =
+        field.scope === "global"
+          ? allFeatures.filter((candidate) => candidate.id !== feature.id)
+          : sameFloorFeatures;
+      byField[field.key] =
+        field.referenceTypes && field.referenceTypes.length > 0
+          ? scopeFeatures.filter((candidate) =>
+              field.referenceTypes?.includes(resolveFeatureType(candidate)),
+            )
+          : scopeFeatures;
+    }
+    return byField;
+  }, [allFeatures, feature.id, sameFloorFeatures, spec.fields]);
+
+  useEffect(() => {
+    for (const field of spec.fields) {
+      if (!field.required || field.readOnly) {
+        continue;
+      }
+      if (field.type !== "uuid" && field.type !== "reference") {
+        continue;
+      }
+      const currentValue = feature.properties[field.key];
+      const isEmptyValue =
+        currentValue === undefined ||
+        currentValue === null ||
+        (typeof currentValue === "string" && currentValue.trim().length === 0);
+      if (!isEmptyValue) {
+        continue;
+      }
+      const candidates = candidatesForField[field.key] ?? [];
+      if (candidates.length !== 1) {
+        continue;
+      }
+      const onlyCandidate = candidates[0];
+      if (!onlyCandidate) {
+        continue;
+      }
+      if (field.type === "uuid") {
+        onUpdateProperty(field.key, onlyCandidate.id);
+      } else {
+        const nextType = resolveFeatureType(onlyCandidate);
+        onUpdateProperty(field.key, {
+          id: onlyCandidate.id,
+          feature_type: nextType,
+        });
+      }
+    }
+  }, [candidatesForField, feature.properties, onUpdateProperty, spec.fields]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -436,6 +494,7 @@ export const GenericImdfFeatureEditor = ({
                 field.key.endsWith("_id") ||
                 field.key.endsWith("_ids") ||
                 field.editorControl === "uuid-ref";
+              const candidates = candidatesForField[field.key] ?? sameFloorFeatures;
               if (selectable) {
                 return (
                   <label className="fieldset" key={field.key}>
@@ -447,10 +506,10 @@ export const GenericImdfFeatureEditor = ({
                         onUpdateProperty(field.key, event.currentTarget.value || undefined)
                       }
                     >
-                      <option value="">Select feature</option>
-                      {sameFloorFeatures.map((candidate) => (
+                      <option value="">{field.placeholder ?? "Select feature"}</option>
+                      {candidates.map((candidate) => (
                         <option key={candidate.id} value={candidate.id}>
-                          {candidate.id}
+                          {formatFeatureOptionLabel(candidate)}
                         </option>
                       ))}
                     </select>
@@ -482,18 +541,19 @@ export const GenericImdfFeatureEditor = ({
                         return;
                       }
                       const nextType =
-                        sameFloorFeatures.find((candidate) => candidate.id === nextId)?.properties
-                          .imdfType ?? "unit";
+                        (candidatesForField[field.key] ?? sameFloorFeatures).find(
+                          (candidate) => candidate.id === nextId,
+                        )?.properties.imdfType ?? "unit";
                       onUpdateProperty(field.key, {
                         id: nextId,
                         feature_type: nextType,
                       });
                     }}
                   >
-                    <option value="">Select feature</option>
-                    {sameFloorFeatures.map((candidate) => (
+                    <option value="">{field.placeholder ?? "Select feature"}</option>
+                    {(candidatesForField[field.key] ?? sameFloorFeatures).map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
-                        {candidate.id}
+                        {formatFeatureOptionLabel(candidate)}
                       </option>
                     ))}
                   </select>
@@ -551,7 +611,7 @@ export const GenericImdfFeatureEditor = ({
                 <option value="">Default level containment</option>
                 {parentCandidates.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    {candidate.id}
+                    {formatFeatureOptionLabel(candidate)}
                   </option>
                 ))}
               </select>
@@ -613,6 +673,18 @@ export const GenericImdfFeatureEditor = ({
               Delete
             </button>
           </div>
+
+          <details className="rounded-box border border-base-300 p-3">
+            <summary className="cursor-pointer font-medium">Raw exported GeoJSON</summary>
+            <div className="mt-3">
+              {rawGeoJsonWarning ? (
+                <p className="mb-2 text-xs text-warning">{rawGeoJsonWarning}</p>
+              ) : null}
+              <pre className="max-h-56 overflow-auto rounded-box border border-base-300 bg-base-200 p-2 font-mono text-xs">
+                {JSON.stringify(rawGeoJsonFeature ?? {}, null, 2)}
+              </pre>
+            </div>
+          </details>
         </div>
       </section>
     </div>

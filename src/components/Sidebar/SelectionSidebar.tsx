@@ -1,4 +1,5 @@
 import type { Selection } from "../../lib/editor/selection";
+import { readFeatureType } from "../../lib/imdf/featureDisplay";
 import { getLevelGeometryFeatures, hasLevelGeometry } from "../../lib/imdf/levelGeometry";
 import type { SupportedImdfType } from "../../lib/imdf/schema";
 import { validateFloor } from "../../lib/imdf/validate";
@@ -20,18 +21,28 @@ type SelectionSidebarProps = {
   selection: Selection | undefined;
   venue: Venue | undefined;
   building: Building | undefined;
+  buildings: Building[];
   levels: Level[];
   level: Level | undefined;
   feature: FloorFeature | undefined;
   featureLocked: boolean;
   overlayLocked: boolean;
   allFeatures: FloorFeature[];
+  allOverlays: FloorOverlay[];
   overlay: FloorOverlay | undefined;
   onRenameBuilding: (buildingId: string, name: string) => void;
   onRenameVenue: (venueId: string, name: string) => void;
   onAddBuilding: (venueId: string) => void;
   onUpdateBuildingVenueCategory: (buildingId: string, category: string) => void;
   onUpdateBuildingAddressField: (buildingId: string, field: string, value: string) => void;
+  onAddBuildingDirectoryEntry: (buildingId: string) => void;
+  onUpdateBuildingDirectoryEntry: (
+    buildingId: string,
+    entryId: string,
+    field: "name" | "category" | "phone" | "website" | "hours" | "anchor_id" | "unit_ids",
+    value: string | string[] | undefined,
+  ) => void;
+  onDeleteBuildingDirectoryEntry: (buildingId: string, entryId: string) => void;
   onReverseGeocodeBuildingAddress: (buildingId: string) => void;
   onDeleteBuilding: (buildingId: string) => void;
   onAddLevel: (buildingId: string) => void;
@@ -60,6 +71,7 @@ export const SelectionSidebar = ({
   selection,
   venue,
   building,
+  buildings,
   levels,
   level,
   feature,
@@ -72,6 +84,9 @@ export const SelectionSidebar = ({
   onAddBuilding,
   onUpdateBuildingVenueCategory,
   onUpdateBuildingAddressField,
+  onAddBuildingDirectoryEntry,
+  onUpdateBuildingDirectoryEntry,
+  onDeleteBuildingDirectoryEntry,
   onReverseGeocodeBuildingAddress,
   onDeleteBuilding,
   onAddLevel,
@@ -109,11 +124,21 @@ export const SelectionSidebar = ({
   }
 
   if (selection.kind === "venue" && venue) {
+    const venueBuildings = buildings.filter((candidate) => candidate.venueId === venue.id);
     return (
       <VenueEditor
         venue={venue}
         onRenameVenue={(name) => onRenameVenue(venue.id, name)}
         onAddBuilding={() => onAddBuilding(venue.id)}
+        rawGeoJsonPreview={{
+          type: "Feature",
+          feature_type: "venue",
+          properties: {
+            id: venue.id,
+            name: venue.name,
+            buildingCount: venueBuildings.length,
+          },
+        }}
       />
     );
   }
@@ -130,6 +155,15 @@ export const SelectionSidebar = ({
   }
 
   if (selection.kind === "building") {
+    const buildingFeatures = allFeatures.filter(
+      (current) => current.properties.buildingId === building.id,
+    );
+    const anchorCandidates = buildingFeatures.filter(
+      (current) => readFeatureType(current) === "anchor",
+    );
+    const unitCandidates = buildingFeatures.filter(
+      (current) => readFeatureType(current) === "unit",
+    );
     return (
       <BuildingEditor
         building={building}
@@ -139,9 +173,27 @@ export const SelectionSidebar = ({
         onUpdateAddressField={(field, value) =>
           onUpdateBuildingAddressField(building.id, field, value)
         }
+        onAddDirectoryEntry={() => onAddBuildingDirectoryEntry(building.id)}
+        onUpdateDirectoryEntry={(entryId, field, value) =>
+          onUpdateBuildingDirectoryEntry(building.id, entryId, field, value)
+        }
+        onDeleteDirectoryEntry={(entryId) => onDeleteBuildingDirectoryEntry(building.id, entryId)}
+        anchorCandidates={anchorCandidates}
+        unitCandidates={unitCandidates}
         onReverseGeocodeAddress={() => onReverseGeocodeBuildingAddress(building.id)}
         onDeleteBuilding={() => onDeleteBuilding(building.id)}
         onAddLevel={() => onAddLevel(building.id)}
+        rawGeoJsonPreview={{
+          type: "Feature",
+          feature_type: "building",
+          properties: {
+            id: building.id,
+            venue_id: building.venueId,
+            name: building.name,
+            address: building.imdf?.address,
+            directory: building.imdf?.directory ?? [],
+          },
+        }}
       />
     );
   }
@@ -191,6 +243,9 @@ export const SelectionSidebar = ({
         onOverlayToggleVisibility={onOverlayToggleVisibility}
         onOverlayToggleLock={onOverlayToggleLock}
         overlayLocked={overlayLocked}
+        rawGeoJsonPreview={
+          levelGeometryFeature ?? { type: "Feature", properties: { id: level.id } }
+        }
       />
     );
   }
@@ -208,6 +263,7 @@ export const SelectionSidebar = ({
         onClone={() => onCloneFeature(feature.id)}
         locked={featureLocked}
         onToggleLock={() => onFeatureToggleLock(feature.id)}
+        rawGeoJsonFeature={feature}
       />
     );
   }

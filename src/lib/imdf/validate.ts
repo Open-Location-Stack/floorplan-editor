@@ -139,6 +139,7 @@ const IMDF_STANDARD_DATASET_TYPES = [
   "amenity",
   "anchor",
   "building",
+  "directory",
   "detail",
   "fixture",
   "footprint",
