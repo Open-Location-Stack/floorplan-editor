@@ -68,20 +68,37 @@ const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"]
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 const featureTypeExpression: unknown[] = [
   "coalesce",
+  ["get", "user_feature_type"],
   ["get", "user_imdfType"],
   ["get", "user_kind"],
+  ["get", "feature_type"],
   ["get", "imdfType"],
   ["get", "kind"],
   "",
 ];
 const featureCategoryExpression: unknown[] = [
   "coalesce",
+  ["get", "user_formation:navigation_category"],
+  ["get", "user_formation:path_category"],
   ["get", "user_category"],
+  ["get", "formation:navigation_category"],
+  ["get", "formation:path_category"],
   ["get", "category"],
   "",
 ];
 
-const drawLineColor = "#dc2626";
+const drawLineColorExpression: unknown[] = [
+  "case",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-edge"],
+    ["==", featureCategoryExpression, "wheelchair"],
+  ],
+  "#0f766e",
+  ["==", featureTypeExpression, "formation:navigation-edge"],
+  "#0ea5e9",
+  "#dc2626",
+];
 const geofenceFillColorExpression: unknown[] = [
   "coalesce",
   ["get", "fillColor", ["get", "style", ["get", "metadata"]]],
@@ -91,6 +108,8 @@ const geofenceFillColorExpression: unknown[] = [
 
 const pointColorExpression: unknown[] = [
   "case",
+  ["==", featureTypeExpression, "formation:navigation-node"],
+  "#166534",
   ["==", featureTypeExpression, "amenity"],
   "#0ea5e9",
   ["==", featureTypeExpression, "anchor"],
@@ -108,6 +127,48 @@ const pointColorExpression: unknown[] = [
 
 const pointIconImageExpression: unknown[] = [
   "case",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "entrance"],
+  ],
+  "point-icon-nav-entrance",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "door"],
+  ],
+  "point-icon-nav-door",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "stairs"],
+  ],
+  "point-icon-nav-stairs",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "elevator"],
+  ],
+  "point-icon-nav-elevator",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "escalator"],
+  ],
+  "point-icon-nav-escalator",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "revolving_door"],
+  ],
+  "point-icon-nav-revolving-door",
+  [
+    "all",
+    ["==", featureTypeExpression, "formation:navigation-node"],
+    ["==", featureCategoryExpression, "exit"],
+  ],
+  "point-icon-nav-exit",
   ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "entrance"]],
   "point-icon-opening-entrance",
   ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, "door"]],
@@ -136,6 +197,8 @@ const pointIconImageExpression: unknown[] = [
   "point-icon-opening",
   ["==", featureTypeExpression, "relationship"],
   "point-icon-relationship",
+  ["==", featureTypeExpression, "formation:navigation-node"],
+  "point-icon-nav",
   "point-icon-default",
 ];
 
@@ -149,6 +212,14 @@ const POINT_ICON_SIZE = 32;
 const POINT_ICON_GLYPH_SCALE = 2;
 
 const POINT_ICON_SPECS: PointIconSpec[] = [
+  { id: "point-icon-nav", color: "#166534", glyph: "N" },
+  { id: "point-icon-nav-entrance", color: "#0f766e", glyph: "I" },
+  { id: "point-icon-nav-door", color: "#0ea5a4", glyph: "D" },
+  { id: "point-icon-nav-stairs", color: "#0284c7", glyph: "S" },
+  { id: "point-icon-nav-elevator", color: "#0891b2", glyph: "L" },
+  { id: "point-icon-nav-escalator", color: "#0369a1", glyph: "E" },
+  { id: "point-icon-nav-revolving-door", color: "#155e75", glyph: "R" },
+  { id: "point-icon-nav-exit", color: "#047857", glyph: "X" },
   { id: "point-icon-amenity", color: "#0ea5e9", glyph: "A" },
   { id: "point-icon-anchor", color: "#2563eb", glyph: "N" },
   { id: "point-icon-detail", color: "#4f46e5", glyph: "D" },
@@ -170,6 +241,7 @@ const GLYPH_PATTERNS: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
   C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
   D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
   F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
   I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
   K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
@@ -405,7 +477,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       "line-join": "round",
     },
     paint: {
-      "line-color": drawLineColor,
+      "line-color": drawLineColorExpression,
       "line-width": 3,
     },
   },
@@ -418,7 +490,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
       "line-join": "round",
     },
     paint: {
-      "line-color": drawLineColor,
+      "line-color": drawLineColorExpression,
       "line-width": 4,
     },
   },

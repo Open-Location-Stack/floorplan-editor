@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { type DrawMode, MapCanvas } from "./components/MapCanvas";
+import type { AddFeatureRequest } from "./components/Sidebar/AddFeatureButtonGroups";
 import { SelectionSidebar } from "./components/Sidebar/SelectionSidebar";
 import { BuildingsTree } from "./components/Tree/BuildingsTree";
 import { getRuntimeConfig } from "./lib/config/runtimeConfig";
@@ -35,8 +36,9 @@ import {
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
+import { migrateProjectSnapshotToNavigationGraphV5 } from "./lib/imdf/migrations/v5";
 import { normalizeFeature } from "./lib/imdf/normalize";
-import { getImdfSchemaRule, type SupportedImdfType } from "./lib/imdf/schema";
+import { getImdfSchemaRule } from "./lib/imdf/schema";
 import {
   detectImportConflicts,
   hasImportConflicts,
@@ -47,6 +49,17 @@ import {
 import { cloneLevelWithReferences } from "./lib/levelClone";
 import { clientLogger } from "./lib/logging/clientLogger";
 import { buildNavigationGraph } from "./lib/navigation/graphBuilder";
+import {
+  coordinatesEqual,
+  featureHasLevel,
+  isNavigationEdgeFeature,
+  isNavigationNodeFeature,
+  NAVIGATION_EDGE_FEATURE_TYPE,
+  NAVIGATION_NODE_FEATURE_TYPE,
+  type NavigationEdgeCategory,
+  type NavigationNodeCategory,
+  readNavigationLevels,
+} from "./lib/navigation/navigationModel";
 import { findRouteBetweenPoints } from "./lib/navigation/pointRouting";
 import { projectRepository } from "./lib/persistence/projectRepository";
 import { sanitizeProjectSnapshot } from "./lib/persistence/projectSnapshotSanitizer";
@@ -65,7 +78,7 @@ import type {
 const THEME_STORAGE_KEY = "floorplan-editor-theme";
 const MAP_VIEW_STORAGE_KEY = "floorplan-editor-map-view";
 const PROJECT_ID = "default-project";
-const PROJECT_SCHEMA_VERSION = 5;
+const PROJECT_SCHEMA_VERSION = 6;
 
 const isThemeId = (value: string | null): value is ThemeId =>
   value === "qr-light" || value === "qr-dark";
@@ -133,6 +146,13 @@ type MapRelocationRequest = {
   center: Coordinates;
   zoom?: number;
   requestVersion: number;
+};
+
+type PendingDrawTemplate = {
+  featureType: string;
+  geometryType: GeometryType;
+  defaultName: string;
+  properties: FloorFeature["properties"];
 };
 
 const importEntityDataFromState = (
@@ -337,6 +357,12 @@ const nameForGeometry = (geometryType: GeometryType): string => {
   return "New polygon";
 };
 
+const navigationNodeName = (category: NavigationNodeCategory): string =>
+  `${category.replaceAll("_", " ")} node`;
+
+const navigationEdgeName = (category: NavigationEdgeCategory): string =>
+  category === "wheelchair" ? "Wheelchair path" : "Pedestrian path";
+
 const PATH_NAME_PATTERN = /^Path (\d+)$/;
 
 const readFeatureName = (feature: FloorFeature): string | undefined => {
@@ -361,7 +387,7 @@ const nextPathNumberForLevel = (features: FloorFeature[], level_id: string): num
     }
     const type =
       typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
-    if (type !== "opening") {
+    if (type !== "opening" && type !== NAVIGATION_EDGE_FEATURE_TYPE) {
       continue;
     }
     const name = readFeatureName(feature);
@@ -381,9 +407,53 @@ const nextPathNumberForLevel = (features: FloorFeature[], level_id: string): num
 };
 
 const isFeatureOnLevel = (feature: FloorFeature, level_id: string): boolean =>
-  feature.properties.level_id === level_id ||
-  feature.properties.floorId === level_id ||
-  (!feature.properties.level_id && !feature.properties.floorId);
+  featureHasLevel(feature, level_id);
+
+const ensureNavigationEdgeEndpoints = (
+  edge: FloorFeature,
+  nodeCandidates: FloorFeature[],
+  levelId: string,
+): FloorFeature => {
+  if (!isNavigationEdgeFeature(edge) || edge.geometry.type !== "LineString") {
+    return edge;
+  }
+  const first = edge.geometry.coordinates[0];
+  const last = edge.geometry.coordinates[edge.geometry.coordinates.length - 1];
+  if (!first || !last) {
+    return edge;
+  }
+  const sameLevelNodes = nodeCandidates.filter((candidate) =>
+    readNavigationLevels(candidate).includes(levelId),
+  );
+  const fromNode = sameLevelNodes.find(
+    (candidate) =>
+      candidate.geometry.type === "Point" &&
+      coordinatesEqual(candidate.geometry.coordinates, first),
+  );
+  const toNode = sameLevelNodes.find(
+    (candidate) =>
+      candidate.geometry.type === "Point" && coordinatesEqual(candidate.geometry.coordinates, last),
+  );
+  const nextProperties: FloorFeature["properties"] = {
+    ...edge.properties,
+    level_id: levelId,
+    floorId: levelId,
+  };
+  if (fromNode) {
+    nextProperties["formation:from_node_id"] = fromNode.id;
+  } else {
+    delete nextProperties["formation:from_node_id"];
+  }
+  if (toNode) {
+    nextProperties["formation:to_node_id"] = toNode.id;
+  } else {
+    delete nextProperties["formation:to_node_id"];
+  }
+  return {
+    ...edge,
+    properties: nextProperties,
+  };
+};
 
 const areFeatureListsEqual = (left: FloorFeature[], right: FloorFeature[]): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
@@ -430,7 +500,7 @@ function App() {
   const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
   const [splitPathRequestVersion, setSplitPathRequestVersion] = useState(0);
   const [forkPathRequestVersion, setForkPathRequestVersion] = useState(0);
-  const [pendingDrawFeatureType, setPendingDrawFeatureType] = useState<SupportedImdfType>();
+  const [pendingDrawTemplate, setPendingDrawTemplate] = useState<PendingDrawTemplate>();
   const [pendingContainmentParent, setPendingContainmentParent] = useState<
     ContainmentParent | undefined
   >();
@@ -499,12 +569,15 @@ function App() {
         return;
       }
 
-      if (project.version < PROJECT_SCHEMA_VERSION) {
+      if (project.version < 5) {
         void projectRepository.deleteProject(PROJECT_ID);
         return;
       }
-
-      const sanitizedProject = sanitizeProjectSnapshot(project);
+      const migratedProject =
+        project.version < PROJECT_SCHEMA_VERSION
+          ? migrateProjectSnapshotToNavigationGraphV5(project)
+          : project;
+      const sanitizedProject = sanitizeProjectSnapshot(migratedProject);
       const loadedVenues = sanitizedProject.venues ?? [];
       const loadedBuildings = sanitizedProject.buildings ?? [];
       const loadedLevels = sanitizedProject.levels ?? [];
@@ -719,21 +792,25 @@ function App() {
     }
 
     return sortFeaturesForRendering(
-      editorState.features.filter(
-        (feature) =>
-          feature.properties.level_id === activeLevel.id ||
-          feature.properties.floorId === activeLevel.id,
-      ),
+      editorState.features.filter((feature) => isFeatureOnLevel(feature, activeLevel.id)),
     );
   }, [editorState.features, activeLevel]);
 
-  const navigationGraph = useMemo(() => buildNavigationGraph(visibleFeatures), [visibleFeatures]);
+  const navigationGraph = useMemo(
+    () => buildNavigationGraph(editorState.features),
+    [editorState.features],
+  );
   const routeResult = useMemo(() => {
-    if (!routeStartCoordinate || !routeEndCoordinate) {
+    if (!activeLevel || !routeStartCoordinate || !routeEndCoordinate) {
       return undefined;
     }
-    return findRouteBetweenPoints(navigationGraph, routeStartCoordinate, routeEndCoordinate);
-  }, [navigationGraph, routeStartCoordinate, routeEndCoordinate]);
+    return findRouteBetweenPoints(
+      navigationGraph,
+      routeStartCoordinate,
+      routeEndCoordinate,
+      activeLevel.id,
+    );
+  }, [navigationGraph, routeStartCoordinate, routeEndCoordinate, activeLevel]);
 
   const routeOverlayFeatures = useMemo(() => {
     if (!activeLevel || !routeResult?.found) {
@@ -784,7 +861,7 @@ function App() {
   }, [routeResult, activeLevel]);
 
   const selectedFeatureForMap =
-    selectedFeature && activeLevel && selectedFeature.properties.level_id === activeLevel.id
+    selectedFeature && activeLevel && isFeatureOnLevel(selectedFeature, activeLevel.id)
       ? selectedFeature
       : undefined;
 
@@ -895,7 +972,7 @@ function App() {
   const startDrawMode = useCallback(
     (mode: DrawMode) => {
       setDrawMode(mode);
-      setPendingDrawFeatureType(undefined);
+      setPendingDrawTemplate(undefined);
       setPendingContainmentParent(undefined);
       setHasSelectedVertex(false);
       if (mode !== "select") {
@@ -910,7 +987,7 @@ function App() {
 
   const cancelDrawMode = useCallback(() => {
     setDrawMode("select");
-    setPendingDrawFeatureType(undefined);
+    setPendingDrawTemplate(undefined);
     setPendingContainmentParent(undefined);
     setHasSelectedVertex(false);
   }, []);
@@ -937,9 +1014,6 @@ function App() {
         return;
       }
 
-      const pendingSchema = pendingDrawFeatureType
-        ? getImdfSchemaRule(pendingDrawFeatureType)
-        : undefined;
       let consumedPendingTemplate = false;
 
       setEditorState((current) => {
@@ -955,7 +1029,9 @@ function App() {
             return existing;
           }
           const shouldApplyPendingTemplate =
-            !existing && pendingSchema && pendingSchema.geometryType === feature.geometry.type;
+            !existing &&
+            pendingDrawTemplate &&
+            pendingDrawTemplate.geometryType === feature.geometry.type;
           if (shouldApplyPendingTemplate) {
             consumedPendingTemplate = true;
           }
@@ -963,8 +1039,9 @@ function App() {
             ? applyContainmentParent(
                 {
                   ...feature.properties,
-                  feature_type: pendingSchema.type,
-                  name: pendingSchema.defaultName,
+                  ...pendingDrawTemplate.properties,
+                  feature_type: pendingDrawTemplate.featureType,
+                  name: pendingDrawTemplate.defaultName,
                 },
                 pendingContainmentParent,
               )
@@ -974,9 +1051,11 @@ function App() {
               };
           const featureType =
             (typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type) ||
-            (shouldApplyPendingTemplate ? pendingSchema?.type : undefined);
+            (shouldApplyPendingTemplate ? pendingDrawTemplate?.featureType : undefined);
           const isNewPath =
-            !existing && feature.geometry.type === "LineString" && featureType === "opening";
+            !existing &&
+            feature.geometry.type === "LineString" &&
+            (featureType === "opening" || featureType === NAVIGATION_EDGE_FEATURE_TYPE);
           const resolvedName = isNewPath
             ? `Path ${nextPathNumber++}`
             : typeof mergedProperties.name === "string" && mergedProperties.name
@@ -1022,14 +1101,24 @@ function App() {
           nextVisible.push(existing);
         }
 
-        if (areFeatureListsEqual(currentVisible, nextVisible)) {
+        const nodeCandidates = [...current.features, ...nextVisible].filter(
+          isNavigationNodeFeature,
+        );
+        const constrainedVisible = nextVisible.map((feature) => {
+          if (!isNavigationEdgeFeature(feature)) {
+            return feature;
+          }
+          return ensureNavigationEdgeEndpoints(feature, nodeCandidates, activeLevel.id);
+        });
+
+        if (areFeatureListsEqual(currentVisible, constrainedVisible)) {
           return current;
         }
 
         const nonVisible = current.features.filter(
           (feature) => !isFeatureOnLevel(feature, activeLevel.id),
         );
-        const nextFeatures = [...nonVisible, ...nextVisible];
+        const nextFeatures = [...nonVisible, ...constrainedVisible];
         const nextSelectedFeatureId =
           current.selectedFeatureId &&
           nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
@@ -1040,14 +1129,14 @@ function App() {
       });
 
       if (consumedPendingTemplate) {
-        setPendingDrawFeatureType(undefined);
+        setPendingDrawTemplate(undefined);
         setPendingContainmentParent(undefined);
       }
     },
     [
       activeLevel,
       activeBuilding,
-      pendingDrawFeatureType,
+      pendingDrawTemplate,
       pendingContainmentParent,
       lockedFeatureIdsSet,
     ],
@@ -2340,7 +2429,12 @@ function App() {
       }
       setSelection({ kind: "level", id: levelId });
       startDrawMode("polygon");
-      setPendingDrawFeatureType("level");
+      setPendingDrawTemplate({
+        featureType: "level",
+        geometryType: "Polygon",
+        defaultName: "Level",
+        properties: {},
+      });
     },
     [editorState.features, levels, startDrawMode],
   );
@@ -2463,27 +2557,76 @@ function App() {
   );
 
   const onCreateFeature = useCallback(
-    (type: SupportedImdfType) => {
-      const schema = getImdfSchemaRule(type);
+    (request: AddFeatureRequest) => {
+      if (!activeLevel) {
+        return;
+      }
       const nextContainmentParent = resolvePendingContainmentParent(selectedFeature);
+      if (request.type === NAVIGATION_NODE_FEATURE_TYPE) {
+        startDrawMode("point");
+        setPendingContainmentParent(undefined);
+        setPendingDrawTemplate({
+          featureType: NAVIGATION_NODE_FEATURE_TYPE,
+          geometryType: "Point",
+          defaultName: navigationNodeName(request.category),
+          properties: {
+            "formation:navigation_category": request.category,
+            "formation:navigation_levels": [activeLevel.id],
+            level_id: activeLevel.id,
+            floorId: activeLevel.id,
+          },
+        });
+        return;
+      }
+      if (request.type === NAVIGATION_EDGE_FEATURE_TYPE) {
+        startDrawMode("line");
+        setPendingContainmentParent(undefined);
+        setPendingDrawTemplate({
+          featureType: NAVIGATION_EDGE_FEATURE_TYPE,
+          geometryType: "LineString",
+          defaultName: navigationEdgeName(request.category),
+          properties: {
+            "formation:path_category": request.category,
+            level_id: activeLevel.id,
+            floorId: activeLevel.id,
+          },
+        });
+        return;
+      }
+      const schema = getImdfSchemaRule(request.type);
       if (schema.geometryType === "Point") {
         startDrawMode("point");
-        setPendingDrawFeatureType(type);
+        setPendingDrawTemplate({
+          featureType: request.type,
+          geometryType: "Point",
+          defaultName: schema.defaultName,
+          properties: {},
+        });
         setPendingContainmentParent(nextContainmentParent);
         return;
       }
       if (schema.geometryType === "LineString") {
         startDrawMode("line");
-        setPendingDrawFeatureType(type);
+        setPendingDrawTemplate({
+          featureType: request.type,
+          geometryType: "LineString",
+          defaultName: schema.defaultName,
+          properties: {},
+        });
         setPendingContainmentParent(nextContainmentParent);
         return;
       }
 
       startDrawMode("polygon");
-      setPendingDrawFeatureType(type);
+      setPendingDrawTemplate({
+        featureType: request.type,
+        geometryType: "Polygon",
+        defaultName: schema.defaultName,
+        properties: {},
+      });
       setPendingContainmentParent(nextContainmentParent);
     },
-    [selectedFeature, startDrawMode],
+    [activeLevel, selectedFeature, startDrawMode],
   );
 
   const canUndo = projectUndoStack.length > 0 || editorState.undoStack.length > 0;
@@ -3006,28 +3149,31 @@ function App() {
                     : undefined;
 
                   setEditorState((current) =>
-                    updateFeature(current, featureId, (feature) =>
-                      normalizeFeature(
-                        {
-                          ...feature,
-                          properties: {
-                            ...feature.properties,
-                            [key]: value,
-                          },
+                    updateFeature(current, featureId, (feature) => {
+                      const patched: FloorFeature = {
+                        ...feature,
+                        properties: {
+                          ...feature.properties,
+                          [key]: value,
                         },
-                        {
-                          level_id:
-                            level?.id ?? activeLevel?.id ?? feature.properties.level_id ?? "",
-                          buildingId:
-                            building?.id ??
-                            activeBuilding?.id ??
-                            (Array.isArray(feature.properties.building_ids)
-                              ? feature.properties.building_ids[0]
-                              : undefined) ??
-                            "",
-                        },
-                      ),
-                    ),
+                      };
+                      if (
+                        typeof patched.feature_type === "string" &&
+                        patched.feature_type.startsWith("formation:")
+                      ) {
+                        return patched;
+                      }
+                      return normalizeFeature(patched, {
+                        level_id: level?.id ?? activeLevel?.id ?? feature.properties.level_id ?? "",
+                        buildingId:
+                          building?.id ??
+                          activeBuilding?.id ??
+                          (Array.isArray(feature.properties.building_ids)
+                            ? feature.properties.building_ids[0]
+                            : undefined) ??
+                          "",
+                      });
+                    }),
                   );
                 }}
                 onUpdateFeatureMetadata={(featureId, metadata) => {
@@ -3046,7 +3192,9 @@ function App() {
                     (feature) => feature.id === featureId,
                   );
                   const featureName =
-                    deletedFeature?.properties.name ?? deletedFeature?.id ?? "feature";
+                    (deletedFeature ? readFeatureName(deletedFeature) : undefined) ??
+                    deletedFeature?.id ??
+                    "feature";
 
                   requestProjectConfirmation({
                     title: "Delete feature?",

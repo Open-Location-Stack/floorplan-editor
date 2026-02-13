@@ -37,6 +37,39 @@ export const normalizeFeature = (
   context: NormalizeContext,
 ): FloorFeature => {
   const resolvedLevelId = context.level_id ?? context.floorId ?? "";
+  const explicitFeatureType =
+    typeof feature.feature_type === "string" ? feature.feature_type : undefined;
+  const isFormationFeature = Boolean(explicitFeatureType?.startsWith("formation:"));
+  if (isFormationFeature) {
+    const formationType = explicitFeatureType as `formation:${string}`;
+    const rawName = feature.properties.name;
+    const existingLabel =
+      typeof rawName === "object" && rawName !== null && !Array.isArray(rawName)
+        ? (rawName as { en?: unknown })
+        : undefined;
+    const normalizedName =
+      typeof existingLabel?.en === "string"
+        ? (rawName as Record<string, string>)
+        : typeof rawName === "string" && rawName.trim().length > 0
+          ? { en: rawName.trim() }
+          : { en: "Feature" };
+    return {
+      ...feature,
+      feature_type: formationType,
+      properties: {
+        ...feature.properties,
+        kind: formationType,
+        imdfType: formationType,
+        level_id: resolvedLevelId,
+        floorId: resolvedLevelId,
+        buildingId: context.buildingId,
+        building_id: context.buildingId,
+        id: feature.id,
+        imdf_id: feature.id,
+        name: normalizedName,
+      },
+    };
+  }
   const migratedType =
     feature.feature_type === "relationship" && feature.geometry.type === "LineString"
       ? "opening"

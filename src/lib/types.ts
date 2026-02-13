@@ -116,6 +116,11 @@ export type FeatureProperties = {
   "formation:metadata"?: JsonObject;
   "formation:containment_parent_id"?: string;
   "formation:containment_parent_type"?: ImdfFeatureType | "level";
+  "formation:navigation_category"?: string;
+  "formation:path_category"?: string;
+  "formation:navigation_levels"?: string[];
+  "formation:from_node_id"?: string;
+  "formation:to_node_id"?: string;
   metadata?: JsonObject;
   relation?: RelationshipRefs;
   containmentParentId?: string;

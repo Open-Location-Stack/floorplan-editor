@@ -153,6 +153,52 @@ describe("validateFloor", () => {
 
     expect(result.warnings).toContain('Feature "Coffee Cart" (id: fixture-1) has no IMDF type.');
   });
+
+  it("rejects navigation edges that reference nodes outside the selected level", () => {
+    const result = validateFloor("f1", [
+      {
+        type: "Feature",
+        id: "node-f2",
+        feature_type: "formation:navigation-node",
+        geometry: {
+          type: "Point",
+          coordinates: [0, 0],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          "formation:navigation_category": "stairs",
+          "formation:navigation_levels": ["f2"],
+        },
+      },
+      {
+        type: "Feature",
+        id: "edge-f1",
+        feature_type: "formation:navigation-edge",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          "formation:path_category": "pedestrian",
+          "formation:from_node_id": "node-f2",
+          "formation:to_node_id": "node-f2",
+        },
+      },
+    ]);
+
+    expect(result.errors.some((error) => error.includes("from node must include level f1"))).toBe(
+      true,
+    );
+    expect(result.errors.some((error) => error.includes("to node must include level f1"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("validateImdfDatasetFiles", () => {

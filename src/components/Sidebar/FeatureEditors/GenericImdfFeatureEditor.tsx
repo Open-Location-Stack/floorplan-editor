@@ -10,7 +10,6 @@ import { canContainChildren, resolveFeatureType } from "../../../lib/imdf/contai
 import type { ImdfFeatureField } from "../../../lib/imdf/featureCatalog";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
 import { formatFeatureOptionLabel } from "../../../lib/imdf/featureDisplay";
-import type { SupportedImdfType } from "../../../lib/imdf/schema";
 import type {
   FeatureProperties,
   FloorFeature,
@@ -18,14 +17,17 @@ import type {
   JsonObject,
   JsonValue,
 } from "../../../lib/types";
-import { AddFeatureButtonGroups } from "../../Sidebar/AddFeatureButtonGroups";
+import {
+  AddFeatureButtonGroups,
+  type AddFeatureRequest,
+} from "../../Sidebar/AddFeatureButtonGroups";
 
 export type ImdfFeatureEditorProps = {
   feature: FloorFeature;
   type: ImdfFeatureType;
   allFeatures: FloorFeature[];
   locked: boolean;
-  onCreateFeature: (type: SupportedImdfType) => void;
+  onCreateFeature: (request: AddFeatureRequest) => void;
   onUpdateProperty: (key: string, value: JsonValue | undefined) => void;
   onUpdateMetadata: (metadata: JsonObject) => void;
   onDelete: () => void;

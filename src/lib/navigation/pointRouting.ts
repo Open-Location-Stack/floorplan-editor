@@ -48,6 +48,7 @@ export const snapPointToNetwork = (
   point: Coordinates,
   graph: NavigationGraph,
   maxSnapDistanceMeters = MAX_SNAP_DISTANCE_METERS,
+  floorId?: string,
 ): SnappedPoint | undefined => {
   let bestMatch:
     | {
@@ -58,6 +59,9 @@ export const snapPointToNetwork = (
     | undefined;
 
   for (const edge of graph.edges) {
+    if (floorId && edge.floorId !== floorId) {
+      continue;
+    }
     const [from, to] = edge.coordinates;
     const projection = projectPointToSegment(point, from, to);
     const distanceMeters = haversineMeters(point, projection.coordinate);
@@ -97,6 +101,7 @@ export const findRouteBetweenPoints = (
   graph: NavigationGraph,
   startPoint: Coordinates,
   endPoint: Coordinates,
+  floorId?: string,
 ): PointRouteResult => {
   if (graph.nodes.length === 0 || graph.edges.length === 0) {
     return {
@@ -107,8 +112,8 @@ export const findRouteBetweenPoints = (
     };
   }
 
-  const snappedStart = snapPointToNetwork(startPoint, graph);
-  const snappedEnd = snapPointToNetwork(endPoint, graph);
+  const snappedStart = snapPointToNetwork(startPoint, graph, MAX_SNAP_DISTANCE_METERS, floorId);
+  const snappedEnd = snapPointToNetwork(endPoint, graph, MAX_SNAP_DISTANCE_METERS, floorId);
   if (!snappedStart || !snappedEnd) {
     return {
       found: false,

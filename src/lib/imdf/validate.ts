@@ -73,10 +73,54 @@ export const validateFloor = (
       readImdfType(feature.feature_type) ??
       readImdfType(feature.properties.imdfType) ??
       readImdfType(feature.properties.kind);
+    const rawFeatureType =
+      typeof feature.feature_type === "string"
+        ? feature.feature_type
+        : typeof feature.properties.feature_type === "string"
+          ? feature.properties.feature_type
+          : typeof feature.properties.kind === "string"
+            ? feature.properties.kind
+            : "";
     if (feature.properties.level_id !== level_id) {
       errors.push(`${featureDescription} is not assigned to level_id ${level_id}.`);
     }
     if (!featureType) {
+      if (rawFeatureType === "formation:navigation-node") {
+        const levels = feature.properties["formation:navigation_levels"];
+        if (!Array.isArray(levels) || !levels.some((entry) => typeof entry === "string")) {
+          errors.push(`${featureDescription} must include at least one navigation level.`);
+        }
+        continue;
+      }
+      if (rawFeatureType === "formation:navigation-edge") {
+        if (feature.geometry.type !== "LineString" || feature.geometry.coordinates.length < 2) {
+          errors.push(`${featureDescription} must use valid line geometry.`);
+        }
+        const fromNodeId = feature.properties["formation:from_node_id"];
+        const toNodeId = feature.properties["formation:to_node_id"];
+        if (typeof fromNodeId !== "string") {
+          errors.push(`${featureDescription} must reference a from node.`);
+        }
+        if (typeof toNodeId !== "string") {
+          errors.push(`${featureDescription} must reference a to node.`);
+        }
+        const nodesById = new Map(features.map((candidate) => [candidate.id, candidate]));
+        if (typeof fromNodeId === "string") {
+          const fromNode = nodesById.get(fromNodeId);
+          const levels = fromNode?.properties["formation:navigation_levels"];
+          if (!Array.isArray(levels) || !levels.includes(level_id)) {
+            errors.push(`${featureDescription} from node must include level ${level_id}.`);
+          }
+        }
+        if (typeof toNodeId === "string") {
+          const toNode = nodesById.get(toNodeId);
+          const levels = toNode?.properties["formation:navigation_levels"];
+          if (!Array.isArray(levels) || !levels.includes(level_id)) {
+            errors.push(`${featureDescription} to node must include level ${level_id}.`);
+          }
+        }
+        continue;
+      }
       warnings.push(`${featureDescription} has no IMDF type.`);
       continue;
     }

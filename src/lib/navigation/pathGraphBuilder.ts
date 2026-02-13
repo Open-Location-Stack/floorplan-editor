@@ -1,4 +1,13 @@
 import type { Coordinates, FloorFeature } from "../types";
+import {
+  coordinatesEqual,
+  isNavigationEdgeFeature,
+  isNavigationNodeFeature,
+  readFeatureTypeString,
+  readNavigationLevels,
+  readNavigationNodeCategory,
+  VERTICAL_NAVIGATION_NODE_CATEGORIES,
+} from "./navigationModel";
 import type { NavigationEdge, NavigationGraph, NavigationNode } from "./types";
 
 const COORDINATE_EPSILON = 1e-7;
@@ -34,19 +43,13 @@ const interpolate = (from: Coordinates, to: Coordinates, t: number): Coordinates
   from[1] + (to[1] - from[1]) * t,
 ];
 
-const classifyFeatureType = (feature: FloorFeature): string =>
-  feature.feature_type ??
-  (typeof feature.properties.imdfType === "string"
-    ? feature.properties.imdfType
-    : (feature.properties.kind ?? ""));
-
-const isRoutableLineType = (type: string): boolean => type === "opening";
+const isRoutableLegacyLineType = (type: string): boolean => type === "opening";
 
 const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
   const segments: Segment[] = [];
   for (const feature of features) {
     if (
-      !isRoutableLineType(classifyFeatureType(feature)) ||
+      !isRoutableLegacyLineType(readFeatureTypeString(feature)) ||
       feature.geometry.type !== "LineString"
     ) {
       continue;
@@ -107,7 +110,7 @@ const findIntersection = (
   };
 };
 
-export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
+const buildLegacyOpeningLineGraph = (features: FloorFeature[]): NavigationGraph => {
   const segments = collectOpeningSegments(features);
   const splitPointsBySegment = new Map<string, number[]>();
   for (const segment of segments) {
@@ -183,7 +186,7 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
       }
 
       edges.push({
-        id: `edge-${edgeIndex}`,
+        id: `legacy-edge-${edgeIndex}`,
         fromNodeId: fromKey,
         toNodeId: toKey,
         weightMeters: distance,
@@ -198,4 +201,149 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
     nodes: [...nodeByKey.values()],
     edges,
   };
+};
+
+const levelNodeId = (sourceNodeId: string, levelId: string): string => `${sourceNodeId}:${levelId}`;
+
+const buildNavigationFeatureGraph = (features: FloorFeature[]): NavigationGraph => {
+  const nodes: NavigationNode[] = [];
+  const edges: NavigationEdge[] = [];
+  const perLevelNodeBySourceId = new Map<string, Map<string, NavigationNode>>();
+  const nodeById = new Map<string, NavigationNode>();
+  let edgeIndex = 0;
+
+  for (const feature of features) {
+    if (!isNavigationNodeFeature(feature) || feature.geometry.type !== "Point") {
+      continue;
+    }
+    const levels = readNavigationLevels(feature);
+    for (const level of levels) {
+      const nodeId = levelNodeId(feature.id, level);
+      const node: NavigationNode = {
+        id: nodeId,
+        coordinate: feature.geometry.coordinates,
+        floorId: level,
+      };
+      nodes.push(node);
+      nodeById.set(nodeId, node);
+      const byLevel = perLevelNodeBySourceId.get(feature.id) ?? new Map<string, NavigationNode>();
+      byLevel.set(level, node);
+      perLevelNodeBySourceId.set(feature.id, byLevel);
+    }
+  }
+
+  for (const feature of features) {
+    if (!isNavigationEdgeFeature(feature) || feature.geometry.type !== "LineString") {
+      continue;
+    }
+    const levelId =
+      typeof feature.properties.level_id === "string"
+        ? feature.properties.level_id
+        : typeof feature.properties.floorId === "string"
+          ? feature.properties.floorId
+          : undefined;
+    if (!levelId) {
+      continue;
+    }
+
+    let fromNodeId =
+      typeof feature.properties["formation:from_node_id"] === "string"
+        ? feature.properties["formation:from_node_id"]
+        : undefined;
+    let toNodeId =
+      typeof feature.properties["formation:to_node_id"] === "string"
+        ? feature.properties["formation:to_node_id"]
+        : undefined;
+
+    if (!fromNodeId || !toNodeId) {
+      const first = feature.geometry.coordinates[0];
+      const last = feature.geometry.coordinates[feature.geometry.coordinates.length - 1];
+      if (first && last) {
+        const sameLevelNodes = nodes.filter((node) => node.floorId === levelId);
+        if (!fromNodeId) {
+          fromNodeId = sameLevelNodes.find((node) => coordinatesEqual(node.coordinate, first))?.id;
+        }
+        if (!toNodeId) {
+          toNodeId = sameLevelNodes.find((node) => coordinatesEqual(node.coordinate, last))?.id;
+        }
+      }
+    }
+
+    if (!fromNodeId || !toNodeId) {
+      continue;
+    }
+
+    const fromPerLevel =
+      perLevelNodeBySourceId.get(fromNodeId)?.get(levelId) ??
+      nodeById.get(levelNodeId(fromNodeId, levelId)) ??
+      nodeById.get(fromNodeId);
+    const toPerLevel =
+      perLevelNodeBySourceId.get(toNodeId)?.get(levelId) ??
+      nodeById.get(levelNodeId(toNodeId, levelId)) ??
+      nodeById.get(toNodeId);
+    if (!fromPerLevel || !toPerLevel) {
+      continue;
+    }
+
+    edges.push({
+      id: `edge-${edgeIndex}`,
+      fromNodeId: fromPerLevel.id,
+      toNodeId: toPerLevel.id,
+      weightMeters: haversineMeters(fromPerLevel.coordinate, toPerLevel.coordinate),
+      floorId: levelId,
+      coordinates: [fromPerLevel.coordinate, toPerLevel.coordinate],
+    });
+    edgeIndex += 1;
+  }
+
+  for (const feature of features) {
+    if (!isNavigationNodeFeature(feature) || feature.geometry.type !== "Point") {
+      continue;
+    }
+    const category = readNavigationNodeCategory(feature);
+    if (!category || !VERTICAL_NAVIGATION_NODE_CATEGORIES.has(category)) {
+      continue;
+    }
+    const levels = readNavigationLevels(feature);
+    if (levels.length < 2) {
+      continue;
+    }
+    for (let i = 0; i < levels.length; i += 1) {
+      for (let j = i + 1; j < levels.length; j += 1) {
+        const fromLevel = levels[i];
+        const toLevel = levels[j];
+        if (!fromLevel || !toLevel) {
+          continue;
+        }
+        const from = perLevelNodeBySourceId.get(feature.id)?.get(fromLevel);
+        const to = perLevelNodeBySourceId.get(feature.id)?.get(toLevel);
+        if (!from || !to) {
+          continue;
+        }
+        edges.push({
+          id: `vertical-edge-${edgeIndex}`,
+          fromNodeId: from.id,
+          toNodeId: to.id,
+          weightMeters: 1,
+          coordinates: [from.coordinate, to.coordinate],
+        });
+        edgeIndex += 1;
+      }
+    }
+  }
+
+  return {
+    nodes,
+    edges,
+  };
+};
+
+export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
+  const hasNavigationModelFeatures = features.some(
+    (feature) => isNavigationNodeFeature(feature) || isNavigationEdgeFeature(feature),
+  );
+  if (hasNavigationModelFeatures) {
+    return buildNavigationFeatureGraph(features);
+  }
+  return buildLegacyOpeningLineGraph(features);
 };

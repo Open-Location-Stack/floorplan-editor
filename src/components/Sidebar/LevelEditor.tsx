@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
-import type { SupportedImdfType } from "../../lib/imdf/schema";
 import type { FloorFeature, FloorOverlay, Level } from "../../lib/types";
-import { AddFeatureButtonGroups } from "./AddFeatureButtonGroups";
+import { AddFeatureButtonGroups, type AddFeatureRequest } from "./AddFeatureButtonGroups";
 
 type LevelEditorProps = {
   level: Level;
@@ -21,7 +20,7 @@ type LevelEditorProps = {
   onUpdateLevelOrdinal: (ordinal: number) => void;
   onUpdateLevelShortName: (shortName: string) => void;
   onUpdateLevelOutdoor: (outdoor: boolean) => void;
-  onCreateFeature: (type: SupportedImdfType) => void;
+  onCreateFeature: (request: AddFeatureRequest) => void;
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
   onOverlayRecenter: () => void;
@@ -72,14 +71,14 @@ export const LevelEditor = ({
 
   const pathDiagnostics = useMemo(() => {
     const issues: string[] = [];
-    const openings = levelFeatures.filter((feature) => {
+    const navigationEdges = levelFeatures.filter((feature) => {
       const type =
         typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
-      return type === "opening";
+      return type === "formation:navigation-edge";
     });
-    for (const opening of openings) {
-      if (opening.geometry.type !== "LineString" || opening.geometry.coordinates.length < 2) {
-        issues.push(`Path ${opening.id}: invalid line geometry.`);
+    for (const edge of navigationEdges) {
+      if (edge.geometry.type !== "LineString" || edge.geometry.coordinates.length < 2) {
+        issues.push(`Path ${edge.id}: invalid line geometry.`);
       }
     }
     return issues;

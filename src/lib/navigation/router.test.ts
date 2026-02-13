@@ -106,4 +106,96 @@ describe("path graph + point routing", () => {
     const route = findRouteBetweenPoints(graph, [5.1201, 52.0902], [5.1218, 52.0898]);
     expect(route.found).toBe(false);
   });
+
+  it("builds graph from navigation nodes and edges across levels", () => {
+    const features: FloorFeature[] = [
+      {
+        type: "Feature",
+        id: "stairs-a",
+        feature_type: "formation:navigation-node",
+        geometry: {
+          type: "Point",
+          coordinates: [5.12, 52.09],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          "formation:navigation_category": "stairs",
+          "formation:navigation_levels": ["f1", "f2"],
+        },
+      },
+      {
+        type: "Feature",
+        id: "f1-node",
+        feature_type: "formation:navigation-node",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.09],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          "formation:navigation_category": "entrance",
+          "formation:navigation_levels": ["f1"],
+        },
+      },
+      {
+        type: "Feature",
+        id: "f2-node",
+        feature_type: "formation:navigation-node",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.0905],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          "formation:navigation_category": "entrance",
+          "formation:navigation_levels": ["f2"],
+        },
+      },
+      {
+        type: "Feature",
+        id: "edge-f1",
+        feature_type: "formation:navigation-edge",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.121, 52.09],
+            [5.12, 52.09],
+          ],
+        },
+        properties: {
+          level_id: "f1",
+          floorId: "f1",
+          "formation:path_category": "pedestrian",
+          "formation:from_node_id": "f1-node",
+          "formation:to_node_id": "stairs-a",
+        },
+      },
+      {
+        type: "Feature",
+        id: "edge-f2",
+        feature_type: "formation:navigation-edge",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [5.12, 52.09],
+            [5.121, 52.0905],
+          ],
+        },
+        properties: {
+          level_id: "f2",
+          floorId: "f2",
+          "formation:path_category": "pedestrian",
+          "formation:from_node_id": "stairs-a",
+          "formation:to_node_id": "f2-node",
+        },
+      },
+    ];
+
+    const graph = buildPathGraph(features);
+    const route = findRouteBetweenPoints(graph, [5.121, 52.09], [5.121, 52.0905], "f1");
+    expect(route.found).toBe(true);
+  });
 });

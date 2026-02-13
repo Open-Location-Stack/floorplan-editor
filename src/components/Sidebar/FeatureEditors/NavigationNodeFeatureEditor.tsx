@@ -1,0 +1,140 @@
+import { useMemo } from "react";
+import {
+  NAVIGATION_NODE_CATEGORIES,
+  type NavigationNodeCategory,
+  readNavigationLevels,
+} from "../../../lib/navigation/navigationModel";
+import type { FloorFeature, JsonValue, Level } from "../../../lib/types";
+
+type NavigationNodeFeatureEditorProps = {
+  feature: FloorFeature;
+  levels: Level[];
+  locked: boolean;
+  onUpdateProperty: (key: string, value: JsonValue | undefined) => void;
+  onDelete: () => void;
+  onClone: () => void;
+  onToggleLock: () => void;
+  rawGeoJsonFeature?: unknown;
+  rawGeoJsonWarning?: string;
+};
+
+const CATEGORY_LABELS: Record<NavigationNodeCategory, string> = {
+  entrance: "Entrance",
+  door: "Door",
+  stairs: "Stairs",
+  elevator: "Elevator",
+  escalator: "Escalator",
+  revolving_door: "Revolving door",
+  exit: "Exit",
+};
+
+export const NavigationNodeFeatureEditor = ({
+  feature,
+  levels,
+  locked,
+  onUpdateProperty,
+  onDelete,
+  onClone,
+  onToggleLock,
+  rawGeoJsonFeature,
+  rawGeoJsonWarning,
+}: NavigationNodeFeatureEditorProps) => {
+  const selectedLevels = useMemo(() => readNavigationLevels(feature), [feature]);
+  const category = feature.properties["formation:navigation_category"];
+  const selectedCategory =
+    typeof category === "string" &&
+    (NAVIGATION_NODE_CATEGORIES as readonly string[]).includes(category)
+      ? (category as NavigationNodeCategory)
+      : "entrance";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <section className="card bg-base-100 shadow">
+        <div className="card-body gap-3">
+          <h2 className="card-title text-lg">Navigation Node</h2>
+          <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+            <span className="label-text flex items-center gap-2">
+              <span aria-hidden="true">{locked ? "🔒" : "🔓"}</span>
+              Lock geometry
+            </span>
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={locked}
+              onChange={onToggleLock}
+              aria-label="Lock feature geometry"
+            />
+          </label>
+          <label className="fieldset">
+            <span className="fieldset-legend">Category</span>
+            <select
+              className="select select-bordered select-sm"
+              value={selectedCategory}
+              onChange={(event) =>
+                onUpdateProperty(
+                  "formation:navigation_category",
+                  event.currentTarget.value as NavigationNodeCategory,
+                )
+              }
+            >
+              {NAVIGATION_NODE_CATEGORIES.map((entry) => (
+                <option key={entry} value={entry}>
+                  {CATEGORY_LABELS[entry]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-box border border-base-300 p-3">
+            <div className="mb-2 text-sm font-semibold">Levels</div>
+            <div className="grid gap-2">
+              {levels.map((level) => {
+                const checked = selectedLevels.includes(level.id);
+                return (
+                  <label
+                    key={level.id}
+                    className="label cursor-pointer rounded-box border border-base-300 px-3 py-2"
+                  >
+                    <span className="label-text">{`${level.id} - ${level.name}`}</span>
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={checked}
+                      onChange={(event) => {
+                        const next = event.currentTarget.checked
+                          ? [...new Set([...selectedLevels, level.id])]
+                          : selectedLevels.filter((entry) => entry !== level.id);
+                        onUpdateProperty("formation:navigation_levels", next);
+                      }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+            {selectedLevels.length === 0 ? (
+              <p className="mt-2 text-xs text-error">Select at least one level.</p>
+            ) : null}
+          </div>
+          <div className="flex gap-2">
+            <button className="btn btn-sm" type="button" onClick={onClone}>
+              Clone
+            </button>
+            <button className="btn btn-sm btn-error" type="button" onClick={onDelete}>
+              Delete
+            </button>
+          </div>
+          <details className="rounded-box border border-base-300 p-3">
+            <summary className="cursor-pointer font-medium">Raw exported GeoJSON</summary>
+            <div className="mt-3">
+              {rawGeoJsonWarning ? (
+                <p className="mb-2 text-xs text-warning">{rawGeoJsonWarning}</p>
+              ) : null}
+              <pre className="max-h-56 overflow-auto rounded-box border border-base-300 bg-base-200 p-2 font-mono text-xs">
+                {JSON.stringify(rawGeoJsonFeature ?? {}, null, 2)}
+              </pre>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>
+  );
+};

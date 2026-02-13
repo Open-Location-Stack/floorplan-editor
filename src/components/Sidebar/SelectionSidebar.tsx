@@ -1,7 +1,6 @@
 import type { Selection } from "../../lib/editor/selection";
 import { readFeatureType } from "../../lib/imdf/featureDisplay";
 import { getLevelGeometryFeatures, hasLevelGeometry } from "../../lib/imdf/levelGeometry";
-import type { SupportedImdfType } from "../../lib/imdf/schema";
 import { validateFloor } from "../../lib/imdf/validate";
 import type {
   Building,
@@ -12,6 +11,7 @@ import type {
   Level,
   Venue,
 } from "../../lib/types";
+import type { AddFeatureRequest } from "./AddFeatureButtonGroups";
 import { BuildingEditor } from "./BuildingEditor";
 import { FeatureEditor } from "./FeatureEditor";
 import { LevelEditor } from "./LevelEditor";
@@ -55,7 +55,7 @@ type SelectionSidebarProps = {
   onUpdateLevelOrdinal: (levelId: string, ordinal: number) => void;
   onUpdateLevelShortName: (levelId: string, shortName: string) => void;
   onUpdateLevelOutdoor: (levelId: string, outdoor: boolean) => void;
-  onCreateFeature: (type: SupportedImdfType) => void;
+  onCreateFeature: (request: AddFeatureRequest) => void;
   onUpdateFeatureProperty: (featureId: string, key: string, value: JsonValue | undefined) => void;
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
   onDeleteFeature: (featureId: string) => void;

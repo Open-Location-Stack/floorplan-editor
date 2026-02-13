@@ -847,7 +847,7 @@ describe("App browser smoke", () => {
     expect(screen.getByTestId("mock-map-feature-ids")).not.toHaveTextContent("shape-first");
     expect(screen.getByTestId("mock-map-overlay-floor")).toHaveTextContent("floor-1");
 
-    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pedestrian path/i }));
     expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
 
     fireEvent.click(screen.getByRole("button", { name: "First Floor" }));
@@ -968,10 +968,10 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /pedestrian path/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pedestrian path/i }));
     fireEvent.click(screen.getByTestId("mock-map-select-feature"));
 
     await waitFor(() => {
@@ -1318,10 +1318,10 @@ describe("App browser smoke", () => {
     await addVenueAndBuilding();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /pedestrian path/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pedestrian path/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("line");
@@ -1352,7 +1352,7 @@ describe("App browser smoke", () => {
         [5.201, 52.201],
         [5.202, 52.202],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
+      expect(latestSnapshot.features[0]?.properties.kind).toBe("formation:navigation-edge");
       expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Path 1" });
     });
   });
@@ -1366,10 +1366,10 @@ describe("App browser smoke", () => {
     await addVenueAndBuilding();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /opening/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /pedestrian path/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /opening/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pedestrian path/i }));
     fireEvent.click(screen.getByTestId("mock-map-create-forked-line-feature"));
 
     await waitFor(() => {
