@@ -23,7 +23,12 @@ type PointSpriteSpec = {
   svg: string;
 };
 
-const POINT_ICON_SIZE = 32;
+const POINT_ICON_SIZE = 44;
+const BADGE_PADDING = 8;
+const BADGE_STROKE_WIDTH = 2;
+const ICON_COLOR = "#111111";
+const BADGE_FILL_COLOR = "#ffffff";
+const BADGE_STROKE_COLOR = "#111111";
 
 export const MAP_POINT_ICON_SPECS: PointSpriteSpec[] = [
   { id: "point-icon-nav", color: "#166534", svg: navigationIcon },
@@ -68,15 +73,41 @@ const hexToRgb = (hex: string): [number, number, number] => {
   return [red, green, blue];
 };
 
-const createFallbackImageData = (colorHex: string) => {
+const createFallbackImageData = (_colorHex: string) => {
   const data = new Uint8Array(POINT_ICON_SIZE * POINT_ICON_SIZE * 4);
-  const color = hexToRgb(colorHex);
-  for (let y = 6; y < POINT_ICON_SIZE - 6; y += 1) {
-    for (let x = 6; x < POINT_ICON_SIZE - 6; x += 1) {
+  const fill = hexToRgb(BADGE_FILL_COLOR);
+  const stroke = hexToRgb(BADGE_STROKE_COLOR);
+  const icon = hexToRgb(ICON_COLOR);
+  const radius = POINT_ICON_SIZE / 2 - 1;
+  const center = POINT_ICON_SIZE / 2;
+  for (let y = 0; y < POINT_ICON_SIZE; y += 1) {
+    for (let x = 0; x < POINT_ICON_SIZE; x += 1) {
       const offset = (y * POINT_ICON_SIZE + x) * 4;
-      data[offset] = color[0];
-      data[offset + 1] = color[1];
-      data[offset + 2] = color[2];
+      const dx = x + 0.5 - center;
+      const dy = y + 0.5 - center;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= radius) {
+        const color = distance >= radius - BADGE_STROKE_WIDTH ? stroke : fill;
+        data[offset] = color[0];
+        data[offset + 1] = color[1];
+        data[offset + 2] = color[2];
+        data[offset + 3] = 255;
+      } else {
+        data[offset] = 0;
+        data[offset + 1] = 0;
+        data[offset + 2] = 0;
+        data[offset + 3] = 0;
+      }
+    }
+  }
+
+  const iconInset = Math.max(BADGE_PADDING + 3, 12);
+  for (let y = iconInset; y < POINT_ICON_SIZE - iconInset; y += 1) {
+    for (let x = iconInset; x < POINT_ICON_SIZE - iconInset; x += 1) {
+      const offset = (y * POINT_ICON_SIZE + x) * 4;
+      data[offset] = icon[0];
+      data[offset + 1] = icon[1];
+      data[offset + 2] = icon[2];
       data[offset + 3] = 255;
     }
   }
@@ -107,7 +138,9 @@ const parsePoints = (rawPoints: string): Array<[number, number]> => {
 const tintSvg = (svg: string, color: string): string =>
   svg
     .replace(/stroke="(currentColor|#000|black)"/g, `stroke="${color}"`)
-    .replace(/stroke="#000000"/g, `stroke="${color}"`);
+    .replace(/stroke="#000000"/g, `stroke="${color}"`)
+    .replace(/fill="(currentColor|#000|black)"/g, `fill="${color}"`)
+    .replace(/fill="#000000"/g, `fill="${color}"`);
 
 export const createPointIconImage = (spec: PointSpriteSpec) => {
   if (typeof document === "undefined" || typeof DOMParser === "undefined") {
@@ -122,7 +155,7 @@ export const createPointIconImage = (spec: PointSpriteSpec) => {
     return createFallbackImageData(spec.color);
   }
 
-  const svgDoc = new DOMParser().parseFromString(tintSvg(spec.svg, spec.color), "image/svg+xml");
+  const svgDoc = new DOMParser().parseFromString(tintSvg(spec.svg, ICON_COLOR), "image/svg+xml");
   const svgElement = svgDoc.documentElement;
   const viewBox = svgElement.getAttribute("viewBox")?.split(/\s+/).map(Number.parseFloat) ?? [];
   const viewBoxWidth =
@@ -131,12 +164,24 @@ export const createPointIconImage = (spec: PointSpriteSpec) => {
     viewBox.length === 4 && Number.isFinite(viewBox[3]) ? (viewBox[3] ?? 24) : 24;
 
   ctx.clearRect(0, 0, POINT_ICON_SIZE, POINT_ICON_SIZE);
+
+  const badgeRadius = POINT_ICON_SIZE / 2 - BADGE_STROKE_WIDTH / 2;
+  ctx.beginPath();
+  ctx.arc(POINT_ICON_SIZE / 2, POINT_ICON_SIZE / 2, badgeRadius, 0, Math.PI * 2);
+  ctx.fillStyle = BADGE_FILL_COLOR;
+  ctx.fill();
+  ctx.lineWidth = BADGE_STROKE_WIDTH;
+  ctx.strokeStyle = BADGE_STROKE_COLOR;
+  ctx.stroke();
+
+  const innerSize = POINT_ICON_SIZE - BADGE_PADDING * 2;
   ctx.save();
-  ctx.scale(POINT_ICON_SIZE / viewBoxWidth, POINT_ICON_SIZE / viewBoxHeight);
+  ctx.translate(BADGE_PADDING, BADGE_PADDING);
+  ctx.scale(innerSize / viewBoxWidth, innerSize / viewBoxHeight);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = spec.color;
-  ctx.fillStyle = spec.color;
+  ctx.strokeStyle = ICON_COLOR;
+  ctx.fillStyle = ICON_COLOR;
 
   for (const shape of svgElement.querySelectorAll("path,circle,line,polyline,polygon,rect")) {
     const strokeWidth = Number.parseFloat(shape.getAttribute("stroke-width") ?? "2");
