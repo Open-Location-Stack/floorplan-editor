@@ -5,6 +5,7 @@ import {
   type NavigationEdgeCategory,
   type NavigationNodeCategory,
 } from "../../lib/navigation/navigationModel";
+import { AppIcon } from "../icons/AppIcon";
 
 export type AddFeatureRequest =
   | { type: SupportedImdfType }
@@ -43,30 +44,6 @@ const EDGE_LABELS: Record<NavigationEdgeCategory, string> = {
   wheelchair: "Wheelchair path",
 };
 
-const iconForNode = (category: NavigationNodeCategory): string => {
-  switch (category) {
-    case "stairs":
-      return "S";
-    case "elevator":
-      return "L";
-    case "escalator":
-      return "E";
-    case "entrance":
-      return "I";
-    case "door":
-      return "D";
-    case "revolving_door":
-      return "R";
-    case "exit":
-      return "X";
-    default:
-      return "N";
-  }
-};
-
-const iconForEdge = (category: NavigationEdgeCategory): string =>
-  category === "wheelchair" ? "W" : "P";
-
 export const AddFeatureButtonGroups = ({
   typeCounts,
   disabled = false,
@@ -89,6 +66,7 @@ export const AddFeatureButtonGroups = ({
                   onClick={() => onCreateFeature({ type })}
                   disabled={disabled}
                 >
+                  <AppIcon name={type} />
                   {rule.defaultName} ({typeCounts?.get(type) ?? 0})
                 </button>
               );
@@ -109,7 +87,7 @@ export const AddFeatureButtonGroups = ({
               disabled={disabled}
               title={NODE_LABELS[category]}
             >
-              <span className="badge badge-sm badge-outline">{iconForNode(category)}</span>
+              <AppIcon name={category} />
               {NODE_LABELS[category]}
             </button>
           ))}
@@ -127,7 +105,7 @@ export const AddFeatureButtonGroups = ({
               disabled={disabled}
               title={EDGE_LABELS[category]}
             >
-              <span className="badge badge-sm badge-outline">{iconForEdge(category)}</span>
+              <AppIcon name={category} />
               {EDGE_LABELS[category]}
             </button>
           ))}

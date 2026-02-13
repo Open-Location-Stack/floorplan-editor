@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AppIcon } from "../icons/AppIcon";
 
 type TreeNodeProps = {
   label: ReactNode;
@@ -34,7 +35,7 @@ export const TreeNode = ({
         aria-label={expanded ? "Collapse" : "Expand"}
         onClick={onToggle}
       >
-        {expanded ? "-" : "+"}
+        <AppIcon name={expanded ? "collapse" : "expand"} />
       </button>
     ) : (
       <span className="inline-block w-6" />

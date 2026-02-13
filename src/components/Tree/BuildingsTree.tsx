@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Selection } from "../../lib/editor/selection";
+import { getFeatureIconKey } from "../../lib/icons/iconRegistry";
 import { getChildrenByParent } from "../../lib/imdf/containment";
 import { sortFeaturesForRendering } from "../../lib/imdf/export";
 import { isLevelGeometryFeature } from "../../lib/imdf/levelGeometry";
+import {
+  readNavigationEdgeCategory,
+  readNavigationNodeCategory,
+} from "../../lib/navigation/navigationModel";
 import type { Building, FloorFeature, Level, Venue } from "../../lib/types";
+import { AppIcon } from "../icons/AppIcon";
 import { TreeNode } from "./TreeNode";
 
 type BuildingsTreeProps = {
@@ -29,6 +35,17 @@ const featureLabel = (feature: FloorFeature): string => {
     }
   }
   return feature.id;
+};
+
+const featureIconName = (feature: FloorFeature) => {
+  const base = getFeatureIconKey(feature);
+  if (base === "formation:navigation-node") {
+    return readNavigationNodeCategory(feature) ?? base;
+  }
+  if (base === "formation:navigation-edge") {
+    return readNavigationEdgeCategory(feature) ?? base;
+  }
+  return base;
 };
 
 export const BuildingsTree = ({
@@ -132,7 +149,12 @@ export const BuildingsTree = ({
           <div key={venue.id}>
             <TreeNode
               depth={0}
-              label={venue.name}
+              label={
+                <span className="flex items-center gap-2">
+                  <AppIcon name="venue" />
+                  {venue.name}
+                </span>
+              }
               selected={selection?.kind === "venue" && selection.id === venue.id}
               expandable={venueBuildings.length > 0}
               expanded={venueExpanded}
@@ -153,6 +175,7 @@ export const BuildingsTree = ({
                     onExportVenueArchive(venue.id);
                   }}
                 >
+                  <AppIcon name="export" />
                   Export
                 </button>
               }
@@ -165,7 +188,12 @@ export const BuildingsTree = ({
                     <div key={building.id}>
                       <TreeNode
                         depth={1}
-                        label={building.name}
+                        label={
+                          <span className="flex items-center gap-2">
+                            <AppIcon name="building" />
+                            {building.name}
+                          </span>
+                        }
                         selected={selection?.kind === "building" && selection.id === building.id}
                         expandable={buildingLevels.length > 0}
                         expanded={buildingExpanded}
@@ -186,6 +214,7 @@ export const BuildingsTree = ({
                               onExportBuildingArchive(building.id);
                             }}
                           >
+                            <AppIcon name="export" />
                             Export
                           </button>
                         }
@@ -211,7 +240,12 @@ export const BuildingsTree = ({
                                 <div key={feature.id}>
                                   <TreeNode
                                     depth={depth}
-                                    label={featureLabel(feature)}
+                                    label={
+                                      <span className="flex items-center gap-2">
+                                        <AppIcon name={featureIconName(feature)} />
+                                        {featureLabel(feature)}
+                                      </span>
+                                    }
                                     selected={
                                       selection?.kind === "feature" && selection.id === feature.id
                                     }
@@ -237,7 +271,12 @@ export const BuildingsTree = ({
                               <div key={level.id}>
                                 <TreeNode
                                   depth={2}
-                                  label={level.name}
+                                  label={
+                                    <span className="flex items-center gap-2">
+                                      <AppIcon name="level" />
+                                      {level.name}
+                                    </span>
+                                  }
                                   selected={
                                     (selection?.kind === "level" || selection?.kind === "floor") &&
                                     selection.id === level.id

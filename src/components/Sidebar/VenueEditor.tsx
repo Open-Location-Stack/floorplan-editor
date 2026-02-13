@@ -1,4 +1,5 @@
 import type { Venue } from "../../lib/types";
+import { AppIcon } from "../icons/AppIcon";
 
 type VenueEditorProps = {
   venue: Venue;
@@ -17,7 +18,10 @@ export const VenueEditor = ({
 }: VenueEditorProps) => (
   <section className="card bg-base-100 shadow">
     <div className="card-body gap-3">
-      <h2 className="card-title text-lg">Venue</h2>
+      <h2 className="card-title text-lg">
+        <AppIcon name="venue" />
+        Venue
+      </h2>
       <label className="fieldset">
         <span className="fieldset-legend">Name</span>
         <input
@@ -29,9 +33,11 @@ export const VenueEditor = ({
       </label>
       <div className="flex gap-2">
         <button className="btn btn-sm" type="button" onClick={onAddBuilding}>
+          <AppIcon name="add" />
           Add building
         </button>
         <button className="btn btn-sm btn-error" type="button" onClick={onDeleteVenue}>
+          <AppIcon name="delete" />
           Delete venue
         </button>
       </div>

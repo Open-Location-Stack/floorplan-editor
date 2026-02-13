@@ -46,3 +46,6 @@ Open `http://localhost:5173`.
 - `npm run lint` for Biome lint/format checks.
 - `npm run build` for production build output in `dist/`.
 - `npm run validate-imdf -- <dataset-dir>` to validate IMDF datasets.
+
+## Licensing
+- Third-party attributions and notices: `docs/THIRD_PARTY_NOTICES.md`.

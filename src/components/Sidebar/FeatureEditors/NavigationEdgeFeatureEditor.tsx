@@ -6,6 +6,7 @@ import {
   readNavigationLevels,
 } from "../../../lib/navigation/navigationModel";
 import type { FloorFeature, JsonValue, Level } from "../../../lib/types";
+import { AppIcon } from "../../icons/AppIcon";
 
 type NavigationEdgeFeatureEditorProps = {
   feature: FloorFeature;
@@ -84,10 +85,13 @@ export const NavigationEdgeFeatureEditor = ({
     <div className="flex flex-col gap-3">
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
-          <h2 className="card-title text-lg">Navigation Edge</h2>
+          <h2 className="card-title text-lg">
+            <AppIcon name={selectedCategory} />
+            Navigation Edge
+          </h2>
           <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
             <span className="label-text flex items-center gap-2">
-              <span aria-hidden="true">{locked ? "🔒" : "🔓"}</span>
+              <AppIcon name={locked ? "lock" : "unlock"} />
               Lock geometry
             </span>
             <input
@@ -172,9 +176,11 @@ export const NavigationEdgeFeatureEditor = ({
           ) : null}
           <div className="flex gap-2">
             <button className="btn btn-sm" type="button" onClick={onClone}>
+              <AppIcon name="clone" />
               Clone
             </button>
             <button className="btn btn-sm btn-error" type="button" onClick={onDelete}>
+              <AppIcon name="delete" />
               Delete
             </button>
           </div>

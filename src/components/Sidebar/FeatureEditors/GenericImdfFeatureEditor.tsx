@@ -17,6 +17,7 @@ import type {
   JsonObject,
   JsonValue,
 } from "../../../lib/types";
+import { AppIcon } from "../../icons/AppIcon";
 import {
   AddFeatureButtonGroups,
   type AddFeatureRequest,
@@ -268,10 +269,13 @@ export const GenericImdfFeatureEditor = ({
     <div className="flex flex-col gap-3">
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
-          <h2 className="card-title text-lg">{spec.defaultName}</h2>
+          <h2 className="card-title text-lg">
+            <AppIcon name={type} />
+            {spec.defaultName}
+          </h2>
           <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
             <span className="label-text flex items-center gap-2">
-              <span aria-hidden="true">{locked ? "🔒" : "🔓"}</span>
+              <AppIcon name={locked ? "lock" : "unlock"} />
               Lock geometry
             </span>
             <input
@@ -599,6 +603,7 @@ export const GenericImdfFeatureEditor = ({
                   }
                 }}
               >
+                <AppIcon name="add" />
                 Apply metadata
               </button>
             </div>
@@ -617,9 +622,11 @@ export const GenericImdfFeatureEditor = ({
 
           <div className="flex gap-2">
             <button className="btn btn-sm" type="button" onClick={onClone}>
+              <AppIcon name="clone" />
               Clone
             </button>
             <button className="btn btn-sm btn-error" type="button" onClick={onDelete}>
+              <AppIcon name="delete" />
               Delete
             </button>
           </div>

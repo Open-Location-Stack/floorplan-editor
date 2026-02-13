@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AppIcon } from "./components/icons/AppIcon";
 import { type DrawMode, MapCanvas } from "./components/MapCanvas";
 import type { AddFeatureRequest } from "./components/Sidebar/AddFeatureButtonGroups";
 import { SelectionSidebar } from "./components/Sidebar/SelectionSidebar";
@@ -2666,16 +2667,7 @@ function App() {
             <div className="flex items-center gap-2">
               <div className="relative w-72">
                 <label className="input input-bordered input-sm flex items-center gap-2">
-                  <svg viewBox="0 0 24 24" className="size-4 opacity-70" aria-hidden="true">
-                    <path
-                      d="m21 21-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <AppIcon name="search" className="size-4 opacity-70" />
                   <input
                     type="text"
                     className="grow"
@@ -2709,6 +2701,7 @@ function App() {
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => onLocationSearchSelect(result)}
                               >
+                                <AppIcon name="address" />
                                 {result.formatted}
                               </button>
                             </li>
@@ -2729,6 +2722,7 @@ function App() {
                 type="button"
                 onClick={onExportProjectArchive}
               >
+                <AppIcon name="export" />
                 Export project
               </button>
               <span className="badge badge-outline">{saveStatus}</span>
@@ -2741,8 +2735,14 @@ function App() {
                     setTheme(event.currentTarget.checked ? "qr-dark" : "qr-light")
                   }
                 />
-                <span className="swap-on">Dark</span>
-                <span className="swap-off">Light</span>
+                <span className="swap-on flex items-center gap-1">
+                  <AppIcon name="themeDark" />
+                  Dark
+                </span>
+                <span className="swap-off flex items-center gap-1">
+                  <AppIcon name="themeLight" />
+                  Light
+                </span>
               </label>
             </div>
           </header>
@@ -2767,6 +2767,7 @@ function App() {
                     type="button"
                     onClick={() => importInputRef.current?.click()}
                   >
+                    <AppIcon name="import" />
                     Import ZIP(s)
                   </button>
                   <input
@@ -2825,6 +2826,7 @@ function App() {
               </div>
               <div className="mt-3 flex gap-2">
                 <button className="btn btn-sm btn-outline" type="button" onClick={onAddVenue}>
+                  <AppIcon name="add" />
                   Add venue
                 </button>
               </div>
@@ -2855,6 +2857,7 @@ function App() {
                     setDrawMode("select");
                   }}
                 >
+                  <AppIcon name="route" />
                   {routePickEnabled ? "Routing enabled (click map)" : "Enable map route picking"}
                 </button>
                 <div className="mt-2 text-xs text-base-content/70">
@@ -2893,6 +2896,7 @@ function App() {
                     setRouteEndCoordinate(undefined);
                   }}
                 >
+                  <AppIcon name="clear" />
                   Clear path
                 </button>
               </div>
@@ -2918,15 +2922,7 @@ function App() {
                         title="Select mode"
                         onClick={cancelDrawMode}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="m4 3 6 15 2.8-5.2L18 10 4 3Z"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="select" />
                       </button>
                       <button
                         className={`btn btn-sm join-item ${snapEnabled ? "btn-secondary" : ""}`}
@@ -2936,16 +2932,7 @@ function App() {
                         aria-pressed={snapEnabled}
                         onClick={() => setSnapEnabled((current) => !current)}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M4 4h6v6H4V4Zm10 10h6v6h-6v-6ZM10 8l4 4M12 4v2m8 8h-2M4 12h2m8 8v-2"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="snap" />
                       </button>
                       <button
                         className="btn btn-sm join-item"
@@ -2955,16 +2942,7 @@ function App() {
                         onClick={undoAction}
                         disabled={!canUndo}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M8 8 4 12l4 4M5 12h9a6 6 0 1 1 0 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="undo" />
                       </button>
                       <button
                         className="btn btn-sm join-item"
@@ -2974,16 +2952,7 @@ function App() {
                         onClick={redoAction}
                         disabled={!canRedo}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="m16 8 4 4-4 4M19 12h-9a6 6 0 1 0 0 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="redo" />
                       </button>
                       <button
                         className="btn btn-sm join-item"
@@ -2993,16 +2962,7 @@ function App() {
                         onClick={deleteVertex}
                         disabled={!hasSelectedVertex}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-4 8h8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="delete" />
                       </button>
                       <button
                         className="btn btn-sm join-item"
@@ -3012,16 +2972,7 @@ function App() {
                         onClick={splitPathSegment}
                         disabled={!canEditPathNode}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M4 12h16M12 8v8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="split" />
                       </button>
                       <button
                         className="btn btn-sm join-item"
@@ -3031,16 +2982,7 @@ function App() {
                         onClick={forkPathAtNode}
                         disabled={!canEditPathNode}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M7 4v7m0 0 5 5m-5-5 5-5m0 10h7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="fork" />
                       </button>
                       <button
                         className="btn btn-sm btn-error join-item"
@@ -3049,16 +2991,7 @@ function App() {
                         title="Delete selection"
                         onClick={deleteSelection}
                       >
-                        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-                          <path
-                            d="M4 7h16M9 7V5h6v2m-7 0v12h8V7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <AppIcon name="delete" />
                       </button>
                     </div>
                   </div>
@@ -3319,6 +3252,7 @@ function App() {
                   type="button"
                   onClick={() => setPendingConfirmation(undefined)}
                 >
+                  <AppIcon name="clear" />
                   Cancel
                 </button>
                 <button
@@ -3329,6 +3263,7 @@ function App() {
                     setPendingConfirmation(undefined);
                   }}
                 >
+                  <AppIcon name="entry" />
                   {pendingConfirmation.confirmLabel}
                 </button>
               </div>

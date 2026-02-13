@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { FloorFeature, FloorOverlay, Level } from "../../lib/types";
+import { AppIcon } from "../icons/AppIcon";
 import { AddFeatureButtonGroups, type AddFeatureRequest } from "./AddFeatureButtonGroups";
 
 type LevelEditorProps = {
@@ -87,7 +88,10 @@ export const LevelEditor = ({
   return (
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
-        <h2 className="card-title text-lg">Level</h2>
+        <h2 className="card-title text-lg">
+          <AppIcon name="level" />
+          Level
+        </h2>
         <label className="fieldset">
           <span className="fieldset-legend">Name</span>
           <input
@@ -152,6 +156,7 @@ export const LevelEditor = ({
             disabled={hasLevelGeometry}
             aria-label="Add level geometry"
           >
+            <AppIcon name="add" />
             Add geometry
           </button>
           <button
@@ -161,15 +166,18 @@ export const LevelEditor = ({
             disabled={!hasLevelGeometry}
             aria-label="Remove level geometry"
           >
+            <AppIcon name="delete" />
             Remove geometry
           </button>
         </div>
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onCloneLevel}>
+            <AppIcon name="clone" />
             Clone level
           </button>
           <button className="btn btn-sm btn-error" type="button" onClick={onDeleteLevel}>
+            <AppIcon name="delete" />
             Delete level
           </button>
         </div>
@@ -208,6 +216,7 @@ export const LevelEditor = ({
                   setOverlayFile(undefined);
                 }}
               >
+                <AppIcon name="upload" />
                 Upload image
               </button>
               <button
@@ -216,6 +225,7 @@ export const LevelEditor = ({
                 onClick={onOverlayRecenter}
                 disabled={!overlay}
               >
+                <AppIcon name="reset" />
                 Reset orientation
               </button>
             </div>
@@ -241,12 +251,13 @@ export const LevelEditor = ({
                 disabled={!overlay}
                 onClick={onOverlayToggleVisibility}
               >
+                <AppIcon name={overlay?.visible === false ? "show" : "hide"} />
                 {overlay?.visible === false ? "Show image" : "Hide image"}
               </button>
             </div>
             <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
               <span className="label-text flex items-center gap-2">
-                <span aria-hidden="true">{overlayLocked ? "🔒" : "🔓"}</span>
+                <AppIcon name={overlayLocked ? "lock" : "unlock"} />
                 Lock bitmap geometry
               </span>
               <input

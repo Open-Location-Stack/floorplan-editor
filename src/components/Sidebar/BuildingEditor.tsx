@@ -1,5 +1,6 @@
 import { formatFeatureOptionLabel } from "../../lib/imdf/featureDisplay";
 import type { Building, FloorFeature, Venue } from "../../lib/types";
+import { AppIcon } from "../icons/AppIcon";
 
 type BuildingEditorProps = {
   venue: Venue | undefined;
@@ -45,7 +46,10 @@ export const BuildingEditor = ({
   return (
     <section className="card bg-base-100 shadow">
       <div className="card-body gap-3">
-        <h2 className="card-title text-lg">Building</h2>
+        <h2 className="card-title text-lg">
+          <AppIcon name="building" />
+          Building
+        </h2>
         {venue ? <p className="text-xs text-base-content/70">Venue: {venue.name}</p> : null}
         <label className="fieldset">
           <span className="fieldset-legend">Name</span>
@@ -115,6 +119,7 @@ export const BuildingEditor = ({
               type="button"
               onClick={onReverseGeocodeAddress}
             >
+              <AppIcon name="search" />
               Reverse geocode with OpenCage
             </button>
           </div>
@@ -124,6 +129,7 @@ export const BuildingEditor = ({
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">Directory</h3>
             <button className="btn btn-xs" type="button" onClick={onAddDirectoryEntry}>
+              <AppIcon name="add" />
               Add entry
             </button>
           </div>
@@ -240,6 +246,7 @@ export const BuildingEditor = ({
                         type="button"
                         onClick={() => onDeleteDirectoryEntry(entry.id)}
                       >
+                        <AppIcon name="delete" />
                         Remove entry
                       </button>
                     </div>
@@ -252,9 +259,11 @@ export const BuildingEditor = ({
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onAddLevel}>
+            <AppIcon name="add" />
             Add level
           </button>
           <button className="btn btn-sm btn-error" type="button" onClick={onDeleteBuilding}>
+            <AppIcon name="delete" />
             Delete building
           </button>
         </div>
