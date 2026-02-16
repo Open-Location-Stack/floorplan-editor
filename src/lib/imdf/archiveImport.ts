@@ -148,6 +148,19 @@ const readRelationshipRefId = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const readLevelIdFromProperties = (properties: Record<string, unknown>): string | undefined => {
+  if (typeof properties["level_id"] === "string") {
+    return properties["level_id"];
+  }
+  if (Array.isArray(properties["level_ids"])) {
+    const first = properties["level_ids"].find((value) => typeof value === "string");
+    if (typeof first === "string") {
+      return first;
+    }
+  }
+  return undefined;
+};
+
 const readCollection = (files: Record<string, unknown>, name: string): RawFeature[] => {
   const raw = files[name];
   if (!isRecord(raw)) {
@@ -430,8 +443,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         continue;
       }
       const properties = isRecord(raw.properties) ? raw.properties : {};
-      const level_id =
-        typeof properties["level_id"] === "string" ? properties["level_id"] : undefined;
+      const level_id = readLevelIdFromProperties(properties);
       if (!level_id || !floorsById.has(level_id)) {
         warnings.push(`Feature ${raw["id"]} in ${datasetFile} skipped: missing level_id.`);
         continue;
@@ -551,7 +563,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       continue;
     }
     const properties = isRecord(raw.properties) ? raw.properties : {};
-    let level_id = typeof properties["level_id"] === "string" ? properties["level_id"] : undefined;
+    let level_id = readLevelIdFromProperties(properties);
     if (!level_id && Array.isArray(properties["unit_ids"])) {
       const linkedUnitIds = properties["unit_ids"].filter(
         (value): value is string => typeof value === "string",

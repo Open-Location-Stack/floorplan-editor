@@ -1,4 +1,13 @@
 import type { FeatureProperties, GeometryType, ImdfFeatureType, JsonValue } from "../types";
+import {
+  AMENITY_CATEGORY_SUGGESTIONS,
+  FIXTURE_CATEGORY_SUGGESTIONS,
+  GEOFENCE_CATEGORY_SUGGESTIONS,
+  OCCUPANT_CATEGORY_SUGGESTIONS,
+  OPENING_CATEGORY_SUGGESTIONS,
+  SECTION_CATEGORY_SUGGESTIONS,
+  UNIT_CATEGORY_SUGGESTIONS,
+} from "./categories";
 
 export type FeatureFieldType =
   | "string"
@@ -29,6 +38,7 @@ export type ImdfFeatureField = {
   editorControl?: EditorControlType;
   defaultValue?: JsonValue;
   enumOptions?: string[];
+  allowCustomValues?: boolean;
   referenceTypes?: ImdfFeatureType[];
   scope?: "same-level" | "same-building" | "global";
   placeholder?: string;
@@ -57,8 +67,8 @@ const floorReferenceField = {
   derive: (_properties: FeatureProperties, context: { level_id?: string }) => context.level_id,
 } as const;
 
-const baseFloorFields = [
-  { key: "name", type: "label", required: true, editorControl: "label-json" },
+const optionalNameFloorFields = [
+  { key: "name", type: "label", required: false, editorControl: "label-json" },
   floorReferenceField,
 ] as const;
 
@@ -146,12 +156,14 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 11,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
+      ...optionalNameFloorFields,
       {
         key: "category",
         type: "string",
         required: true,
         editorControl: "enum",
+        enumOptions: [...UNIT_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
         defaultValue: "unspecified",
       },
     ],
@@ -163,8 +175,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 12,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "text" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "text",
+        enumOptions: [...SECTION_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       {
         key: "section_id",
         type: "uuid",
@@ -182,8 +201,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 13,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "text" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "text",
+        enumOptions: [...GEOFENCE_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       {
         key: "restriction",
         type: "string",
@@ -200,8 +226,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 20,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "enum" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: [...OPENING_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       {
         key: "door",
         type: "json",
@@ -262,8 +295,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 30,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "enum" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: [...AMENITY_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       { key: "unit_ids", type: "string[]", required: false, editorControl: "string-list" },
       {
         key: "anchor_id",
@@ -282,7 +322,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 31,
     floorBound: true,
     fields: [
-      { key: "name", type: "label", required: true, editorControl: "label-json" },
+      { key: "name", type: "label", required: false, editorControl: "label-json" },
       {
         key: "unit_id",
         type: "uuid",
@@ -308,7 +348,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 32,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
+      ...optionalNameFloorFields,
       {
         key: "anchor_id",
         type: "uuid",
@@ -326,8 +366,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 33,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "enum" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: [...FIXTURE_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       {
         key: "anchor_id",
         type: "uuid",
@@ -345,7 +392,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 34,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
+      ...optionalNameFloorFields,
       {
         key: "anchor_id",
         type: "uuid",
@@ -363,8 +410,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     sortOrder: 35,
     floorBound: true,
     fields: [
-      ...baseFloorFields,
-      { key: "category", type: "string", required: true, editorControl: "enum" },
+      ...optionalNameFloorFields,
+      {
+        key: "category",
+        type: "string",
+        required: true,
+        editorControl: "enum",
+        enumOptions: [...OCCUPANT_CATEGORY_SUGGESTIONS],
+        allowCustomValues: true,
+      },
       { key: "website", type: "string", required: false, editorControl: "text" },
       { key: "phone", type: "string", required: false, editorControl: "text" },
       { key: "hours", type: "string", required: false, editorControl: "text" },

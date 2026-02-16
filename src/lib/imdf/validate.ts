@@ -415,11 +415,17 @@ export const validateImdfDatasetFiles = (
       }
       for (const field of spec.fields.filter((entry) => entry.required)) {
         if (!(field.key in rawFeature["properties"])) {
+          if (mode === "import-lenient" && field.key === "name") {
+            continue;
+          }
           if (mode === "strict") {
             errors.push(`${context} missing required properties.${field.key}.`);
           } else {
             warnings.push(`${context} missing required properties.${field.key}.`);
           }
+          continue;
+        }
+        if (mode === "import-lenient" && field.key === "name") {
           continue;
         }
         validateFieldValue(
@@ -433,7 +439,11 @@ export const validateImdfDatasetFiles = (
         );
       }
       for (const field of spec.fields) {
-        if (!field.enumOptions || !(field.key in rawFeature["properties"])) {
+        if (
+          !field.enumOptions ||
+          field.allowCustomValues ||
+          !(field.key in rawFeature["properties"])
+        ) {
           continue;
         }
         const value = rawFeature["properties"][field.key];

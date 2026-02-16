@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   convertArea,
   convertLength,
@@ -165,6 +165,7 @@ export const GenericImdfFeatureEditor = ({
   rawGeoJsonFeature,
   rawGeoJsonWarning,
 }: ImdfFeatureEditorProps) => {
+  const idPrefix = useId();
   const [metadataText, setMetadataText] = useState("{}");
   const [metadataError, setMetadataError] = useState<string | undefined>();
   const [fieldText, setFieldText] = useState<Record<string, string>>({});
@@ -295,25 +296,31 @@ export const GenericImdfFeatureEditor = ({
             const hasError = Boolean(error);
             const label = `${field.key}${field.required ? " *" : ""}`;
 
-            if (field.key === "category" && categoryOptions.length > 0) {
+            if (field.key === "category") {
               const currentValue = readString(feature.properties, field.key);
+              const datalistId = `${idPrefix}-${feature.id}-${field.key}-suggestions`;
               return (
                 <label className="fieldset" key={field.key}>
                   <span className="fieldset-legend">{label}</span>
-                  <select
-                    className={`select select-bordered select-sm ${hasError ? "select-error" : ""}`}
+                  <input
+                    className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
+                    type="text"
                     value={currentValue}
+                    list={categoryOptions.length > 0 ? datalistId : undefined}
                     onChange={(event) =>
                       onUpdateProperty(field.key, event.currentTarget.value || undefined)
                     }
-                  >
-                    <option value="">Select category</option>
-                    {categoryOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Choose or type category"
+                  />
+                  {categoryOptions.length > 0 ? (
+                    <datalist id={datalistId}>
+                      {categoryOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </datalist>
+                  ) : null}
                   {hasError ? <span className="text-xs text-error">{error}</span> : null}
                 </label>
               );

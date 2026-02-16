@@ -50,4 +50,36 @@ describe("GenericImdfFeatureEditor", () => {
 
     expect(nameInput).toHaveValue("Elevator");
   });
+
+  it("allows free-text category values while exposing suggested options", () => {
+    const feature = createFeature();
+    const onUpdateProperty = vi.fn();
+
+    const { container } = render(
+      <GenericImdfFeatureEditor
+        feature={feature}
+        type="opening"
+        allFeatures={[feature]}
+        locked={false}
+        onCreateFeature={vi.fn()}
+        onUpdateProperty={onUpdateProperty}
+        onUpdateMetadata={vi.fn()}
+        onDelete={vi.fn()}
+        onClone={vi.fn()}
+        onToggleLock={vi.fn()}
+      />,
+    );
+
+    const categoryInput = screen.getByDisplayValue("elevator");
+    fireEvent.change(categoryInput, { target: { value: "pedestrian.principal" } });
+    expect(onUpdateProperty).toHaveBeenCalledWith("category", "pedestrian.principal");
+
+    const suggestions = container.querySelectorAll("datalist option");
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(
+      [...suggestions].some(
+        (option) => option.getAttribute("value") === "pedestrian" && option.textContent,
+      ),
+    ).toBe(true);
+  });
 });

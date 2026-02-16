@@ -470,6 +470,16 @@ describe("imdf archive export/import", () => {
 
     expect(imported.value.warnings.length).toBeGreaterThan(0);
     expect(imported.value.warnings.length).toBeLessThan(2000);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes("missing required properties.name"),
+      ),
+    ).toBe(false);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes("properties.category must be one of"),
+      ),
+    ).toBe(false);
   });
 
   it("imports Open-IMDF fixture and preserves level/building links", async () => {
@@ -490,5 +500,90 @@ describe("imdf archive export/import", () => {
 
     expect(imported.value.warnings.length).toBeGreaterThan(0);
     expect(imported.value.warnings.length).toBeLessThan(2000);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes("missing required properties.name"),
+      ),
+    ).toBe(false);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes("properties.category must be one of"),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves custom categories and emits non-blocking compatibility warnings on export", async () => {
+    const { blob, warnings } = await exportBuildingImdfZip({
+      building: {
+        id: "building-custom-cat",
+        name: "Custom Category Building",
+      },
+      floors: [{ id: "level-custom-cat", buildingId: "building-custom-cat", name: "Level 1" }],
+      features: [
+        {
+          type: "Feature",
+          id: "level-custom-cat",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            level_id: "level-custom-cat",
+            floorId: "level-custom-cat",
+            buildingId: "building-custom-cat",
+          },
+        },
+        {
+          type: "Feature",
+          id: "opening-custom-cat",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1201, 52.0901],
+              [5.1202, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-custom-cat",
+            floorId: "level-custom-cat",
+            category: "portal.custom",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    expect(
+      warnings.some((warning) =>
+        warning.includes('non-standard opening category "portal.custom" preserved'),
+      ),
+    ).toBe(true);
+
+    const imported = await importImdfArchiveZip(
+      new File([blob], "custom-category.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    const importedOpening = imported.value.features.find(
+      (feature) =>
+        feature.feature_type === "opening" && feature.properties.category === "portal.custom",
+    );
+    expect(importedOpening?.properties.category).toBe("portal.custom");
   });
 });

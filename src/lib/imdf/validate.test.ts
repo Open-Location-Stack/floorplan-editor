@@ -271,6 +271,101 @@ describe("validateImdfDatasetFiles", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("accepts non-standard category strings for category fields that allow custom values", () => {
+    const result = validateImdfDatasetFiles({
+      "manifest.json": {
+        version: "1.0.0",
+        files: [
+          { name: "venue.json" },
+          { name: "building.json" },
+          { name: "footprint.json" },
+          { name: "level.json" },
+          { name: "unit.json" },
+          { name: "opening.json" },
+        ],
+      },
+      "venue.json": { type: "FeatureCollection", features: [] },
+      "building.json": { type: "FeatureCollection", features: [] },
+      "footprint.json": { type: "FeatureCollection", features: [] },
+      "level.json": { type: "FeatureCollection", features: [] },
+      "unit.json": { type: "FeatureCollection", features: [] },
+      "opening.json": {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            id: "94a50cc0-86d2-45cc-9f2b-c6fdb0f58d8d",
+            feature_type: "opening",
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [0, 0],
+                [1, 1],
+              ],
+            },
+            properties: {
+              level_id: "7be1a1e0-4aeb-40d7-af49-f2fdb292f90f",
+              category: "pedestrian.principal",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(
+      result.errors.some((error) => error.includes("properties.category must be one of")),
+    ).toBe(false);
+  });
+
+  it("does not require opening name labels in import-lenient mode", () => {
+    const result = validateImdfDatasetFiles(
+      {
+        "manifest.json": {
+          version: "1.0.0",
+          files: [
+            { name: "venue.json" },
+            { name: "building.json" },
+            { name: "footprint.json" },
+            { name: "level.json" },
+            { name: "unit.json" },
+            { name: "opening.json" },
+          ],
+        },
+        "venue.json": { type: "FeatureCollection", features: [] },
+        "building.json": { type: "FeatureCollection", features: [] },
+        "footprint.json": { type: "FeatureCollection", features: [] },
+        "level.json": { type: "FeatureCollection", features: [] },
+        "unit.json": { type: "FeatureCollection", features: [] },
+        "opening.json": {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              id: "f8ce278f-f30a-45ca-b087-f5d6797e75a8",
+              feature_type: "opening",
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [0, 0],
+                  [1, 1],
+                ],
+              },
+              properties: {
+                level_id: "7be1a1e0-4aeb-40d7-af49-f2fdb292f90f",
+                category: "pedestrian.principal",
+              },
+            },
+          ],
+        },
+      },
+      { mode: "import-lenient" },
+    );
+
+    expect(
+      result.warnings.some((warning) => warning.includes("missing required properties.name")),
+    ).toBe(false);
+  });
+
   it("downgrades recoverable schema issues in import-lenient mode", () => {
     const result = validateImdfDatasetFiles(
       {

@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import JSZip from "jszip";
 import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay, Venue } from "../types";
+import { isStandardCategoryForType } from "./categories";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
 import {
   imdfCollectionFileName,
@@ -356,6 +357,7 @@ export const buildImdfArchivePayload = ({
   defaultLocale = "en",
 }: BuildInput): ImdfArchivePayload => {
   const warnings: string[] = [];
+  const warnedNonStandardCategories = new Set<string>();
   const collections = Object.fromEntries(
     IMDF_STANDARD_DATASET_TYPES.map((type) => [
       type,
@@ -544,7 +546,17 @@ export const buildImdfArchivePayload = ({
       baseProperties["level_id"] = levelId;
     }
     if (typeof feature.properties["category"] === "string") {
-      baseProperties["category"] = feature.properties["category"];
+      const categoryValue = feature.properties["category"];
+      baseProperties["category"] = categoryValue;
+      if (!isStandardCategoryForType(mappedType, categoryValue)) {
+        const warningKey = `${mappedType}:${categoryValue}`;
+        if (!warnedNonStandardCategories.has(warningKey)) {
+          warnedNonStandardCategories.add(warningKey);
+          warnings.push(
+            `Feature ${feature.id}: non-standard ${mappedType} category "${categoryValue}" preserved for export compatibility.`,
+          );
+        }
+      }
     }
     for (const key of [
       "website",

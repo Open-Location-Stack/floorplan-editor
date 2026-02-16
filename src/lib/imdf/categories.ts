@@ -5,56 +5,108 @@ export type CategoryOption = {
   label: string;
 };
 
+const toLabel = (value: string): string =>
+  value
+    .split(".")
+    .map((part) => part.replaceAll("_", " "))
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" / ");
+
+const createOptions = (values: readonly string[]): CategoryOption[] =>
+  values.map((value) => ({ value, label: toLabel(value) }));
+
+export const OPENING_CATEGORY_SUGGESTIONS = [
+  "pedestrian",
+  "pedestrian.principal",
+  "entrance",
+  "door",
+  "stairs",
+  "elevator",
+  "escalator",
+  "revolving_door",
+  "exit",
+  "automobile",
+  "bicycle",
+] as const;
+
+export const AMENITY_CATEGORY_SUGGESTIONS = [
+  "restroom",
+  "restroom.male",
+  "restroom.female",
+  "atm",
+  "water",
+  "information",
+  "food",
+  "parking",
+  "elevator",
+  "escalator",
+  "stairs",
+  "exhibit",
+  "phone",
+] as const;
+
+export const UNIT_CATEGORY_SUGGESTIONS = [
+  "unspecified",
+  "room",
+  "corridor",
+  "hall",
+  "retail",
+  "office",
+  "service",
+  "walkway",
+  "classroom",
+  "library",
+  "storage",
+  "parking",
+  "restroom",
+  "restroom.male",
+  "restroom.female",
+  "stairs",
+  "steps",
+  "elevator",
+  "escalator",
+  "nonpublic",
+  "opentobelow",
+  "conferenceroom",
+  "unenclosedarea",
+] as const;
+
+export const GEOFENCE_CATEGORY_SUGGESTIONS = [
+  "security",
+  "restricted",
+  "operational",
+  "event",
+  "concourse",
+] as const;
+
+export const SECTION_CATEGORY_SUGGESTIONS = ["zone", "concourse", "terminal", "arcade"] as const;
+
+export const FIXTURE_CATEGORY_SUGGESTIONS = [
+  "stairs",
+  "elevator",
+  "escalator",
+  "furniture",
+  "desk",
+] as const;
+
+export const OCCUPANT_CATEGORY_SUGGESTIONS = [
+  "retail",
+  "food",
+  "service",
+  "office",
+  "restaurant",
+  "shopping",
+  "education",
+] as const;
+
 const CATEGORY_OPTIONS: Partial<Record<ImdfFeatureType, CategoryOption[]>> = {
-  opening: [
-    { value: "pedestrian", label: "Pedestrian" },
-    { value: "entrance", label: "Entrance" },
-    { value: "door", label: "Door" },
-    { value: "stairs", label: "Stairs" },
-    { value: "elevator", label: "Elevator" },
-    { value: "escalator", label: "Escalator" },
-    { value: "revolving_door", label: "Revolving door" },
-    { value: "exit", label: "Exit" },
-  ],
-  amenity: [
-    { value: "restroom", label: "Restroom" },
-    { value: "atm", label: "ATM" },
-    { value: "water", label: "Water" },
-    { value: "information", label: "Information" },
-    { value: "food", label: "Food" },
-    { value: "parking", label: "Parking" },
-  ],
-  unit: [
-    { value: "room", label: "Room" },
-    { value: "corridor", label: "Corridor" },
-    { value: "hall", label: "Hall" },
-    { value: "retail", label: "Retail" },
-    { value: "office", label: "Office" },
-    { value: "service", label: "Service" },
-  ],
-  geofence: [
-    { value: "security", label: "Security" },
-    { value: "restricted", label: "Restricted" },
-    { value: "operational", label: "Operational" },
-    { value: "event", label: "Event" },
-  ],
-  section: [
-    { value: "zone", label: "Zone" },
-    { value: "concourse", label: "Concourse" },
-    { value: "terminal", label: "Terminal" },
-  ],
-  fixture: [
-    { value: "stairs", label: "Stairs" },
-    { value: "elevator", label: "Elevator" },
-    { value: "escalator", label: "Escalator" },
-    { value: "furniture", label: "Furniture" },
-  ],
-  occupant: [
-    { value: "retail", label: "Retail" },
-    { value: "food", label: "Food" },
-    { value: "service", label: "Service" },
-    { value: "office", label: "Office" },
-  ],
+  opening: createOptions(OPENING_CATEGORY_SUGGESTIONS),
+  amenity: createOptions(AMENITY_CATEGORY_SUGGESTIONS),
+  unit: createOptions(UNIT_CATEGORY_SUGGESTIONS),
+  geofence: createOptions(GEOFENCE_CATEGORY_SUGGESTIONS),
+  section: createOptions(SECTION_CATEGORY_SUGGESTIONS),
+  fixture: createOptions(FIXTURE_CATEGORY_SUGGESTIONS),
+  occupant: createOptions(OCCUPANT_CATEGORY_SUGGESTIONS),
 };
 
 export const getCategoryOptions = (type: ImdfFeatureType): CategoryOption[] =>
@@ -62,3 +114,6 @@ export const getCategoryOptions = (type: ImdfFeatureType): CategoryOption[] =>
 
 export const hasCategoryOptions = (type: ImdfFeatureType): boolean =>
   getCategoryOptions(type).length > 0;
+
+export const isStandardCategoryForType = (type: ImdfFeatureType, value: string): boolean =>
+  getCategoryOptions(type).some((option) => option.value === value);
