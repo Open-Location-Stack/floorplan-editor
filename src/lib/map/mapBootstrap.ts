@@ -1433,8 +1433,8 @@ const canSplitOrForkLineFeature = (feature: GeoJsonFeature | undefined): boolean
     return true;
   }
 
-  const rawAccessibility = properties?.["accessibility"];
-  const rawUserAccessibility = properties?.["user_accessibility"];
+  const rawAccessibility = properties?.accessibility;
+  const rawUserAccessibility = properties?.user_accessibility;
   const accessibility =
     (rawAccessibility && typeof rawAccessibility === "object"
       ? (rawAccessibility as Record<string, unknown>)

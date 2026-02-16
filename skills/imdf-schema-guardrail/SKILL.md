@@ -27,12 +27,7 @@
 6) Run the full done gate before declaring completion.
 
 ## Validation
-- `npm run typecheck`
-- `npm run lint`
-- `npm run test -- --run`
-- `npm run test:browser`
-- `npm run test:e2e`
-- `npm run build`
+- Run the full completion gate chain defined in `skills/build-test-run/SKILL.md`.
 
 ## Notes
 - IMDF incompatibility is a hard failure.

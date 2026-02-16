@@ -13,21 +13,15 @@ description: Enforce mandatory validation guardrails from planning docs, includi
 - `docs/IMPLEMENTATION_PLAN_V1.md` sections "4. Quality Bar and Guard Rails" and "5. Test Strategy".
 - `docs/TECHNICAL_PLAN.md` section "10. Testing and Quality Gates".
 
-## Required Checks
-- `npm run typecheck`
-- `npm run lint`
-- `npm run test`
-- `npm run build`
-
 ## Workflow
-1. Run all required checks before declaring readiness.
+1. Run the canonical validation chain from `skills/build-test-run/SKILL.md` instead of duplicating commands here.
 2. If any check fails, treat it as a hard stop and fix before proceeding.
 3. Ensure test coverage includes impacted layer(s): unit, component, integration, and smoke where relevant.
 4. Include concise test evidence in the change summary or PR notes.
 5. Reject completion if guardrails were weakened without explicit architectural decision.
 
 ## Validation Expectations
-- Mandatory checks pass in one post-change run.
+- Canonical validation chain passes in one post-change run.
 - No unexplained skips for quality checks.
 - New functionality ships with corresponding automated tests.
 

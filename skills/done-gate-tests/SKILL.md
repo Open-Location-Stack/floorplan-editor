@@ -17,13 +17,8 @@ description: Enforce completion gating by running the full validation suite and 
 - Optional: list of changed files to include in the final report.
 
 ## Workflow
-1) After implementing changes, run the required validation commands from repo root in this exact order:
-   - `npm run typecheck`
-   - `npm run lint`
-   - `npm run test -- --run`
-   - `npm run test:browser`
-   - `npm run test:e2e`
-   - `npm run build`
+1) After implementing changes, run the full completion gate command chain defined in:
+   - `skills/build-test-run/SKILL.md` (single source of truth).
 2) If any command fails:
    - Do not declare completion.
    - Fix the issue and rerun the full sequence.
@@ -31,7 +26,7 @@ description: Enforce completion gating by running the full validation suite and 
 4) If a command cannot be run due to environment constraints, explicitly state that the task is not fully validated.
 
 ## Validation
-- Required gate is green only when all six commands succeed in one post-change run.
+- Required gate is green only when the full completion gate chain from `skills/build-test-run/SKILL.md` succeeds in one post-change run.
 
 ## Notes
 - For documentation-only edits, this skill can be skipped if no executable code changed.
