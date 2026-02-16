@@ -46,6 +46,7 @@ const MockMapCanvas = ({
     features: Array<{
       type: "Feature";
       id: string;
+      feature_type?: string;
       geometry: {
         type: "Point" | "LineString" | "Polygon";
         coordinates: unknown;
@@ -230,6 +231,66 @@ const MockMapCanvas = ({
         }}
       >
         create polygon feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-update-existing-path-with-unknown-type"
+        onClick={() => {
+          onFeaturesChange([
+            {
+              type: "Feature",
+              id: "path-1",
+              feature_type: "formation:unknown",
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [5.2, 52.2],
+                  [5.202, 52.202],
+                ],
+              },
+              properties: {
+                name: "Path 1 updated",
+                level_id: "floor-1",
+                floorId: "floor-1",
+                category: "pedestrian",
+              },
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("path-1");
+        }}
+      >
+        update path with unknown type
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-update-existing-level-with-unknown-type"
+        onClick={() => {
+          onFeaturesChange([
+            {
+              type: "Feature",
+              id: "floor-1",
+              feature_type: "formation:unknown",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [5.12, 52.09],
+                    [5.125, 52.09],
+                    [5.125, 52.095],
+                    [5.12, 52.095],
+                    [5.12, 52.09],
+                  ],
+                ],
+              },
+              properties: {},
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("floor-1");
+        }}
+      >
+        update level with unknown type
       </button>
     </div>
   );
@@ -1493,6 +1554,142 @@ describe("App browser smoke", () => {
       );
       expect(namesById["path-draft-1"]).toEqual({ en: "Path 1" });
       expect(namesById["path-draft-2"]).toEqual({ en: "Path 2" });
+    });
+  });
+
+  it("preserves opening IMDF type when draw updates report formation:unknown", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 7,
+      updatedAt: "2026-02-16T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Venue 1" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building 1" }],
+      levels: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "path-1",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.2, 52.2],
+              [5.201, 52.201],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            imdfType: "opening",
+            level_id: "floor-1",
+            floorId: "floor-1",
+            category: "pedestrian",
+            name: { en: "Path 1" },
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-map-update-existing-path-with-unknown-type"),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-update-existing-path-with-unknown-type"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          feature_type?: string;
+          properties: { imdfType?: string; kind?: string; name?: { en?: string } };
+        }>;
+      };
+      const path = latestSnapshot.features.find((feature) => feature.id === "path-1");
+      expect(path?.feature_type).toBe("opening");
+      expect(path?.properties.imdfType).toBe("opening");
+      expect(path?.properties.kind).toBe("opening");
+      expect(path?.properties.name).toEqual({ en: "Path 1 updated" });
+    });
+  });
+
+  it("preserves level IMDF type when draw updates report formation:unknown", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 7,
+      updatedAt: "2026-02-16T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Venue 1" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building 1" }],
+      levels: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "floor-1",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.124, 52.09],
+                [5.124, 52.094],
+                [5.12, 52.094],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            feature_type: "level",
+            imdfType: "level",
+            level_id: "floor-1",
+            floorId: "floor-1",
+            building_ids: ["building-1"],
+            short_name: { en: "G" },
+            ordinal: 0,
+            outdoor: false,
+            name: { en: "Level" },
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-map-update-existing-level-with-unknown-type"),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-update-existing-level-with-unknown-type"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      expect(saveCalls.length).toBeGreaterThan(0);
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          feature_type?: string;
+          properties: { imdfType?: string; kind?: string; name?: { en?: string } };
+        }>;
+      };
+      const levelGeometry = latestSnapshot.features.find((feature) => feature.id === "floor-1");
+      expect(levelGeometry?.feature_type).toBe("level");
+      expect(levelGeometry?.properties.imdfType).toBe("level");
+      expect(levelGeometry?.properties.kind).toBe("level");
+      expect(levelGeometry?.properties.name).toEqual({ en: "Level" });
     });
   });
 

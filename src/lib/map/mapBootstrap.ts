@@ -1126,6 +1126,19 @@ const readBooleanProperty = (
   return typeof value === "boolean" ? value : undefined;
 };
 
+const readObjectProperty = (
+  properties: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined => {
+  if (!properties) {
+    return undefined;
+  }
+  const value = properties[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+};
+
 type ActiveDrawPointerTarget =
   | {
       geometryType: "LineString";
@@ -1433,15 +1446,9 @@ const canSplitOrForkLineFeature = (feature: GeoJsonFeature | undefined): boolean
     return true;
   }
 
-  const rawAccessibility = properties?.accessibility;
-  const rawUserAccessibility = properties?.user_accessibility;
   const accessibility =
-    (rawAccessibility && typeof rawAccessibility === "object"
-      ? (rawAccessibility as Record<string, unknown>)
-      : undefined) ??
-    (rawUserAccessibility && typeof rawUserAccessibility === "object"
-      ? (rawUserAccessibility as Record<string, unknown>)
-      : undefined);
+    readObjectProperty(properties, "accessibility") ??
+    readObjectProperty(properties, "user_accessibility");
   if (readBooleanProperty(accessibility, "wheelchair") === true) {
     return true;
   }

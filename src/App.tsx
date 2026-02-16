@@ -36,6 +36,7 @@ import {
 } from "./lib/imdf/containment";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
+import { readImdfType } from "./lib/imdf/featureCatalog";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { migrateProjectSnapshotToImdfNavigationV7 } from "./lib/imdf/migrations/v7";
 import { normalizeFeature } from "./lib/imdf/normalize";
@@ -345,6 +346,18 @@ const kindForGeometry = (geometryType: GeometryType): string => {
   }
 
   return "unit";
+};
+
+const resolveImdfFeatureType = (
+  ...candidates: unknown[]
+): Exclude<FloorFeature["feature_type"], undefined> | undefined => {
+  for (const candidate of candidates) {
+    const resolved = readImdfType(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return undefined;
 };
 
 const nameForGeometry = (geometryType: GeometryType): string => {
@@ -1179,16 +1192,6 @@ function App() {
                 ...(existing?.properties ?? {}),
                 ...feature.properties,
               };
-          const featureType =
-            (typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type) ||
-            (shouldApplyPendingTemplate ? pendingDrawTemplate?.featureType : undefined);
-          const isNewPath =
-            !existing && feature.geometry.type === "LineString" && featureType === "opening";
-          const resolvedName = isNewPath
-            ? `Path ${nextPathNumber++}`
-            : typeof mergedProperties.name === "string" && mergedProperties.name
-              ? mergedProperties.name
-              : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
           const normalizedGeometry =
             shouldApplyPendingTemplate &&
             pendingDrawTemplate?.featureType === "opening" &&
@@ -1196,27 +1199,34 @@ function App() {
             feature.geometry.type === "Point"
               ? openingPointToLine(feature.geometry.coordinates)
               : feature.geometry;
+          const resolvedFeatureType =
+            resolveImdfFeatureType(
+              feature.feature_type,
+              mergedProperties.feature_type,
+              mergedProperties.kind,
+              mergedProperties.imdfType,
+              shouldApplyPendingTemplate ? pendingDrawTemplate?.featureType : undefined,
+            ) ?? kindForGeometry(normalizedGeometry.type);
+          const isNewPath =
+            !existing &&
+            normalizedGeometry.type === "LineString" &&
+            resolvedFeatureType === "opening";
+          const resolvedName = isNewPath
+            ? `Path ${nextPathNumber++}`
+            : typeof mergedProperties.name === "string" && mergedProperties.name
+              ? mergedProperties.name
+              : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
 
           return normalizeFeature(
             {
               ...feature,
               geometry: normalizedGeometry,
-              feature_type: ((typeof feature.feature_type === "string" && feature.feature_type) ||
-                (typeof mergedProperties.feature_type === "string"
-                  ? mergedProperties.feature_type
-                  : undefined) ||
-                kindForGeometry(feature.geometry.type)) as Exclude<
-                FloorFeature["feature_type"],
-                undefined
-              >,
+              feature_type: resolvedFeatureType as Exclude<FloorFeature["feature_type"], undefined>,
               properties: {
                 ...mergedProperties,
                 level_id:
                   mergedProperties.level_id ?? existing?.properties.level_id ?? activeLevel.id,
-                feature_type:
-                  typeof mergedProperties.feature_type === "string" && mergedProperties.feature_type
-                    ? mergedProperties.feature_type
-                    : kindForGeometry(normalizedGeometry.type),
+                feature_type: resolvedFeatureType,
                 name: resolvedName,
               },
             },
