@@ -7,6 +7,7 @@ import {
   IMDF_DATASET_TYPES,
   sortFeaturesForRendering,
 } from "./export";
+import { imdfCollectionFileName } from "./fileNames";
 import { importFloorGeoJson } from "./import";
 import { validateImdfDatasetFiles } from "./validate";
 
@@ -146,18 +147,18 @@ describe("imdf export/import", () => {
     expect(Object.keys(dataset.files)).toEqual(
       expect.arrayContaining([
         "manifest.json",
-        "venue.geojson",
-        "building.geojson",
-        "footprint.geojson",
-        "level.geojson",
-        "unit.geojson",
-        "opening.geojson",
-        "relationship.geojson",
+        "venue.json",
+        "building.json",
+        "footprint.json",
+        "level.json",
+        "unit.json",
+        "opening.json",
+        "relationship.json",
       ]),
     );
 
     for (const type of IMDF_DATASET_TYPES) {
-      const collection = dataset.files[`${type}.geojson`];
+      const collection = dataset.files[imdfCollectionFileName(type)];
       expect(collection).toBeDefined();
       if (!collection || !("features" in collection) || !Array.isArray(collection.features)) {
         continue;
@@ -182,8 +183,8 @@ describe("imdf export/import", () => {
       features: fixture.features,
     });
 
-    const openingCollection = dataset.files["opening.geojson"];
-    const relationshipCollection = dataset.files["relationship.geojson"];
+    const openingCollection = dataset.files["opening.json"];
+    const relationshipCollection = dataset.files["relationship.json"];
 
     expect(openingCollection).toBeDefined();
     expect(relationshipCollection).toBeDefined();

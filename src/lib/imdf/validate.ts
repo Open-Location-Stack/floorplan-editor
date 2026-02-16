@@ -1,6 +1,11 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 import type { FloorFeature, ImdfFeatureType } from "../types";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
+import {
+  imdfCollectionFileName,
+  imdfCollectionFileNameAliases,
+  resolveAliasFilename,
+} from "./fileNames";
 
 export type FloorValidationResult = {
   errors: string[];
@@ -145,6 +150,10 @@ export type ImdfDatasetValidationResult = {
   warnings: string[];
 };
 
+export type ImdfDatasetValidationOptions = {
+  mode?: "strict" | "import-lenient";
+};
+
 const IMDF_STANDARD_DATASET_TYPES = [
   "address",
   "amenity",
@@ -165,20 +174,16 @@ const IMDF_STANDARD_DATASET_TYPES = [
   "venue",
 ] as const;
 
-const REQUIRED_IMDF_DATASET_FILES = [
-  "manifest.json",
-  "venue.geojson",
-  "building.geojson",
-  "footprint.geojson",
-  "level.geojson",
-  "unit.geojson",
-];
+const REQUIRED_IMDF_DATASET_TYPES = ["venue", "building", "footprint", "level", "unit"] as const;
 
 const parseImdfFeatureTypeFromFilename = (filename: string): ImdfFeatureType | undefined => {
-  if (!filename.endsWith(".geojson")) {
-    return undefined;
+  if (filename.endsWith(".json")) {
+    return readImdfType(filename.slice(0, -".json".length));
   }
-  return readImdfType(filename.slice(0, -".geojson".length));
+  if (filename.endsWith(".geojson")) {
+    return readImdfType(filename.slice(0, -".geojson".length));
+  }
+  return undefined;
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -265,28 +270,31 @@ const validateFieldValue = (
   value: unknown,
   context: string,
   errors: string[],
+  warnings: string[],
+  mode: "strict" | "import-lenient",
 ): void => {
+  const issues = mode === "import-lenient" ? warnings : errors;
   if (expected === "string") {
     if (typeof value !== "string" || value.trim().length === 0) {
-      errors.push(`${context} properties.${key} must be a non-empty string.`);
+      issues.push(`${context} properties.${key} must be a non-empty string.`);
     }
     return;
   }
   if (expected === "number") {
     if (typeof value !== "number" || !Number.isFinite(value)) {
-      errors.push(`${context} properties.${key} must be a finite number.`);
+      issues.push(`${context} properties.${key} must be a finite number.`);
     }
     return;
   }
   if (expected === "boolean") {
     if (typeof value !== "boolean") {
-      errors.push(`${context} properties.${key} must be a boolean.`);
+      issues.push(`${context} properties.${key} must be a boolean.`);
     }
     return;
   }
   if (expected === "label") {
     if (!isLabelObject(value)) {
-      errors.push(`${context} properties.${key} must be a label object.`);
+      issues.push(`${context} properties.${key} must be a label object.`);
     }
     return;
   }
@@ -296,7 +304,7 @@ const validateFieldValue = (
       value.length === 0 ||
       !value.every((entry) => typeof entry === "string")
     ) {
-      errors.push(`${context} properties.${key} must be a non-empty string array.`);
+      issues.push(`${context} properties.${key} must be a non-empty string array.`);
     }
     return;
   }
@@ -310,28 +318,31 @@ const validateFieldValue = (
       typeof value["feature_type"] !== "string" ||
       value["feature_type"].trim().length === 0
     ) {
-      errors.push(
+      issues.push(
         `${context} properties.${key} must be a reference object with id and feature_type.`,
       );
     }
     return;
   }
   if (!isUuid(value)) {
-    errors.push(`${context} properties.${key} must be a UUID.`);
+    issues.push(`${context} properties.${key} must be a UUID.`);
   }
 };
 
 export const validateImdfDatasetFiles = (
   files: Record<string, unknown>,
+  options: ImdfDatasetValidationOptions = {},
 ): ImdfDatasetValidationResult => {
+  const mode = options.mode ?? "strict";
   const errors: string[] = [];
   const warnings: string[] = [];
   const knownIds = new Set<string>();
   const refs: Array<{ source: string; target: string; field: string }> = [];
 
-  for (const file of REQUIRED_IMDF_DATASET_FILES) {
-    if (!(file in files)) {
-      errors.push(`Missing required IMDF file: ${file}.`);
+  for (const type of REQUIRED_IMDF_DATASET_TYPES) {
+    const foundFilename = resolveAliasFilename(files, imdfCollectionFileNameAliases(type));
+    if (!foundFilename) {
+      errors.push(`Missing required IMDF file: ${imdfCollectionFileName(type)}.`);
     }
   }
 
@@ -343,7 +354,11 @@ export const validateImdfDatasetFiles = (
       warnings.push("manifest.json version should be 1.0.0.");
     }
     if (!Array.isArray(manifestRaw["files"])) {
-      errors.push("manifest.json files must be an array.");
+      if (mode === "strict") {
+        errors.push("manifest.json files must be an array.");
+      } else {
+        warnings.push("manifest.json files should be an array.");
+      }
     } else {
       const names = new Set(
         manifestRaw["files"]
@@ -353,9 +368,10 @@ export const validateImdfDatasetFiles = (
           .filter((entry): entry is string => Boolean(entry)),
       );
       for (const type of IMDF_STANDARD_DATASET_TYPES) {
-        const fileName = `${type}.geojson`;
-        if (fileName in files && !names.has(fileName)) {
-          warnings.push(`manifest.json does not list ${fileName}.`);
+        const aliases = imdfCollectionFileNameAliases(type);
+        const foundFilename = resolveAliasFilename(files, aliases);
+        if (foundFilename && !aliases.some((name) => names.has(name))) {
+          warnings.push(`manifest.json does not list ${foundFilename}.`);
         }
       }
     }
@@ -377,28 +393,33 @@ export const validateImdfDatasetFiles = (
     const spec = getFeatureSpec(type);
     for (const [index, rawFeature] of rawCollection["features"].entries()) {
       const context = `${filename} feature[${index}]`;
+      const featureIssues = mode === "strict" ? errors : warnings;
       if (!isRecord(rawFeature) || rawFeature["type"] !== "Feature") {
         errors.push(`${context} must be a GeoJSON Feature.`);
         continue;
       }
       if (!isUuid(rawFeature["id"])) {
-        errors.push(`${context} has non-UUID id.`);
+        featureIssues.push(`${context} has non-UUID id.`);
       } else if (knownIds.has(rawFeature["id"])) {
-        errors.push(`${context} has duplicate id ${rawFeature["id"]}.`);
+        featureIssues.push(`${context} has duplicate id ${rawFeature["id"]}.`);
       } else {
         knownIds.add(rawFeature["id"]);
       }
       if (rawFeature["feature_type"] !== type) {
-        errors.push(`${context} must have feature_type "${type}".`);
+        featureIssues.push(`${context} must have feature_type "${type}".`);
       }
-      validateGeometry(type, rawFeature["geometry"], context, errors);
+      validateGeometry(type, rawFeature["geometry"], context, featureIssues);
       if (!isRecord(rawFeature["properties"])) {
         errors.push(`${context} must contain a properties object.`);
         continue;
       }
       for (const field of spec.fields.filter((entry) => entry.required)) {
         if (!(field.key in rawFeature["properties"])) {
-          errors.push(`${context} missing required properties.${field.key}.`);
+          if (mode === "strict") {
+            errors.push(`${context} missing required properties.${field.key}.`);
+          } else {
+            warnings.push(`${context} missing required properties.${field.key}.`);
+          }
           continue;
         }
         validateFieldValue(
@@ -407,6 +428,8 @@ export const validateImdfDatasetFiles = (
           rawFeature["properties"][field.key],
           context,
           errors,
+          warnings,
+          mode,
         );
       }
       for (const field of spec.fields) {
@@ -415,9 +438,12 @@ export const validateImdfDatasetFiles = (
         }
         const value = rawFeature["properties"][field.key];
         if (typeof value !== "string" || !field.enumOptions.includes(value)) {
-          errors.push(
-            `${context} properties.${field.key} must be one of: ${field.enumOptions.join(", ")}.`,
-          );
+          const issue = `${context} properties.${field.key} must be one of: ${field.enumOptions.join(", ")}.`;
+          if (mode === "strict") {
+            errors.push(issue);
+          } else {
+            warnings.push(issue);
+          }
         }
       }
 
@@ -440,7 +466,12 @@ export const validateImdfDatasetFiles = (
 
   for (const ref of refs) {
     if (!knownIds.has(ref.target)) {
-      errors.push(`Reference ${ref.field} from ${ref.source} points to missing id ${ref.target}.`);
+      const issue = `Reference ${ref.field} from ${ref.source} points to missing id ${ref.target}.`;
+      if (mode === "strict") {
+        errors.push(issue);
+      } else {
+        warnings.push(issue);
+      }
     }
   }
 

@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import {
   buildImdfArchivePayload,
@@ -7,6 +8,12 @@ import {
   IMDF_STANDARD_DATASET_TYPES,
 } from "./archiveExport";
 import { importImdfArchiveZip } from "./archiveImport";
+import {
+  imdfCollectionFileName,
+  imdfExtensionCollectionFileName,
+  imdfLegacyCollectionFileName,
+  imdfLegacyExtensionCollectionFileName,
+} from "./fileNames";
 import { validateImdfDatasetFiles } from "./validate";
 
 describe("imdf archive export/import", () => {
@@ -50,10 +57,10 @@ describe("imdf archive export/import", () => {
     });
 
     for (const type of IMDF_STANDARD_DATASET_TYPES) {
-      expect(payload.files[`${type}.geojson`]).toBeDefined();
+      expect(payload.files[imdfCollectionFileName(type)]).toBeDefined();
     }
-    expect(payload.files["formation_image.geojson"]).toBeDefined();
-    expect(payload.files["formation_centroid.geojson"]).toBeDefined();
+    expect(payload.files[imdfExtensionCollectionFileName("formation_image")]).toBeDefined();
+    expect(payload.files[imdfExtensionCollectionFileName("formation_centroid")]).toBeDefined();
 
     const validation = validateImdfDatasetFiles(payload.files);
     expect(validation.errors).toEqual([]);
@@ -333,5 +340,94 @@ describe("imdf archive export/import", () => {
       return;
     }
     expect(imported.value.features.some((feature) => feature.feature_type === "kiosk")).toBe(true);
+  });
+
+  it("imports legacy .geojson archive filenames for backward compatibility", async () => {
+    const { blob } = await exportBuildingImdfZip({
+      building: { id: "building-1", name: "HQ" },
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "level-1",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            floorId: "level-1",
+            level_id: "level-1",
+            buildingId: "building-1",
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const exportedZip = await JSZip.loadAsync(blob);
+    const legacyZip = new JSZip();
+    for (const [filename, entry] of Object.entries(exportedZip.files)) {
+      if (entry.dir) {
+        continue;
+      }
+      const bytes = await entry.async("uint8array");
+      const datasetType = IMDF_STANDARD_DATASET_TYPES.find(
+        (type) => filename === imdfCollectionFileName(type),
+      );
+      if (datasetType) {
+        legacyZip.file(imdfLegacyCollectionFileName(datasetType), bytes);
+        continue;
+      }
+      if (filename === imdfExtensionCollectionFileName("formation_image")) {
+        legacyZip.file(imdfLegacyExtensionCollectionFileName("formation_image"), bytes);
+        continue;
+      }
+      if (filename === imdfExtensionCollectionFileName("formation_centroid")) {
+        legacyZip.file(imdfLegacyExtensionCollectionFileName("formation_centroid"), bytes);
+        continue;
+      }
+      legacyZip.file(filename, bytes);
+    }
+
+    const legacyBlob = await legacyZip.generateAsync({ type: "blob" });
+    const imported = await importImdfArchiveZip(
+      new File([legacyBlob], "legacy-geojson.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.value.buildings.length).toBeGreaterThan(0);
+  });
+
+  it("imports osmtomimdf third-party archive in compatibility mode", async () => {
+    // @ts-expect-error Node typings are not included in this test tsconfig.
+    const { readFile } = await import("node:fs/promises");
+    const zipBuffer = await readFile("test-buildings/osmtomimdf-test-building.zip");
+    const imported = await importImdfArchiveZip(
+      new File([zipBuffer], "osmtomimdf-test-building.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.value.venues.length).toBeGreaterThan(0);
+    expect(imported.value.buildings.length).toBeGreaterThan(0);
+    expect(imported.value.floors.length).toBeGreaterThan(0);
+    expect(imported.value.features.some((feature) => feature.feature_type === "unit")).toBe(true);
+    expect(imported.value.warnings.length).toBeGreaterThan(0);
+    expect(imported.value.warnings.some((warning) => warning.includes("inferred venue_id"))).toBe(
+      true,
+    );
   });
 });

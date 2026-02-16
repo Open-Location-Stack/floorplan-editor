@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 
 import type { Building, FeatureCollection, Floor, FloorFeature } from "../types";
+import { imdfCollectionFileName } from "./fileNames";
 import { normalizeFeature } from "./normalize";
 import { sortOrderForFeatureType } from "./renderRules";
 
@@ -713,7 +714,7 @@ export const exportImdfDataset = ({
     generated_at: new Date().toISOString(),
     generator: "formation-floorplan-editor",
     files: IMDF_DATASET_TYPES.map((type) => ({
-      name: `${type}.geojson`,
+      name: imdfCollectionFileName(type),
       feature_type: type,
       count: collections[type].features.length,
     })),
@@ -723,7 +724,7 @@ export const exportImdfDataset = ({
     "manifest.json": manifest,
   };
   for (const type of IMDF_DATASET_TYPES) {
-    files[`${type}.geojson`] = collections[type];
+    files[imdfCollectionFileName(type)] = collections[type];
   }
 
   return {

@@ -2,6 +2,13 @@
 import JSZip from "jszip";
 import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay, Venue } from "../types";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
+import {
+  imdfCollectionFileName,
+  imdfCollectionFileNameAliases,
+  imdfExtensionCollectionFileName,
+  imdfExtensionCollectionFileNameAliases,
+  resolveAliasFilename,
+} from "./fileNames";
 import { getImdfSchemaRule } from "./schema";
 import { validateImdfDatasetFiles } from "./validate";
 
@@ -794,7 +801,7 @@ export const buildImdfArchivePayload = ({
     generated_at: new Date().toISOString(),
     generator: "formation-floorplan-editor",
     files: IMDF_STANDARD_DATASET_TYPES.map((type) => ({
-      name: `${type}.geojson`,
+      name: imdfCollectionFileName(type),
       feature_type: type,
       count: collections[type].features.length,
     })),
@@ -802,13 +809,16 @@ export const buildImdfArchivePayload = ({
 
   const files: Record<string, unknown> = { "manifest.json": manifest };
   for (const type of IMDF_STANDARD_DATASET_TYPES) {
-    files[`${type}.geojson`] = collections[type];
+    files[imdfCollectionFileName(type)] = collections[type];
   }
-  files["formation_image.geojson"] = {
+  files[imdfExtensionCollectionFileName("formation_image")] = {
     type: "FeatureCollection",
     features: imageExtensionFeatures,
   };
-  files["formation_centroid.geojson"] = { type: "FeatureCollection", features: centroidFeatures };
+  files[imdfExtensionCollectionFileName("formation_centroid")] = {
+    type: "FeatureCollection",
+    features: centroidFeatures,
+  };
   files["formation_assets.json"] = { images: imageBytes.map((entry) => entry.path) };
 
   (files["formation_assets.json"] as Record<string, unknown>)["imagePayloads"] = imageBytes;
@@ -904,15 +914,31 @@ const mergeArchivePayloads = (payloads: ImdfArchivePayload[]): ImdfArchivePayloa
   for (const payload of payloads) {
     warnings.push(...payload.warnings);
     for (const type of IMDF_STANDARD_DATASET_TYPES) {
-      const collection = readCollection(payload.files, `${type}.geojson`);
+      const collection = readCollection(
+        payload.files,
+        resolveAliasFilename(payload.files, imdfCollectionFileNameAliases(type)) ??
+          imdfCollectionFileName(type),
+      );
       for (const feature of collection.features) {
         collections[type].set(feature.id, feature);
       }
     }
-    for (const feature of readExtensionFeatures(payload.files, "formation_image.geojson")) {
+    for (const feature of readExtensionFeatures(
+      payload.files,
+      resolveAliasFilename(
+        payload.files,
+        imdfExtensionCollectionFileNameAliases("formation_image"),
+      ) ?? imdfExtensionCollectionFileName("formation_image"),
+    )) {
       imageFeatures.set(feature["id"] as string, feature);
     }
-    for (const feature of readExtensionFeatures(payload.files, "formation_centroid.geojson")) {
+    for (const feature of readExtensionFeatures(
+      payload.files,
+      resolveAliasFilename(
+        payload.files,
+        imdfExtensionCollectionFileNameAliases("formation_centroid"),
+      ) ?? imdfExtensionCollectionFileName("formation_centroid"),
+    )) {
       centroidFeatures.set(feature["id"] as string, feature);
     }
     const assets = payload.files["formation_assets.json"] as
@@ -930,7 +956,7 @@ const mergeArchivePayloads = (payloads: ImdfArchivePayload[]): ImdfArchivePayloa
 
   const files: Record<string, unknown> = {};
   for (const type of IMDF_STANDARD_DATASET_TYPES) {
-    files[`${type}.geojson`] = {
+    files[imdfCollectionFileName(type)] = {
       type: "FeatureCollection",
       features: [...collections[type].values()].sort((a, b) => a.id.localeCompare(b.id)),
     };
@@ -946,11 +972,11 @@ const mergeArchivePayloads = (payloads: ImdfArchivePayload[]): ImdfArchivePayloa
     .map(([path, bytes]) => ({ path, bytes }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
-  files["formation_image.geojson"] = {
+  files[imdfExtensionCollectionFileName("formation_image")] = {
     type: "FeatureCollection",
     features: sortedImageFeatures,
   };
-  files["formation_centroid.geojson"] = {
+  files[imdfExtensionCollectionFileName("formation_centroid")] = {
     type: "FeatureCollection",
     features: sortedCentroidFeatures,
   };
@@ -960,10 +986,10 @@ const mergeArchivePayloads = (payloads: ImdfArchivePayload[]): ImdfArchivePayloa
     generated_at: new Date().toISOString(),
     generator: "formation-floorplan-editor",
     files: IMDF_STANDARD_DATASET_TYPES.map((type) => ({
-      name: `${type}.geojson`,
+      name: imdfCollectionFileName(type),
       feature_type: type,
       count: (
-        files[`${type}.geojson`] as {
+        files[imdfCollectionFileName(type)] as {
           features: unknown[];
         }
       ).features.length,

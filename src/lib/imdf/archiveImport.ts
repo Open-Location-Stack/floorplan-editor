@@ -11,6 +11,12 @@ import type {
   Venue,
 } from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
+import {
+  imdfCollectionFileName,
+  imdfCollectionFileNameAliases,
+  imdfExtensionCollectionFileName,
+  imdfExtensionCollectionFileNameAliases,
+} from "./fileNames";
 import { validateImdfDatasetFiles } from "./validate";
 
 type RawFeature = {
@@ -171,35 +177,44 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   const zip = await JSZip.loadAsync(file);
   const files: Record<string, unknown> = {};
 
-  for (const filename of [
-    "manifest.json",
-    ...IMDF_STANDARD_DATASET_TYPES.map((type) => `${type}.geojson`),
-  ]) {
-    const entry = zip.file(filename);
+  const manifestEntry = zip.file("manifest.json");
+  if (manifestEntry) {
+    try {
+      files["manifest.json"] = JSON.parse(await manifestEntry.async("text")) as unknown;
+    } catch {
+      return { ok: false, errors: ["manifest.json is not valid JSON."], warnings: [] };
+    }
+  }
+
+  for (const type of IMDF_STANDARD_DATASET_TYPES) {
+    const [canonicalName, legacyName] = imdfCollectionFileNameAliases(type);
+    const entry = zip.file(canonicalName) ?? zip.file(legacyName);
     if (!entry) {
       continue;
     }
     try {
-      files[filename] = JSON.parse(await entry.async("text")) as unknown;
+      files[imdfCollectionFileName(type)] = JSON.parse(await entry.async("text")) as unknown;
     } catch {
-      return { ok: false, errors: [`${filename} is not valid JSON.`], warnings: [] };
+      return { ok: false, errors: [`${entry.name} is not valid JSON.`], warnings: [] };
     }
   }
 
-  const extensionNames = ["formation_image.geojson", "formation_centroid.geojson"];
-  for (const filename of extensionNames) {
-    const entry = zip.file(filename);
+  for (const extensionType of ["formation_image", "formation_centroid"] as const) {
+    const [canonicalName, legacyName] = imdfExtensionCollectionFileNameAliases(extensionType);
+    const entry = zip.file(canonicalName) ?? zip.file(legacyName);
     if (!entry) {
       continue;
     }
     try {
-      files[filename] = JSON.parse(await entry.async("text")) as unknown;
+      files[imdfExtensionCollectionFileName(extensionType)] = JSON.parse(
+        await entry.async("text"),
+      ) as unknown;
     } catch {
-      return { ok: false, errors: [`${filename} is not valid JSON.`], warnings: [] };
+      return { ok: false, errors: [`${entry.name} is not valid JSON.`], warnings: [] };
     }
   }
 
-  const validation = validateImdfDatasetFiles(files);
+  const validation = validateImdfDatasetFiles(files, { mode: "import-lenient" });
   if (validation.errors.length > 0) {
     return { ok: false, errors: validation.errors, warnings: validation.warnings };
   }
@@ -211,11 +226,19 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   const features: FloorFeature[] = [];
   const levelToBuildingId = new Map<string, string>();
 
-  const venueFeatures = readCollection(files, "venue.geojson");
-  const addressFeatures = readCollection(files, "address.geojson");
-  const buildingFeatures = readCollection(files, "building.geojson");
-  const directoryFeatures = readCollection(files, "directory.geojson");
-  const levelFeatures = readCollection(files, "level.geojson");
+  const venueFeatures = readCollection(files, imdfCollectionFileName("venue"));
+  const addressFeatures = readCollection(files, imdfCollectionFileName("address"));
+  const buildingFeatures = readCollection(files, imdfCollectionFileName("building"));
+  const directoryFeatures = readCollection(files, imdfCollectionFileName("directory"));
+  const levelFeatures = readCollection(files, imdfCollectionFileName("level"));
+  const uniqueVenueIds = [
+    ...new Set(
+      venueFeatures
+        .map((feature) => (typeof feature["id"] === "string" ? feature["id"] : undefined))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const inferredVenueId = uniqueVenueIds.length === 1 ? uniqueVenueIds[0] : undefined;
 
   for (const venueFeature of venueFeatures) {
     if (typeof venueFeature["id"] !== "string") {
@@ -238,8 +261,13 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       typeof properties["address_id"] === "string" ? properties["address_id"] : undefined;
     const venue = venueFeatures.find((candidate) => candidate["id"] === venueId);
     const address = addressFeatures.find((candidate) => candidate["id"] === addressId);
-    const resolvedVenueId =
-      venueId ?? (typeof venue?.["id"] === "string" ? venue["id"] : undefined);
+    let resolvedVenueId = venueId ?? (typeof venue?.["id"] === "string" ? venue["id"] : undefined);
+    if (!resolvedVenueId && inferredVenueId) {
+      resolvedVenueId = inferredVenueId;
+      warnings.push(
+        `Building ${buildingFeature["id"]}: inferred venue_id ${inferredVenueId} because archive defines a single venue.`,
+      );
+    }
 
     const venueProperties = isRecord(venue?.properties) ? venue.properties : {};
     const addressProperties = isRecord(address?.properties) ? address.properties : {};
@@ -388,7 +416,6 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     "section",
     "geofence",
     "opening",
-    "amenity",
     "anchor",
     "detail",
     "fixture",
@@ -396,7 +423,8 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     "occupant",
   ];
   for (const type of collectionTypes) {
-    const rawFeatures = readCollection(files, `${type}.geojson`);
+    const datasetFile = imdfCollectionFileName(type);
+    const rawFeatures = readCollection(files, datasetFile);
     for (const raw of rawFeatures) {
       if (typeof raw["id"] !== "string") {
         continue;
@@ -405,12 +433,12 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       const level_id =
         typeof properties["level_id"] === "string" ? properties["level_id"] : undefined;
       if (!level_id || !floorsById.has(level_id)) {
-        warnings.push(`Feature ${raw["id"]} in ${type}.geojson skipped: missing level_id.`);
+        warnings.push(`Feature ${raw["id"]} in ${datasetFile} skipped: missing level_id.`);
         continue;
       }
       const geometry = geometryFromImdf(raw["geometry"]);
       if (!geometry) {
-        warnings.push(`Feature ${raw["id"]} in ${type}.geojson skipped: invalid geometry.`);
+        warnings.push(`Feature ${raw["id"]} in ${datasetFile} skipped: invalid geometry.`);
         continue;
       }
       const featureName = labelToString(properties["name"]);
@@ -502,7 +530,93 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     }
   }
 
-  const relationships = readCollection(files, "relationship.geojson");
+  const unitLevelById = new Map<string, string>();
+  for (const feature of features) {
+    if (feature.feature_type !== "unit") {
+      continue;
+    }
+    const levelId =
+      typeof feature.properties["level_id"] === "string"
+        ? feature.properties["level_id"]
+        : undefined;
+    if (levelId) {
+      unitLevelById.set(feature.id, levelId);
+    }
+  }
+
+  const amenityFile = imdfCollectionFileName("amenity");
+  const amenityFeatures = readCollection(files, amenityFile);
+  for (const raw of amenityFeatures) {
+    if (typeof raw["id"] !== "string") {
+      continue;
+    }
+    const properties = isRecord(raw.properties) ? raw.properties : {};
+    let level_id = typeof properties["level_id"] === "string" ? properties["level_id"] : undefined;
+    if (!level_id && Array.isArray(properties["unit_ids"])) {
+      const linkedUnitIds = properties["unit_ids"].filter(
+        (value): value is string => typeof value === "string",
+      );
+      for (const unitId of linkedUnitIds) {
+        const inferredLevelId = unitLevelById.get(unitId);
+        if (!inferredLevelId) {
+          continue;
+        }
+        level_id = inferredLevelId;
+        warnings.push(
+          `Feature ${raw["id"]} in ${amenityFile}: inferred level_id ${inferredLevelId} from unit_ids.`,
+        );
+        break;
+      }
+    }
+    if (!level_id || !floorsById.has(level_id)) {
+      warnings.push(`Feature ${raw["id"]} in ${amenityFile} skipped: missing level_id.`);
+      continue;
+    }
+    const geometry = geometryFromImdf(raw["geometry"]);
+    if (!geometry) {
+      warnings.push(`Feature ${raw["id"]} in ${amenityFile} skipped: invalid geometry.`);
+      continue;
+    }
+    const featureName = labelToString(properties["name"]);
+    const featureNameLabel = toLabelObject(properties["name"], featureName);
+    const buildingId = levelToBuildingId.get(level_id);
+    features.push({
+      type: "Feature",
+      id: raw["id"],
+      feature_type: "amenity",
+      geometry,
+      properties: {
+        kind: "amenity",
+        imdfType: "amenity",
+        level_id: level_id,
+        floorId: level_id,
+        ...(buildingId ? { building_ids: [buildingId] } : {}),
+        ...(featureNameLabel ? { name: featureNameLabel } : {}),
+        ...(typeof properties["category"] === "string" ? { category: properties["category"] } : {}),
+        ...(isJsonValue(properties["accessibility"])
+          ? { accessibility: properties["accessibility"] }
+          : {}),
+        ...(typeof properties["restriction"] === "string"
+          ? { restriction: properties["restriction"] }
+          : {}),
+        ...(typeof properties["address_id"] === "string"
+          ? { address_id: properties["address_id"] }
+          : {}),
+        ...(Array.isArray(properties["unit_ids"])
+          ? {
+              unit_ids: properties["unit_ids"].filter(
+                (value): value is string => typeof value === "string",
+              ),
+            }
+          : {}),
+        ...(typeof properties["website"] === "string" ? { website: properties["website"] } : {}),
+        ...(typeof properties["phone"] === "string" ? { phone: properties["phone"] } : {}),
+        ...(typeof properties["hours"] === "string" ? { hours: properties["hours"] } : {}),
+      },
+    });
+  }
+
+  const relationships = readCollection(files, imdfCollectionFileName("relationship"));
   for (const raw of relationships) {
     if (typeof raw["id"] !== "string") {
       continue;
@@ -545,7 +659,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   }
 
   const overlays: FloorOverlay[] = [];
-  const extension = files["formation_image.geojson"];
+  const extension = files[imdfExtensionCollectionFileName("formation_image")];
   if (isRecord(extension)) {
     const collection = extension as RawCollection;
     if (collection["type"] === "FeatureCollection" && Array.isArray(collection["features"])) {

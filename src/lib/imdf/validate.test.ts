@@ -194,10 +194,62 @@ describe("validateImdfDatasetFiles", () => {
   it("fails when required files are missing", () => {
     const result = validateImdfDatasetFiles({});
     expect(result.errors.some((error) => error.includes("manifest.json"))).toBe(true);
-    expect(result.errors.some((error) => error.includes("venue.geojson"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("venue.json"))).toBe(true);
   });
 
   it("accepts datasets that omit optional collection files", () => {
+    const result = validateImdfDatasetFiles({
+      "manifest.json": {
+        version: "1.0.0",
+        files: [
+          { name: "venue.json" },
+          { name: "building.json" },
+          { name: "footprint.json" },
+          { name: "level.json" },
+          { name: "unit.json" },
+        ],
+      },
+      "venue.json": { type: "FeatureCollection", features: [] },
+      "building.json": { type: "FeatureCollection", features: [] },
+      "footprint.json": { type: "FeatureCollection", features: [] },
+      "level.json": { type: "FeatureCollection", features: [] },
+      "unit.json": { type: "FeatureCollection", features: [] },
+    });
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("fails when labels are strings instead of label objects", () => {
+    const result = validateImdfDatasetFiles({
+      "manifest.json": {
+        version: "1.0.0",
+        files: [{ name: "unit.json" }],
+      },
+      "venue.json": { type: "FeatureCollection", features: [] },
+      "building.json": {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            id: "ee6ba3dc-66ce-4c39-9be4-c4cc850bcf31",
+            feature_type: "building",
+            geometry: null,
+            properties: {
+              name: "Invalid label",
+              venue_id: "7c3c7d7d-5f7f-4d77-b59b-c1230ef6762a",
+            },
+          },
+        ],
+      },
+      "footprint.json": { type: "FeatureCollection", features: [] },
+      "level.json": { type: "FeatureCollection", features: [] },
+      "unit.json": { type: "FeatureCollection", features: [] },
+    });
+
+    expect(result.errors.some((error) => error.includes("label object"))).toBe(true);
+  });
+
+  it("accepts legacy .geojson filenames", () => {
     const result = validateImdfDatasetFiles({
       "manifest.json": {
         version: "1.0.0",
@@ -219,33 +271,58 @@ describe("validateImdfDatasetFiles", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("fails when labels are strings instead of label objects", () => {
-    const result = validateImdfDatasetFiles({
-      "manifest.json": {
-        version: "1.0.0",
-        files: [{ name: "unit.geojson" }],
-      },
-      "venue.geojson": { type: "FeatureCollection", features: [] },
-      "building.geojson": {
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            id: "ee6ba3dc-66ce-4c39-9be4-c4cc850bcf31",
-            feature_type: "building",
-            geometry: null,
-            properties: {
-              name: "Invalid label",
-              venue_id: "7c3c7d7d-5f7f-4d77-b59b-c1230ef6762a",
+  it("downgrades recoverable schema issues in import-lenient mode", () => {
+    const result = validateImdfDatasetFiles(
+      {
+        "manifest.json": {
+          version: "1.0.0.rc.1",
+        },
+        "venue.json": {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              id: "7c3c7d7d-5f7f-4d77-b59b-c1230ef6762a",
+              feature_type: "venue",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [0, 0],
+                    [1, 0],
+                    [1, 1],
+                    [0, 1],
+                    [0, 0],
+                  ],
+                ],
+              },
+              properties: { name: { en: "Venue" } },
             },
-          },
-        ],
+          ],
+        },
+        "building.json": {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              id: "ee6ba3dc-66ce-4c39-9be4-c4cc850bcf31",
+              feature_type: "building",
+              geometry: null,
+              properties: {
+                name: { en: "Building" },
+              },
+            },
+          ],
+        },
+        "footprint.json": { type: "FeatureCollection", features: [] },
+        "level.json": { type: "FeatureCollection", features: [] },
+        "unit.json": { type: "FeatureCollection", features: [] },
       },
-      "footprint.geojson": { type: "FeatureCollection", features: [] },
-      "level.geojson": { type: "FeatureCollection", features: [] },
-      "unit.geojson": { type: "FeatureCollection", features: [] },
-    });
+      { mode: "import-lenient" },
+    );
 
-    expect(result.errors.some((error) => error.includes("label object"))).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes("manifest.json files"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("venue_id"))).toBe(true);
   });
 });
