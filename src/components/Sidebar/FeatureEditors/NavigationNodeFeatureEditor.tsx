@@ -4,6 +4,7 @@ import {
   type NavigationNodeCategory,
   openingRepresentativePoint,
   readNavigationNodeCategory,
+  VERTICAL_NAVIGATION_NODE_CATEGORIES,
 } from "../../../lib/navigation/navigationModel";
 import type { FloorFeature, JsonValue, Level } from "../../../lib/types";
 import { AppIcon } from "../../icons/AppIcon";
@@ -85,6 +86,7 @@ export const NavigationNodeFeatureEditor = ({
     return [...new Set(entries)];
   }, [allFeatures, groupKey]);
   const selectedCategory = readNavigationNodeCategory(feature) ?? "entrance";
+  const supportsVerticalConnections = VERTICAL_NAVIGATION_NODE_CATEGORIES.has(selectedCategory);
 
   return (
     <div className="flex flex-col gap-3">
@@ -116,36 +118,38 @@ export const NavigationNodeFeatureEditor = ({
               Node category is fixed when created from the navigation node button.
             </p>
           </div>
-          <div className="rounded-box border border-base-300 p-3">
-            <div className="mb-2 text-sm font-semibold">Levels</div>
-            <div className="grid gap-2">
-              {levels.map((level) => {
-                const checked = selectedLevels.includes(level.id);
-                return (
-                  <label
-                    key={level.id}
-                    className="label cursor-pointer rounded-box border border-base-300 px-3 py-2"
-                  >
-                    <span className="label-text">{`${level.id} - ${level.name}`}</span>
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm"
-                      checked={checked}
-                      onChange={(event) => {
-                        const next = event.currentTarget.checked
-                          ? [...new Set([...selectedLevels, level.id])]
-                          : selectedLevels.filter((entry) => entry !== level.id);
-                        onUpdateProperty("__navigation_levels", next);
-                      }}
-                    />
-                  </label>
-                );
-              })}
+          {supportsVerticalConnections ? (
+            <div className="rounded-box border border-base-300 p-3">
+              <div className="mb-2 text-sm font-semibold">Connected levels</div>
+              <div className="grid gap-2">
+                {levels.map((level) => {
+                  const checked = selectedLevels.includes(level.id);
+                  return (
+                    <label
+                      key={level.id}
+                      className="label cursor-pointer rounded-box border border-base-300 px-3 py-2"
+                    >
+                      <span className="label-text">{`${level.id} - ${level.name}`}</span>
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={checked}
+                        onChange={(event) => {
+                          const next = event.currentTarget.checked
+                            ? [...new Set([...selectedLevels, level.id])]
+                            : selectedLevels.filter((entry) => entry !== level.id);
+                          onUpdateProperty("__navigation_levels", next);
+                        }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              {selectedLevels.length === 0 ? (
+                <p className="mt-2 text-xs text-error">Select at least one level.</p>
+              ) : null}
             </div>
-            {selectedLevels.length === 0 ? (
-              <p className="mt-2 text-xs text-error">Select at least one level.</p>
-            ) : null}
-          </div>
+          ) : null}
           <div className="flex gap-2">
             <button className="btn btn-sm" type="button" onClick={onClone}>
               <AppIcon name="clone" />

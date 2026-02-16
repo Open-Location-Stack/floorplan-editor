@@ -3291,6 +3291,13 @@ function App() {
                     }
 
                     if (key === "__navigation_levels" && isNavigationNodeOpening(target)) {
+                      const targetCategory = readNavigationNodeCategory(target);
+                      if (
+                        !targetCategory ||
+                        !VERTICAL_NAVIGATION_NODE_CATEGORIES.has(targetCategory)
+                      ) {
+                        return current;
+                      }
                       const selectedLevels = Array.isArray(value)
                         ? value.filter((entry): entry is string => typeof entry === "string")
                         : [];
@@ -3318,7 +3325,6 @@ function App() {
                         (feature) => !grouped.some((node) => node.id === feature.id),
                       );
                       const nextNodes: FloorFeature[] = [];
-                      const targetCategory = readNavigationNodeCategory(target);
                       const targetPoint = openingRepresentativePoint(target);
 
                       for (const levelId of selectedLevels) {

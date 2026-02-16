@@ -1,5 +1,7 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
+import { buildPathGraph } from "../navigation/pathGraphBuilder";
+import { findRoute } from "../navigation/router";
 import {
   buildImdfArchivePayload,
   exportBuildingImdfZip,
@@ -619,5 +621,330 @@ describe("imdf archive export/import", () => {
         feature.feature_type === "opening" && feature.properties.category === "portal.custom",
     );
     expect(importedOpening?.properties.category).toBe("portal.custom");
+  });
+
+  it("round-trips opening navigation relationships and preserves cross-level elevator routing", async () => {
+    const { blob } = await exportBuildingImdfZip({
+      building: {
+        id: "building-routing",
+        name: "Routing Building",
+      },
+      floors: [
+        { id: "level-1", buildingId: "building-routing", name: "Level 1" },
+        { id: "level-2", buildingId: "building-routing", name: "Level 2" },
+      ],
+      features: [
+        {
+          type: "Feature",
+          id: "level-1",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            level_id: "level-1",
+            floorId: "level-1",
+            buildingId: "building-routing",
+          },
+        },
+        {
+          type: "Feature",
+          id: "level-2",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.091],
+                [5.121, 52.091],
+                [5.121, 52.092],
+                [5.12, 52.092],
+                [5.12, 52.091],
+              ],
+            ],
+          },
+          properties: {
+            kind: "level",
+            imdfType: "level",
+            level_id: "level-2",
+            floorId: "level-2",
+            buildingId: "building-routing",
+          },
+        },
+        {
+          type: "Feature",
+          id: "elevator-l1",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.0902],
+              [5.1201, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-1",
+            floorId: "level-1",
+            category: "elevator",
+          },
+        },
+        {
+          type: "Feature",
+          id: "elevator-l2",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.0912],
+              [5.1201, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-2",
+            floorId: "level-2",
+            category: "elevator",
+          },
+        },
+        {
+          type: "Feature",
+          id: "corridor-l1",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12005, 52.0902],
+              [5.1209, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-1",
+            floorId: "level-1",
+            category: "pedestrian",
+          },
+        },
+        {
+          type: "Feature",
+          id: "corridor-l2",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12005, 52.0912],
+              [5.1209, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-2",
+            floorId: "level-2",
+            category: "pedestrian",
+          },
+        },
+        {
+          type: "Feature",
+          id: "node-l1",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12085, 52.0902],
+              [5.12095, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-1",
+            floorId: "level-1",
+            category: "door",
+          },
+        },
+        {
+          type: "Feature",
+          id: "node-l2",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12085, 52.0912],
+              [5.12095, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            imdfType: "opening",
+            level_id: "level-2",
+            floorId: "level-2",
+            category: "door",
+          },
+        },
+        {
+          type: "Feature",
+          id: "rel-l1",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12005, 52.0902],
+              [5.12005, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            imdfType: "relationship",
+            level_id: "level-1",
+            floorId: "level-1",
+            direction: "undirected",
+            origin: { id: "corridor-l1", feature_type: "opening" },
+            destination: { id: "elevator-l1", feature_type: "opening" },
+          },
+        },
+        {
+          type: "Feature",
+          id: "rel-l1-node",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1209, 52.0902],
+              [5.1209, 52.0902],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            imdfType: "relationship",
+            level_id: "level-1",
+            floorId: "level-1",
+            direction: "undirected",
+            origin: { id: "corridor-l1", feature_type: "opening" },
+            destination: { id: "node-l1", feature_type: "opening" },
+          },
+        },
+        {
+          type: "Feature",
+          id: "rel-l2",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12005, 52.0912],
+              [5.12005, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            imdfType: "relationship",
+            level_id: "level-2",
+            floorId: "level-2",
+            direction: "undirected",
+            origin: { id: "corridor-l2", feature_type: "opening" },
+            destination: { id: "elevator-l2", feature_type: "opening" },
+          },
+        },
+        {
+          type: "Feature",
+          id: "rel-l2-node",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1209, 52.0912],
+              [5.1209, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            imdfType: "relationship",
+            level_id: "level-2",
+            floorId: "level-2",
+            direction: "undirected",
+            origin: { id: "corridor-l2", feature_type: "opening" },
+            destination: { id: "node-l2", feature_type: "opening" },
+          },
+        },
+        {
+          type: "Feature",
+          id: "rel-vertical",
+          feature_type: "relationship",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12005, 52.0902],
+              [5.12005, 52.0912],
+            ],
+          },
+          properties: {
+            kind: "relationship",
+            imdfType: "relationship",
+            level_id: "level-1",
+            floorId: "level-1",
+            direction: "undirected",
+            origin: { id: "elevator-l1", feature_type: "opening" },
+            destination: { id: "elevator-l2", feature_type: "opening" },
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const imported = await importImdfArchiveZip(
+      new File([blob], "routing-roundtrip.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+
+    const importedNavigationRelationships = imported.value.features.filter((feature) => {
+      if (feature.feature_type !== "relationship") {
+        return false;
+      }
+      const origin =
+        feature.properties.origin &&
+        typeof feature.properties.origin === "object" &&
+        !Array.isArray(feature.properties.origin)
+          ? (feature.properties.origin as { feature_type?: unknown }).feature_type
+          : undefined;
+      const destination =
+        feature.properties.destination &&
+        typeof feature.properties.destination === "object" &&
+        !Array.isArray(feature.properties.destination)
+          ? (feature.properties.destination as { feature_type?: unknown }).feature_type
+          : undefined;
+      return origin === "opening" && destination === "opening";
+    });
+
+    expect(importedNavigationRelationships.length).toBeGreaterThan(0);
+
+    const graph = buildPathGraph(imported.value.features);
+    const doorNodes = imported.value.features.filter(
+      (feature) => feature.feature_type === "opening" && feature.properties.category === "door",
+    );
+    expect(doorNodes.length).toBeGreaterThanOrEqual(2);
+    const startNode = doorNodes[0];
+    const endNode = doorNodes[1];
+    if (!startNode || !endNode) {
+      return;
+    }
+    const route = findRoute(graph, startNode.id, endNode.id);
+    expect(route.found).toBe(true);
   });
 });

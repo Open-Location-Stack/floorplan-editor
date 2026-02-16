@@ -374,6 +374,14 @@ export const buildImdfArchivePayload = ({
         : feature.properties.floorId) ?? "",
     ),
   );
+  const resolvedTypeByFeatureId = new Map(
+    featuresInBuilding.map((feature) => [
+      feature.id,
+      readImdfType(feature.feature_type) ??
+        readImdfType(feature.properties.imdfType) ??
+        readImdfType(feature.properties.kind),
+    ]),
+  );
   const featureUuidById = new Map(
     featuresInBuilding.map((feature) => [feature.id, resolveImdfUuid(feature.id)]),
   );
@@ -596,29 +604,47 @@ export const buildImdfArchivePayload = ({
     const resolvedIntermediaryId = relation?.intermediary?.featureId ?? intermediaryRef?.id;
     const resolvedDestinationId = relation?.destination?.featureId ?? destinationRef?.id;
     if (mappedType === "relationship") {
+      const resolvedOriginType =
+        originRef?.feature_type ??
+        (resolvedOriginId ? resolvedTypeByFeatureId.get(resolvedOriginId) : undefined) ??
+        "unit";
+      const resolvedIntermediaryType =
+        intermediaryRef?.feature_type ??
+        (resolvedIntermediaryId
+          ? resolvedTypeByFeatureId.get(resolvedIntermediaryId)
+          : undefined) ??
+        "unit";
+      const resolvedDestinationType =
+        destinationRef?.feature_type ??
+        (resolvedDestinationId ? resolvedTypeByFeatureId.get(resolvedDestinationId) : undefined) ??
+        "unit";
       if (resolvedOriginId) {
         baseProperties["origin"] = {
           id: featureUuidById.get(resolvedOriginId) ?? resolveImdfUuid(resolvedOriginId),
-          feature_type: originRef?.feature_type ?? "unit",
+          feature_type: resolvedOriginType,
         };
       }
       if (resolvedIntermediaryId) {
         baseProperties["intermediary"] = {
           id:
             featureUuidById.get(resolvedIntermediaryId) ?? resolveImdfUuid(resolvedIntermediaryId),
-          feature_type: intermediaryRef?.feature_type ?? "unit",
+          feature_type: resolvedIntermediaryType,
         };
       }
       if (resolvedDestinationId) {
         baseProperties["destination"] = {
           id: featureUuidById.get(resolvedDestinationId) ?? resolveImdfUuid(resolvedDestinationId),
-          feature_type: destinationRef?.feature_type ?? "unit",
+          feature_type: resolvedDestinationType,
         };
       }
+      const defaultDirection =
+        resolvedOriginType === "opening" && resolvedDestinationType === "opening"
+          ? "undirected"
+          : "directed";
       baseProperties["direction"] =
         typeof feature.properties.direction === "string"
           ? feature.properties.direction
-          : "directed";
+          : defaultDirection;
     } else {
       if (resolvedOriginId) {
         baseProperties["origin_id"] =

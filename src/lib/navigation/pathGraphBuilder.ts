@@ -376,12 +376,44 @@ const buildImdfOpeningRelationshipGraph = (features: FloorFeature[]): Navigation
   return { nodes, edges };
 };
 
+const mergeNavigationGraphs = (
+  primary: NavigationGraph,
+  secondary: NavigationGraph,
+): NavigationGraph => {
+  const nodeById = new Map<string, NavigationNode>();
+  for (const node of primary.nodes) {
+    nodeById.set(node.id, node);
+  }
+  for (const node of secondary.nodes) {
+    if (!nodeById.has(node.id)) {
+      nodeById.set(node.id, node);
+    }
+  }
+
+  const edgeIds = new Set(primary.edges.map((edge) => edge.id));
+  const edges = [...primary.edges];
+  for (const edge of secondary.edges) {
+    if (!edgeIds.has(edge.id)) {
+      edges.push(edge);
+      edgeIds.add(edge.id);
+    }
+  }
+
+  return {
+    nodes: [...nodeById.values()],
+    edges,
+  };
+};
+
 export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
+  const openingGraph = buildLegacyOpeningLineGraph(features);
   const hasImdfNavigationFeatures = features.some(
     (feature) => isNavigationNodeOpening(feature) || isNavigationPathOpening(feature),
   );
-  if (hasImdfNavigationFeatures) {
-    return buildImdfOpeningRelationshipGraph(features);
+  if (!hasImdfNavigationFeatures) {
+    return openingGraph;
   }
-  return buildLegacyOpeningLineGraph(features);
+
+  const imdfGraph = buildImdfOpeningRelationshipGraph(features);
+  return mergeNavigationGraphs(openingGraph, imdfGraph);
 };

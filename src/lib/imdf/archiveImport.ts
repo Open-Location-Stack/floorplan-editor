@@ -149,6 +149,41 @@ const readRelationshipRefId = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const readRelationshipRefType = (value: unknown): string | undefined => {
+  if (
+    isRecord(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["feature_type"] === "string"
+  ) {
+    return value["feature_type"];
+  }
+  return undefined;
+};
+
+const representativePoint = (feature: FloorFeature): [number, number] | undefined => {
+  if (feature.geometry.type === "Point") {
+    return feature.geometry.coordinates;
+  }
+  if (feature.geometry.type === "LineString") {
+    const start = feature.geometry.coordinates[0];
+    const end = feature.geometry.coordinates[feature.geometry.coordinates.length - 1];
+    if (!start || !end) {
+      return undefined;
+    }
+    return [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  }
+  const firstRing = feature.geometry.coordinates[0];
+  if (!firstRing || firstRing.length === 0) {
+    return undefined;
+  }
+  const start = firstRing[0];
+  const end = firstRing[firstRing.length - 1] ?? start;
+  if (!start || !end) {
+    return undefined;
+  }
+  return [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+};
+
 const readLevelIdFromProperties = (properties: Record<string, unknown>): string | undefined => {
   if (typeof properties["level_id"] === "string") {
     return properties["level_id"];
@@ -669,16 +704,94 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     if (!originId || !destinationId) {
       continue;
     }
-    const childFeature = features.find((feature) => feature.id === destinationId);
+    const originType = readRelationshipRefType(properties["origin"]) ?? "unit";
+    const destinationType = readRelationshipRefType(properties["destination"]) ?? "unit";
+    const originFeature = features.find((feature) => feature.id === originId);
+    const destinationFeature = features.find((feature) => feature.id === destinationId);
+
+    const isOpeningToOpening =
+      (originType === "opening" || originFeature?.feature_type === "opening") &&
+      (destinationType === "opening" || destinationFeature?.feature_type === "opening");
+    if (isOpeningToOpening) {
+      const geometry =
+        geometryFromImdf(raw["geometry"]) ??
+        (() => {
+          const originPoint = originFeature ? representativePoint(originFeature) : undefined;
+          const destinationPoint = destinationFeature
+            ? representativePoint(destinationFeature)
+            : undefined;
+          if (originPoint && destinationPoint) {
+            return {
+              type: "LineString" as const,
+              coordinates: [originPoint, destinationPoint],
+            };
+          }
+          return {
+            type: "LineString" as const,
+            coordinates: [[0, 0] as [number, number], [0, 0] as [number, number]],
+          };
+        })();
+      const relationLevelId =
+        readLevelIdFromProperties(properties) ??
+        (typeof originFeature?.properties.level_id === "string"
+          ? originFeature.properties.level_id
+          : typeof destinationFeature?.properties.level_id === "string"
+            ? destinationFeature.properties.level_id
+            : undefined);
+      const relationBuildingId = relationLevelId
+        ? levelToBuildingId.get(relationLevelId)
+        : undefined;
+      features.push({
+        type: "Feature",
+        id: raw["id"],
+        feature_type: "relationship",
+        geometry,
+        properties: {
+          kind: "relationship",
+          imdfType: "relationship",
+          ...(typeof relationLevelId === "string"
+            ? { level_id: relationLevelId, floorId: relationLevelId }
+            : {}),
+          ...(relationBuildingId ? { building_ids: [relationBuildingId] } : {}),
+          ...(typeof properties["direction"] === "string"
+            ? {
+                direction:
+                  properties["direction"] === "directed" || properties["direction"] === "undirected"
+                    ? properties["direction"]
+                    : "undirected",
+              }
+            : { direction: "undirected" }),
+          ...(originId
+            ? { origin: { id: originId, feature_type: "opening" }, origin_id: originId }
+            : {}),
+          ...(destinationId
+            ? {
+                destination: { id: destinationId, feature_type: "opening" },
+                destination_id: destinationId,
+              }
+            : {}),
+          ...(originId && destinationId
+            ? {
+                "formation:relation": {
+                  origin: { featureId: originId },
+                  destination: { featureId: destinationId },
+                },
+              }
+            : {}),
+          name: toLabelObject(properties["name"], "Navigation relationship") ?? {
+            en: "Navigation relationship",
+          },
+        },
+      });
+      continue;
+    }
+
+    const childFeature = destinationFeature;
     if (!childFeature) {
       continue;
     }
     // Relationship features are not editable in the UI.
-    // We only extract containment metadata from relationship edges.
-    const originType =
-      isRecord(properties["origin"]) && typeof properties["origin"]["feature_type"] === "string"
-        ? (properties["origin"]["feature_type"] as string)
-        : "unit";
+    // We extract containment metadata from supported containment relationships.
     if (!["level", "unit", "section", "geofence"].includes(originType)) {
       continue;
     }
