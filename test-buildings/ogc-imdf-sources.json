@@ -1,0 +1,140 @@
+{
+  "generatedAt": "2026-02-16T12:51:58.394Z",
+  "generator": "scripts/fetch-ogc-imdf-fixtures.mjs",
+  "sources": [
+    {
+      "id": "pdhoward-venue",
+      "classification": "canonical-valid",
+      "repository": "pdhoward/imdf",
+      "commit": "2393db97ced4e00cb42d4f39714c6e14234a8a87",
+      "directory": "venue",
+      "sourceUrl": "https://github.com/pdhoward/imdf/tree/2393db97ced4e00cb42d4f39714c6e14234a8a87/venue",
+      "archive": "test-buildings/ogc-imdf-pdhoward-venue.zip",
+      "files": [
+        {
+          "sourceName": "address.geojson",
+          "archiveName": "address.geojson"
+        },
+        {
+          "sourceName": "amenity.geojson",
+          "archiveName": "amenity.geojson"
+        },
+        {
+          "sourceName": "anchor.geojson",
+          "archiveName": "anchor.geojson"
+        },
+        {
+          "sourceName": "building.geojson",
+          "archiveName": "building.geojson"
+        },
+        {
+          "sourceName": "footprint.geojson",
+          "archiveName": "footprint.geojson"
+        },
+        {
+          "sourceName": "level.geojson",
+          "archiveName": "level.geojson"
+        },
+        {
+          "sourceName": "manifest.json",
+          "archiveName": "manifest.json"
+        },
+        {
+          "sourceName": "occupant.geojson",
+          "archiveName": "occupant.geojson"
+        },
+        {
+          "sourceName": "opening.geojson",
+          "archiveName": "opening.geojson"
+        },
+        {
+          "sourceName": "unit.geojson",
+          "archiveName": "unit.geojson"
+        },
+        {
+          "sourceName": "venue.geojson",
+          "archiveName": "venue.geojson"
+        }
+      ]
+    },
+    {
+      "id": "open-imdf-demo",
+      "classification": "canonical-valid",
+      "repository": "CUSCRD/Open-IMDF",
+      "commit": "271801f84cbe6f222de04eb056a43cd048c44ce6",
+      "directory": "dev_demo_sample_data/data",
+      "sourceUrl": "https://github.com/CUSCRD/Open-IMDF/tree/271801f84cbe6f222de04eb056a43cd048c44ce6/dev_demo_sample_data/data",
+      "archive": "test-buildings/ogc-imdf-open-imdf-demo.zip",
+      "files": [
+        {
+          "sourceName": "addresses.json",
+          "archiveName": "address.json"
+        },
+        {
+          "sourceName": "amenities.json",
+          "archiveName": "amenity.json"
+        },
+        {
+          "sourceName": "anchors.json",
+          "archiveName": "anchor.json"
+        },
+        {
+          "sourceName": "buildings.json",
+          "archiveName": "building.json"
+        },
+        {
+          "sourceName": "details.json",
+          "archiveName": "detail.json"
+        },
+        {
+          "sourceName": "fixtures.json",
+          "archiveName": "fixture.json"
+        },
+        {
+          "sourceName": "footprints.json",
+          "archiveName": "footprint.json"
+        },
+        {
+          "sourceName": "geofences.json",
+          "archiveName": "geofence.json"
+        },
+        {
+          "sourceName": "kiosks.json",
+          "archiveName": "kiosk.json"
+        },
+        {
+          "sourceName": "levels.json",
+          "archiveName": "level.json"
+        },
+        {
+          "sourceName": "manifests.json",
+          "archiveName": "manifest.json"
+        },
+        {
+          "sourceName": "occupants.json",
+          "archiveName": "occupant.json"
+        },
+        {
+          "sourceName": "openings.json",
+          "archiveName": "opening.json"
+        },
+        {
+          "sourceName": "relationships.json",
+          "archiveName": "relationship.json"
+        },
+        {
+          "sourceName": "sections.json",
+          "archiveName": "section.json"
+        },
+        {
+          "sourceName": "units.json",
+          "archiveName": "unit.json"
+        },
+        {
+          "sourceName": "venues.json",
+          "archiveName": "venue.json"
+        }
+      ]
+    }
+  ]
+}

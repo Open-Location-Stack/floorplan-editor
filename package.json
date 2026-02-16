@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "validate:all": "npm run typecheck && npm run lint && npm run test -- --run && npm run test:browser && npm run test:e2e && npm run build",
     "validate-imdf": "node scripts/validate-imdf.mjs",
+    "fetch:imdf:fixtures": "node scripts/fetch-ogc-imdf-fixtures.mjs",
     "setup:hooks": "git config core.hooksPath .githooks",
     "test": "node scripts/run-with-timeout.mjs --timeout=120000 -- vitest",
     "test:browser": "node scripts/run-with-timeout.mjs --timeout=120000 -- vitest run src/App.browser-smoke.test.tsx",

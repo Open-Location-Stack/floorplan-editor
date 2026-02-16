@@ -16,6 +16,30 @@ import {
 } from "./fileNames";
 import { validateImdfDatasetFiles } from "./validate";
 
+const loadArchiveFixture = async (path: string): Promise<File> => {
+  // @ts-expect-error Node typings are not included in this test tsconfig.
+  const { readFile } = await import("node:fs/promises");
+  const zipBuffer = await readFile(path);
+  return new File([zipBuffer], path, { type: "application/zip" });
+};
+
+const expectImportedReferencesToResolve = (
+  imported: Extract<Awaited<ReturnType<typeof importImdfArchiveZip>>, { ok: true }>["value"],
+) => {
+  const floorIds = new Set(imported.floors.map((floor) => floor.id));
+  const buildingIds = new Set(imported.buildings.map((building) => building.id));
+
+  for (const floor of imported.floors) {
+    expect(buildingIds.has(floor.buildingId)).toBe(true);
+  }
+
+  for (const feature of imported.features) {
+    if (typeof feature.properties.level_id === "string") {
+      expect(floorIds.has(feature.properties.level_id)).toBe(true);
+    }
+  }
+};
+
 describe("imdf archive export/import", () => {
   it("builds strict dataset files for all standard collections", () => {
     const payload = buildImdfArchivePayload({
@@ -411,11 +435,8 @@ describe("imdf archive export/import", () => {
   });
 
   it("imports osmtomimdf third-party archive in compatibility mode", async () => {
-    // @ts-expect-error Node typings are not included in this test tsconfig.
-    const { readFile } = await import("node:fs/promises");
-    const zipBuffer = await readFile("test-buildings/osmtomimdf-test-building.zip");
     const imported = await importImdfArchiveZip(
-      new File([zipBuffer], "osmtomimdf-test-building.zip", { type: "application/zip" }),
+      await loadArchiveFixture("test-buildings/osmtomimdf-test-building.zip"),
     );
     expect(imported.ok).toBe(true);
     if (!imported.ok) {
@@ -429,5 +450,45 @@ describe("imdf archive export/import", () => {
     expect(imported.value.warnings.some((warning) => warning.includes("inferred venue_id"))).toBe(
       true,
     );
+  });
+
+  it("imports pdhoward IMDF fixture with resolved references and bounded warning volume", async () => {
+    const imported = await importImdfArchiveZip(
+      await loadArchiveFixture("test-buildings/ogc-imdf-pdhoward-venue.zip"),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+
+    expect(imported.value.venues.length).toBeGreaterThan(0);
+    expect(imported.value.buildings.length).toBeGreaterThan(0);
+    expect(imported.value.floors.length).toBeGreaterThan(0);
+    expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
+    expect(imported.value.features.some((feature) => feature.feature_type === "unit")).toBe(true);
+    expectImportedReferencesToResolve(imported.value);
+
+    expect(imported.value.warnings.length).toBeGreaterThan(0);
+    expect(imported.value.warnings.length).toBeLessThan(2000);
+  });
+
+  it("imports Open-IMDF fixture and preserves level/building links", async () => {
+    const imported = await importImdfArchiveZip(
+      await loadArchiveFixture("test-buildings/ogc-imdf-open-imdf-demo.zip"),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+
+    expect(imported.value.venues.length).toBeGreaterThan(0);
+    expect(imported.value.buildings.length).toBeGreaterThan(0);
+    expect(imported.value.floors.length).toBeGreaterThan(0);
+    expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
+    expect(imported.value.features.some((feature) => feature.feature_type === "unit")).toBe(true);
+    expectImportedReferencesToResolve(imported.value);
+
+    expect(imported.value.warnings.length).toBeGreaterThan(0);
+    expect(imported.value.warnings.length).toBeLessThan(2000);
   });
 });
