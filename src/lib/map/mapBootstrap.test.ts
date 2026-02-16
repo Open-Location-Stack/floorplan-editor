@@ -57,6 +57,7 @@ type MockDrawInstance = {
 
 let lastMockMap: MockMap | undefined;
 let lastMockDraw: MockDrawInstance | undefined;
+let lastMockDrawOptions: unknown;
 let mockMarkers: MockMarker[] = [];
 
 class MockMap {
@@ -196,8 +197,9 @@ vi.mock("@mapbox/mapbox-gl-draw", () => ({
     selectedPoints: DrawFeature[] = [];
     features = new Map<string, DrawFeature>();
 
-    constructor(_options: unknown) {
+    constructor(options: unknown) {
       lastMockDraw = this;
+      lastMockDrawOptions = options;
     }
 
     onAdd = vi.fn(() => document.createElement("div"));
@@ -375,8 +377,114 @@ describe("createMapController", () => {
   beforeEach(() => {
     lastMockMap = undefined;
     lastMockDraw = undefined;
+    lastMockDrawOptions = undefined;
     mockMarkers = [];
     vi.clearAllMocks();
+  });
+
+  it("styles static opening lines with pedestrian and wheelchair path colors", async () => {
+    await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const drawOptions =
+      lastMockDrawOptions &&
+      typeof lastMockDrawOptions === "object" &&
+      !Array.isArray(lastMockDrawOptions)
+        ? (lastMockDrawOptions as {
+            styles?: Array<{ id?: string; paint?: Record<string, unknown> }>;
+          })
+        : undefined;
+
+    const staticLineStyle = drawOptions?.styles?.find(
+      (style) => style.id === "gl-draw-line-static",
+    );
+    expect(staticLineStyle).toBeDefined();
+    const lineColorExpression = JSON.stringify(staticLineStyle?.paint?.["line-color"]);
+    expect(lineColorExpression).toContain('"__draw_line_color"');
+    expect(lineColorExpression).toContain('"#dc2626"');
+  });
+
+  it("assigns green draw line color to wheelchair openings", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "wheelchair-opening",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.09],
+            ],
+          },
+          properties: {
+            category: "pedestrian",
+            accessibility: { wheelchair: true },
+          },
+        },
+      ],
+    });
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+
+    const drawAddCalls = (
+      draw.add as unknown as {
+        mock: { calls: unknown[][] };
+      }
+    ).mock.calls;
+    const addedWheelchairFeature = drawAddCalls
+      .flatMap((call: unknown[]) => {
+        const input = call[0];
+        if (!input || typeof input !== "object" || !("features" in input)) {
+          return [];
+        }
+        const featureCollection = input as {
+          features?: Array<{ id?: unknown; properties?: unknown }>;
+        };
+        return Array.isArray(featureCollection.features) ? featureCollection.features : [];
+      })
+      .find((feature: { id?: unknown }) => feature.id === "wheelchair-opening");
+
+    expect(addedWheelchairFeature).toBeDefined();
+    expect(
+      (
+        addedWheelchairFeature as {
+          properties?: {
+            __draw_line_color?: unknown;
+          };
+        }
+      ).properties?.__draw_line_color,
+    ).toBe("#16a34a");
+
+    controller.destroy();
   });
 
   it("defers overlay updates until style load", async () => {

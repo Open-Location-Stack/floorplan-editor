@@ -5,7 +5,12 @@ import { rotateAroundPoint } from "../geometry/overlayTransforms";
 import { mapPointIconIdForOpeningEndpoint } from "../icons/iconRegistry";
 import { createPointIconImage, MAP_POINT_ICON_SPECS } from "../icons/mapPointSprites";
 import { createId } from "../id";
-import { isNavigationPathOpening, readNavigationNodeCategory } from "../navigation/navigationModel";
+import {
+  isNavigationPathOpening,
+  readFeatureTypeString,
+  readNavigationNodeCategory,
+  readNavigationPathCategory,
+} from "../navigation/navigationModel";
 import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 
 type MapLibreModule = typeof import("maplibre-gl");
@@ -95,13 +100,9 @@ const featureCategoryExpression: unknown[] = [
 ];
 
 const drawLineColorExpression: unknown[] = [
-  "case",
-  ["==", featureTypeExpression, "path"],
-  "#dc2626",
-  ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, true]],
-  "#0f766e",
-  ["==", featureTypeExpression, "opening"],
-  "#0ea5e9",
+  "coalesce",
+  ["get", "user___draw_line_color"],
+  ["get", "__draw_line_color"],
   "#dc2626",
 ];
 const geofenceFillColorExpression: unknown[] = [
@@ -550,6 +551,19 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     },
   },
   {
+    id: "gl-draw-line-static",
+    type: "line",
+    filter: ["all", ["==", "$type", "LineString"], ["==", "mode", "static"]],
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    paint: {
+      "line-color": drawLineColorExpression,
+      "line-width": 3,
+    },
+  },
+  {
     id: "gl-draw-line-active",
     type: "line",
     filter: ["all", ["==", "$type", "LineString"], ["==", "active", "true"]],
@@ -888,12 +902,21 @@ const normalizeDrawFeature = (feature: GeoJsonFeature): FloorFeature | undefined
   };
 };
 
+const drawLineColorForFeature = (feature: FloorFeature): string => {
+  const featureType = readFeatureTypeString(feature);
+  if (featureType === "opening" || featureType === "path") {
+    return readNavigationPathCategory(feature) === "wheelchair" ? "#16a34a" : "#dc2626";
+  }
+  return "#dc2626";
+};
+
 const toDrawFeature = (feature: FloorFeature): GeoJsonFeature => ({
   type: "Feature",
   id: feature.id,
   geometry: structuredClone(feature.geometry),
   properties: {
     ...structuredClone(feature.properties),
+    __draw_line_color: drawLineColorForFeature(feature),
     feature_type:
       feature.feature_type ??
       (typeof feature.properties.kind === "string"
