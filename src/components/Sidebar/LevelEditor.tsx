@@ -16,11 +16,13 @@ type LevelEditorProps = {
   levelOrdinal: number;
   levelShortName: string;
   levelOutdoor: boolean;
+  levelGeometryLocked: boolean;
   onAddLevelGeometry: () => void;
   onRemoveLevelGeometry: () => void;
   onUpdateLevelOrdinal: (ordinal: number) => void;
   onUpdateLevelShortName: (shortName: string) => void;
   onUpdateLevelOutdoor: (outdoor: boolean) => void;
+  onToggleLevelGeometryLock: () => void;
   onCreateFeature: (request: AddFeatureRequest) => void;
   onOverlayUpload: (file: File) => void;
   onOverlayOpacityChange: (opacity: number) => void;
@@ -43,11 +45,13 @@ export const LevelEditor = ({
   levelOrdinal,
   levelShortName,
   levelOutdoor,
+  levelGeometryLocked,
   onAddLevelGeometry,
   onRemoveLevelGeometry,
   onUpdateLevelOrdinal,
   onUpdateLevelShortName,
   onUpdateLevelOutdoor,
+  onToggleLevelGeometryLock,
   onCreateFeature,
   onOverlayUpload,
   onOverlayOpacityChange,
@@ -170,6 +174,20 @@ export const LevelEditor = ({
             Remove geometry
           </button>
         </div>
+        <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+          <span className="label-text flex items-center gap-2">
+            <AppIcon name={levelGeometryLocked ? "lock" : "unlock"} />
+            Lock level geometry
+          </span>
+          <input
+            type="checkbox"
+            className="toggle toggle-sm"
+            checked={levelGeometryLocked}
+            onChange={onToggleLevelGeometryLock}
+            disabled={!hasLevelGeometry}
+            aria-label="Lock level geometry"
+          />
+        </label>
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onCloneLevel}>

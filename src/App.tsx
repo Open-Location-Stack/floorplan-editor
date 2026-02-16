@@ -1293,6 +1293,13 @@ function App() {
         setEditorState((current) => selectFeature(current, undefined));
         return;
       }
+      if (isLevelGeometryFeature(feature)) {
+        setEditorState((current) => selectFeature(current, undefined));
+        if (activeLevel) {
+          setSelection({ kind: "level", id: activeLevel.id });
+        }
+        return;
+      }
       if (lockedFeatureIdsSet.has(feature.id)) {
         setEditorState((current) => selectFeature(current, undefined));
         if (activeLevel) {
@@ -3181,6 +3188,7 @@ function App() {
                 featureLocked={Boolean(
                   selectedFeature && lockedFeatureIdsSet.has(selectedFeature.id),
                 )}
+                lockedFeatureIds={lockedFeatureIds}
                 overlayLocked={Boolean(activeLevel && lockedOverlayFloorIdsSet.has(activeLevel.id))}
                 onFeatureToggleLock={(featureId) => {
                   setLockedFeatureIds((current) =>

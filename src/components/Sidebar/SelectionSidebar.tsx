@@ -26,6 +26,7 @@ type SelectionSidebarProps = {
   level: Level | undefined;
   feature: FloorFeature | undefined;
   featureLocked: boolean;
+  lockedFeatureIds: string[];
   overlayLocked: boolean;
   allFeatures: FloorFeature[];
   allOverlays: FloorOverlay[];
@@ -77,6 +78,7 @@ export const SelectionSidebar = ({
   level,
   feature,
   featureLocked,
+  lockedFeatureIds,
   overlayLocked,
   allFeatures,
   overlay,
@@ -204,6 +206,9 @@ export const SelectionSidebar = ({
   if ((selection.kind === "level" || selection.kind === "floor") && level) {
     const levelFeatures = allFeatures.filter((current) => current.properties.level_id === level.id);
     const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
+    const levelGeometryLocked = Boolean(
+      levelGeometryFeature && lockedFeatureIds.includes(levelGeometryFeature.id),
+    );
     const levelShortName = (() => {
       const shortName = levelGeometryFeature?.properties.short_name;
       if (shortName && typeof shortName === "object" && !Array.isArray(shortName)) {
@@ -229,6 +234,7 @@ export const SelectionSidebar = ({
         levelOrdinal={levelOrdinal}
         levelShortName={levelShortName}
         levelOutdoor={levelOutdoor}
+        levelGeometryLocked={levelGeometryLocked}
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
         onRenameLevel={(name) => onRenameLevel(level.id, name)}
@@ -239,6 +245,12 @@ export const SelectionSidebar = ({
         onUpdateLevelOrdinal={(ordinal) => onUpdateLevelOrdinal(level.id, ordinal)}
         onUpdateLevelShortName={(shortName) => onUpdateLevelShortName(level.id, shortName)}
         onUpdateLevelOutdoor={(outdoor) => onUpdateLevelOutdoor(level.id, outdoor)}
+        onToggleLevelGeometryLock={() => {
+          if (!levelGeometryFeature) {
+            return;
+          }
+          onFeatureToggleLock(levelGeometryFeature.id);
+        }}
         onCreateFeature={onCreateFeature}
         onOverlayUpload={onOverlayUpload}
         onOverlayOpacityChange={onOverlayOpacityChange}

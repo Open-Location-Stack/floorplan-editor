@@ -96,6 +96,8 @@ const featureCategoryExpression: unknown[] = [
 
 const drawLineColorExpression: unknown[] = [
   "case",
+  ["==", featureTypeExpression, "path"],
+  "#dc2626",
   ["all", ["==", featureTypeExpression, "opening"], ["==", featureCategoryExpression, true]],
   "#0f766e",
   ["==", featureTypeExpression, "opening"],
