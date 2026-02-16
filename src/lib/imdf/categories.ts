@@ -117,3 +117,37 @@ export const hasCategoryOptions = (type: ImdfFeatureType): boolean =>
 
 export const isStandardCategoryForType = (type: ImdfFeatureType, value: string): boolean =>
   getCategoryOptions(type).some((option) => option.value === value);
+
+const LEGACY_IMPORT_CATEGORY_ALIASES: Partial<Record<ImdfFeatureType, Record<string, string>>> = {
+  opening: {
+    "pedestrian.principal": "pedestrian",
+  },
+  amenity: {
+    "restroom.male": "restroom",
+    "restroom.female": "restroom",
+  },
+  unit: {
+    "restroom.male": "restroom",
+    "restroom.female": "restroom",
+    steps: "stairs",
+  },
+  fixture: {
+    desk: "furniture",
+  },
+  occupant: {
+    restaurant: "food",
+    shopping: "retail",
+  },
+};
+
+export const normalizeLegacyImportedCategory = (
+  type: ImdfFeatureType,
+  value: string,
+): { category: string; migrated: boolean } => {
+  const normalized = value.trim();
+  const next = LEGACY_IMPORT_CATEGORY_ALIASES[type]?.[normalized];
+  if (!next) {
+    return { category: normalized, migrated: false };
+  }
+  return { category: next, migrated: true };
+};

@@ -11,6 +11,7 @@ import type {
   Venue,
 } from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
+import { normalizeLegacyImportedCategory } from "./categories";
 import {
   imdfCollectionFileName,
   imdfCollectionFileNameAliases,
@@ -233,6 +234,27 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
   }
 
   const warnings = [...validation.warnings];
+  const warnedCategoryMigrations = new Set<string>();
+  const normalizeImportedCategory = (
+    type: ImdfFeatureType,
+    rawCategory: unknown,
+    featureId: string,
+  ): string | undefined => {
+    if (typeof rawCategory !== "string" || rawCategory.trim().length === 0) {
+      return undefined;
+    }
+    const { category, migrated } = normalizeLegacyImportedCategory(type, rawCategory);
+    if (migrated) {
+      const migrationKey = `${type}:${rawCategory.trim()}=>${category}`;
+      if (!warnedCategoryMigrations.has(migrationKey)) {
+        warnedCategoryMigrations.add(migrationKey);
+        warnings.push(
+          `Feature ${featureId}: migrated legacy ${type} category "${rawCategory.trim()}" to "${category}".`,
+        );
+      }
+    }
+    return category;
+  };
   const venuesById = new Map<string, Venue>();
   const buildingsById = new Map<string, Building>();
   const floorsById = new Map<string, Floor>();
@@ -455,6 +477,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       }
       const featureName = labelToString(properties["name"]);
       const featureNameLabel = toLabelObject(properties["name"], featureName);
+      const normalizedCategory = normalizeImportedCategory(type, properties["category"], raw["id"]);
       const buildingId = levelToBuildingId.get(level_id);
       const originId =
         readRelationshipRefId(properties["origin"]) ??
@@ -481,9 +504,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           floorId: level_id,
           ...(buildingId ? { building_ids: [buildingId] } : {}),
           ...(featureNameLabel ? { name: featureNameLabel } : {}),
-          ...(typeof properties["category"] === "string"
-            ? { category: properties["category"] }
-            : {}),
+          ...(normalizedCategory ? { category: normalizedCategory } : {}),
           ...(isJsonValue(properties["door"]) ? { door: properties["door"] } : {}),
           ...(isJsonValue(properties["accessibility"])
             ? { accessibility: properties["accessibility"] }
@@ -591,6 +612,11 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
     }
     const featureName = labelToString(properties["name"]);
     const featureNameLabel = toLabelObject(properties["name"], featureName);
+    const normalizedCategory = normalizeImportedCategory(
+      "amenity",
+      properties["category"],
+      raw["id"],
+    );
     const buildingId = levelToBuildingId.get(level_id);
     features.push({
       type: "Feature",
@@ -604,7 +630,7 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         floorId: level_id,
         ...(buildingId ? { building_ids: [buildingId] } : {}),
         ...(featureNameLabel ? { name: featureNameLabel } : {}),
-        ...(typeof properties["category"] === "string" ? { category: properties["category"] } : {}),
+        ...(normalizedCategory ? { category: normalizedCategory } : {}),
         ...(isJsonValue(properties["accessibility"])
           ? { accessibility: properties["accessibility"] }
           : {}),

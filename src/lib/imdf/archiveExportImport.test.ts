@@ -467,6 +467,24 @@ describe("imdf archive export/import", () => {
     expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
     expect(imported.value.features.some((feature) => feature.feature_type === "unit")).toBe(true);
     expectImportedReferencesToResolve(imported.value);
+    expect(
+      imported.value.features.some(
+        (feature) =>
+          feature.feature_type === "opening" &&
+          feature.properties.category === "pedestrian.principal",
+      ),
+    ).toBe(false);
+    expect(
+      imported.value.features.some(
+        (feature) =>
+          feature.feature_type === "opening" && feature.properties.category === "pedestrian",
+      ),
+    ).toBe(true);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes('migrated legacy opening category "pedestrian.principal"'),
+      ),
+    ).toBe(true);
 
     expect(imported.value.warnings.length).toBeGreaterThan(0);
     expect(imported.value.warnings.length).toBeLessThan(2000);
@@ -497,6 +515,22 @@ describe("imdf archive export/import", () => {
     expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
     expect(imported.value.features.some((feature) => feature.feature_type === "unit")).toBe(true);
     expectImportedReferencesToResolve(imported.value);
+    expect(
+      imported.value.features.some(
+        (feature) => feature.feature_type === "fixture" && feature.properties.category === "desk",
+      ),
+    ).toBe(false);
+    expect(
+      imported.value.features.some(
+        (feature) =>
+          feature.feature_type === "fixture" && feature.properties.category === "furniture",
+      ),
+    ).toBe(true);
+    expect(
+      imported.value.warnings.some((warning) =>
+        warning.includes('migrated legacy fixture category "desk" to "furniture"'),
+      ),
+    ).toBe(true);
 
     expect(imported.value.warnings.length).toBeGreaterThan(0);
     expect(imported.value.warnings.length).toBeLessThan(2000);

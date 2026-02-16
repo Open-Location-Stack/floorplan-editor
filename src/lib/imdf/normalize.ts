@@ -1,4 +1,5 @@
 import type { FloorFeature, ImdfFeatureType } from "../types";
+import { normalizeLegacyImportedCategory } from "./categories";
 import { getImdfSchemaRule, isKnownImdfType } from "./schema";
 
 export type NormalizeContext = {
@@ -154,6 +155,14 @@ export const normalizeFeature = (
       name: normalizedName,
     },
   };
+
+  if (typeof normalized.properties.category === "string") {
+    const { category } = normalizeLegacyImportedCategory(
+      normalizedType,
+      normalized.properties.category,
+    );
+    normalized.properties.category = category;
+  }
 
   if (normalizedType === "level") {
     if (typeof normalized.properties.short_name !== "object" || !normalized.properties.short_name) {
