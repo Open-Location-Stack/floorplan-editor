@@ -403,12 +403,13 @@ export const GenericImdfFeatureEditor = ({
                     className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                     type="text"
                     value={textValue}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
                       setFieldText((current) => ({
                         ...current,
-                        [field.key]: event.currentTarget.value,
-                      }))
-                    }
+                        [field.key]: nextValue,
+                      }));
+                    }}
                     onBlur={() => {
                       const value = fieldText[field.key] ?? textValue;
                       const trimmed = value.trim();
@@ -455,12 +456,13 @@ export const GenericImdfFeatureEditor = ({
                   <textarea
                     className={`textarea textarea-bordered h-24 w-full font-mono text-xs ${hasError ? "textarea-error" : ""}`}
                     value={textValue}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
                       setFieldText((current) => ({
                         ...current,
-                        [field.key]: event.currentTarget.value,
-                      }))
-                    }
+                        [field.key]: nextValue,
+                      }));
+                    }}
                     onBlur={() => {
                       const value = fieldText[field.key] ?? textValue;
                       if (value.trim().length === 0) {
