@@ -22,4 +22,7 @@ See `skills/_template/SKILL.md` for a starting point.
 - `build-test-run`: run, build, test, lint, and preview the app.
 - `dependency-updates`: update npm dependencies and verify the project.
 - `done-gate-tests`: require full test validation before declaring a task done.
+- `increment-definition-of-done`: apply per-increment DoD criteria from planning docs.
+- `increment-slice-guardrails`: enforce vertical-slice delivery, exit criteria, and ADR/changelog outputs.
 - `project-setup`: install dependencies, reset node_modules when needed, and verify setup.
+- `quality-bar-guardrails`: enforce planning-level mandatory checks and guardrail regressions.
