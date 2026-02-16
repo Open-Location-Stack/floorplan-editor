@@ -3311,13 +3311,24 @@ function App() {
                           stableNodeGroupKey(feature) === groupKey,
                       );
                       const groupedByLevel = new Map<string, FloorFeature>();
+                      const targetLevelId =
+                        typeof target.properties.level_id === "string"
+                          ? target.properties.level_id
+                          : undefined;
                       for (const node of grouped) {
                         const nodeLevel =
                           typeof node.properties.level_id === "string"
                             ? node.properties.level_id
                             : undefined;
                         if (nodeLevel) {
-                          groupedByLevel.set(nodeLevel, node);
+                          const existing = groupedByLevel.get(nodeLevel);
+                          if (!existing) {
+                            groupedByLevel.set(nodeLevel, node);
+                            continue;
+                          }
+                          if (node.id === target.id && nodeLevel === targetLevelId) {
+                            groupedByLevel.set(nodeLevel, node);
+                          }
                         }
                       }
 
@@ -3328,7 +3339,8 @@ function App() {
                       const targetPoint = openingRepresentativePoint(target);
 
                       for (const levelId of selectedLevels) {
-                        const existingNode = groupedByLevel.get(levelId);
+                        const existingNode =
+                          levelId === targetLevelId ? target : groupedByLevel.get(levelId);
                         if (existingNode) {
                           nextNodes.push(existingNode);
                           continue;

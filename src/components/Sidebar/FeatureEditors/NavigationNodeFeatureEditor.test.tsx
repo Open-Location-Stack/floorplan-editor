@@ -51,7 +51,7 @@ describe("NavigationNodeFeatureEditor", () => {
     );
 
     expect(screen.getByText("Connected levels")).toBeInTheDocument();
-    const levelTwoCheckbox = screen.getByRole("checkbox", { name: "level-2 - Level 2" });
+    const levelTwoCheckbox = screen.getByRole("checkbox", { name: "Level 2 (level-2)" });
     fireEvent.click(levelTwoCheckbox);
     expect(onUpdateProperty).toHaveBeenCalledWith("__navigation_levels", ["level-1"]);
   });

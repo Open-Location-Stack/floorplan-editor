@@ -32,6 +32,9 @@ const CATEGORY_LABELS: Record<NavigationNodeCategory, string> = {
   exit: "Exit",
 };
 
+const abbreviateLevelId = (value: string): string =>
+  value.length > 14 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+
 export const NavigationNodeFeatureEditor = ({
   feature,
   allFeatures,
@@ -124,16 +127,20 @@ export const NavigationNodeFeatureEditor = ({
               <div className="grid gap-2">
                 {levels.map((level) => {
                   const checked = selectedLevels.includes(level.id);
+                  const label = `${level.name} (${abbreviateLevelId(level.id)})`;
                   return (
                     <label
                       key={level.id}
                       className="label cursor-pointer rounded-box border border-base-300 px-3 py-2"
                     >
-                      <span className="label-text">{`${level.id} - ${level.name}`}</span>
+                      <span className="label-text min-w-0 flex-1 truncate" title={label}>
+                        {label}
+                      </span>
                       <input
                         type="checkbox"
                         className="checkbox checkbox-sm"
                         checked={checked}
+                        aria-label={label}
                         onChange={(event) => {
                           const next = event.currentTarget.checked
                             ? [...new Set([...selectedLevels, level.id])]
