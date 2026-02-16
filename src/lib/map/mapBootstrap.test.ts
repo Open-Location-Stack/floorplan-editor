@@ -7,6 +7,7 @@ type EventHandler = (payload?: unknown) => void;
 type DrawFeature = {
   type: "Feature";
   id: string;
+  feature_type?: string;
   geometry: {
     type: "Point" | "LineString" | "Polygon";
     coordinates: unknown;
@@ -350,6 +351,7 @@ const lineFeatureCollection = (): FeatureCollection => ({
     {
       type: "Feature",
       id: "path-1",
+      feature_type: "opening",
       geometry: {
         type: "LineString",
         coordinates: [
@@ -359,7 +361,10 @@ const lineFeatureCollection = (): FeatureCollection => ({
         ],
       },
       properties: {
-        kind: "path",
+        kind: "opening",
+        feature_type: "opening",
+        category: "pedestrian",
+        level_id: "f1",
         floorId: "f1",
       },
     },
@@ -964,6 +969,45 @@ describe("createMapController", () => {
     );
   });
 
+  it("renders snap marker overlay source and layer on load", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    map.emit("load");
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      "snap-marker-overlay",
+      expect.objectContaining({
+        type: "geojson",
+      }),
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "snap-marker-overlay-symbol",
+        type: "symbol",
+        source: "snap-marker-overlay",
+      }),
+    );
+
+    controller.destroy();
+  });
+
   it("emits draw feature mutations", async () => {
     const onFeaturesChange = vi.fn();
     const controller = await createMapController(
@@ -1166,6 +1210,385 @@ describe("createMapController", () => {
         }),
       ]),
     );
+
+    controller.destroy();
+  });
+
+  it("emits square snap markers for edge snaps while editing a pedestrian path", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-line",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1195, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.090001],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "pedestrian",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    draw.mode = "direct_select";
+    draw.selectedIds = ["source-path"];
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const snapSource = map.getSource("snap-marker-overlay") as
+      | {
+          setData: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(snapSource).toBeDefined();
+    if (!snapSource) {
+      throw new Error("Expected snap marker source");
+    }
+
+    const latest = snapSource.setData.mock.lastCall?.[0] as
+      | { features?: Array<{ properties?: { snap_state?: string } }> }
+      | undefined;
+    expect(latest?.features?.length).toBeGreaterThan(0);
+    expect(latest?.features?.[0]?.properties?.snap_state).toBe("snapped");
+
+    controller.destroy();
+  });
+
+  it("emits graph-ready snap markers for connector endpoint snaps", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "stairs-node",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.1205, 52.09],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "stairs",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.1205, 52.090001],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "pedestrian",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    draw.mode = "direct_select";
+    draw.selectedIds = ["source-path"];
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const snapSource = map.getSource("snap-marker-overlay") as
+      | {
+          setData: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(snapSource).toBeDefined();
+    if (!snapSource) {
+      throw new Error("Expected snap marker source");
+    }
+
+    const latest = snapSource.setData.mock.lastCall?.[0] as
+      | { features?: Array<{ properties?: { snap_state?: string } }> }
+      | undefined;
+    expect(latest?.features?.length).toBeGreaterThan(0);
+    expect(latest?.features?.[0]?.properties?.snap_state).toBe("graph_ready");
+
+    controller.destroy();
+  });
+
+  it("emits snap markers during direct_select vertex drag previews", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "target-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.120001, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "pedestrian",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    draw.mode = "direct_select";
+    draw.selectedIds = ["source-path"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.120001, 52.09],
+        },
+        properties: {
+          meta: "vertex",
+          parent: "source-path",
+          coord_path: "0",
+        },
+      },
+    ];
+
+    map.emit("mousemove", {
+      point: { x: 100, y: 100 },
+      lngLat: { lng: 5.120001, lat: 52.09 },
+    });
+
+    const snapSource = map.getSource("snap-marker-overlay") as
+      | {
+          setData: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(snapSource).toBeDefined();
+    if (!snapSource) {
+      throw new Error("Expected snap marker source");
+    }
+
+    const latest = snapSource.setData.mock.lastCall?.[0] as
+      | { features?: Array<{ properties?: { snap_state?: string } }> }
+      | undefined;
+    expect(latest?.features?.length).toBeGreaterThan(0);
+    expect(latest?.features?.[0]?.properties?.snap_state).toBe("snapped");
+
+    controller.destroy();
+  });
+
+  it("clears snap markers when no snap candidate remains", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "source-path",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.120001, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "pedestrian",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    draw.mode = "direct_select";
+    draw.selectedIds = ["source-path"];
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const sourcePath = draw.get("source-path");
+    expect(sourcePath).toBeDefined();
+    if (!sourcePath || sourcePath.geometry.type !== "LineString") {
+      throw new Error("Expected source path feature");
+    }
+    sourcePath.geometry.coordinates = [
+      [5.13, 52.1],
+      [5.131, 52.101],
+    ];
+    draw.features.set("source-path", sourcePath);
+
+    map.emit("draw.update", {
+      features: [{ id: "source-path" }],
+    });
+
+    const snapSource = map.getSource("snap-marker-overlay") as
+      | {
+          setData: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(snapSource).toBeDefined();
+    if (!snapSource) {
+      throw new Error("Expected snap marker source");
+    }
+
+    const latest = snapSource.setData.mock.lastCall?.[0] as { features?: unknown[] } | undefined;
+    expect(latest?.features).toEqual([]);
 
     controller.destroy();
   });
@@ -2566,6 +2989,163 @@ describe("createMapController", () => {
         }),
       ]),
     );
+
+    controller.destroy();
+  });
+
+  it("does not split non-path opening lines", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "stairs-node",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.09],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "stairs",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    map.emit("load");
+    draw.selectedIds = ["stairs-node"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.09],
+        },
+        properties: {},
+      },
+    ];
+    draw.delete.mockClear();
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+    onFeaturesChange.mockClear();
+
+    controller.splitPathSegment();
+
+    const unchangedFeature = draw.get("stairs-node");
+    expect(unchangedFeature).toBeDefined();
+    if (!unchangedFeature || unchangedFeature.geometry.type !== "LineString") {
+      throw new Error("Expected stairs opening feature");
+    }
+    expect(unchangedFeature.geometry.coordinates).toEqual([
+      [5.12, 52.09],
+      [5.121, 52.09],
+    ]);
+    expect(draw.delete).not.toHaveBeenCalled();
+    expect(draw.changeMode).not.toHaveBeenCalled();
+    expect(onFeaturesChange).not.toHaveBeenCalled();
+
+    controller.destroy();
+  });
+
+  it("does not fork from non-path opening lines", async () => {
+    const onInteractionModeChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange,
+        onOverlayCornersChange: vi.fn(),
+        onVertexSelectionChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "elevator-node",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.09],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "elevator",
+            level_id: "f1",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+    map.emit("load");
+    draw.selectedIds = ["elevator-node"];
+    draw.selectedPoints = [
+      {
+        type: "Feature",
+        id: "vertex-1",
+        geometry: {
+          type: "Point",
+          coordinates: [5.121, 52.09],
+        },
+        properties: {},
+      },
+    ];
+    draw.add.mockClear();
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+    onInteractionModeChange.mockClear();
+
+    controller.forkPathAtNode();
+
+    expect(draw.add).not.toHaveBeenCalled();
+    expect(draw.changeMode).not.toHaveBeenCalledWith("draw_line_string", expect.anything());
+    expect(onInteractionModeChange).not.toHaveBeenCalledWith("line");
 
     controller.destroy();
   });

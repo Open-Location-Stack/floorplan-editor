@@ -57,6 +57,10 @@ const ROUTE_LINE_LAYER_ID = "route-overlay-line";
 const ROUTE_POINT_LAYER_ID = "route-overlay-point";
 const OPENING_ENDPOINT_SOURCE_ID = "opening-endpoint-overlay";
 const OPENING_ENDPOINT_LAYER_ID = "opening-endpoint-overlay-symbol";
+const SNAP_MARKER_SOURCE_ID = "snap-marker-overlay";
+const SNAP_MARKER_LAYER_ID = "snap-marker-overlay-symbol";
+const SNAP_MARKER_ICON_ID = "point-icon-snap-marker";
+const SNAP_MARKER_GRAPH_READY_ICON_ID = "point-icon-snap-marker-graph-ready";
 const OVERLAY_HANDLE_SIZE = 12;
 const OVERLAY_CENTER_HANDLE_SIZE = 16;
 const OVERLAY_ROTATE_HANDLE_SIZE = 14;
@@ -182,7 +186,16 @@ const openingEndpointIconExpression: unknown[] = [
   ],
 ];
 
+const snapMarkerIconExpression: unknown[] = [
+  "match",
+  ["get", "snap_state"],
+  "graph_ready",
+  SNAP_MARKER_GRAPH_READY_ICON_ID,
+  SNAP_MARKER_ICON_ID,
+];
+
 type OpeningEndpointRole = "node" | "connector";
+type SnapMarkerState = "snapped" | "graph_ready";
 const NAVIGATION_NODE_CATEGORY_VALUES = new Set([
   "entrance",
   "door",
@@ -207,6 +220,17 @@ type OpeningEndpointMarker = FloorFeature & {
   };
 };
 
+type SnapMarkerFeature = FloorFeature & {
+  geometry: {
+    type: "Point";
+    coordinates: Coordinates;
+  };
+  properties: FloorFeature["properties"] & {
+    feature_type: "snap_marker";
+    snap_state: SnapMarkerState;
+  };
+};
+
 const createOpeningEndpointMarker = (
   sourceFeature: FloorFeature,
   category: string,
@@ -226,6 +250,88 @@ const createOpeningEndpointMarker = (
     endpoint_role: endpointIndex === 0 ? "node" : "connector",
     category,
     feature_type: "opening_endpoint_marker",
+  },
+});
+
+const SNAP_MARKER_ICON_SIZE = 20;
+const SNAP_MARKER_INSET = 4;
+
+const createFallbackSnapMarkerImage = (fillColor: [number, number, number]) => {
+  const data = new Uint8Array(SNAP_MARKER_ICON_SIZE * SNAP_MARKER_ICON_SIZE * 4);
+  for (let y = SNAP_MARKER_INSET; y < SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET; y += 1) {
+    for (let x = SNAP_MARKER_INSET; x < SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET; x += 1) {
+      const offset = (y * SNAP_MARKER_ICON_SIZE + x) * 4;
+      data[offset] = fillColor[0];
+      data[offset + 1] = fillColor[1];
+      data[offset + 2] = fillColor[2];
+      data[offset + 3] = 255;
+    }
+  }
+  return {
+    width: SNAP_MARKER_ICON_SIZE,
+    height: SNAP_MARKER_ICON_SIZE,
+    data,
+  };
+};
+
+const createSnapMarkerImage = (
+  fillColor: string,
+  strokeColor: string,
+): {
+  width: number;
+  height: number;
+  data: Uint8Array;
+} => {
+  if (typeof document === "undefined") {
+    return createFallbackSnapMarkerImage([15, 23, 42]);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = SNAP_MARKER_ICON_SIZE;
+  canvas.height = SNAP_MARKER_ICON_SIZE;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return createFallbackSnapMarkerImage([15, 23, 42]);
+  }
+
+  context.clearRect(0, 0, SNAP_MARKER_ICON_SIZE, SNAP_MARKER_ICON_SIZE);
+  context.fillStyle = fillColor;
+  context.strokeStyle = strokeColor;
+  context.lineWidth = 2;
+  context.fillRect(
+    SNAP_MARKER_INSET,
+    SNAP_MARKER_INSET,
+    SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET * 2,
+    SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET * 2,
+  );
+  context.strokeRect(
+    SNAP_MARKER_INSET + 0.5,
+    SNAP_MARKER_INSET + 0.5,
+    SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET * 2 - 1,
+    SNAP_MARKER_ICON_SIZE - SNAP_MARKER_INSET * 2 - 1,
+  );
+  const imageData = context.getImageData(0, 0, SNAP_MARKER_ICON_SIZE, SNAP_MARKER_ICON_SIZE);
+  return {
+    width: imageData.width,
+    height: imageData.height,
+    data: new Uint8Array(imageData.data),
+  };
+};
+
+const createSnapMarkerFeature = (
+  coordinate: Coordinates,
+  state: SnapMarkerState,
+  index: number,
+): SnapMarkerFeature => ({
+  type: "Feature",
+  id: `snap-marker:${index}`,
+  feature_type: "formation:snap_marker",
+  geometry: {
+    type: "Point",
+    coordinates: coordinate,
+  },
+  properties: {
+    feature_type: "snap_marker",
+    snap_state: state,
   },
 });
 
@@ -993,6 +1099,33 @@ type SnapCandidate = {
   targetSegmentIndex?: number;
 };
 
+type SnapMarkerCandidate = {
+  coordinate: Coordinates;
+  state: SnapMarkerState;
+};
+
+const readStringProperty = (
+  properties: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined => {
+  if (!properties) {
+    return undefined;
+  }
+  const value = properties[key];
+  return typeof value === "string" ? value : undefined;
+};
+
+const readBooleanProperty = (
+  properties: Record<string, unknown> | undefined,
+  key: string,
+): boolean | undefined => {
+  if (!properties) {
+    return undefined;
+  }
+  const value = properties[key];
+  return typeof value === "boolean" ? value : undefined;
+};
+
 type ActiveDrawPointerTarget =
   | {
       geometryType: "LineString";
@@ -1255,6 +1388,96 @@ const activeDrawPointerTargetForFeature = (
   return undefined;
 };
 
+const isNavigationPathLineFeature = (feature: GeoJsonFeature | undefined): boolean => {
+  if (!feature) {
+    return false;
+  }
+  const normalized = normalizeDrawFeature(feature);
+  return Boolean(
+    normalized && normalized.geometry.type === "LineString" && isNavigationPathOpening(normalized),
+  );
+};
+
+const canSplitOrForkLineFeature = (feature: GeoJsonFeature | undefined): boolean => {
+  if (!feature || feature.geometry?.type !== "LineString") {
+    return false;
+  }
+
+  const properties =
+    feature.properties &&
+    typeof feature.properties === "object" &&
+    !Array.isArray(feature.properties)
+      ? (feature.properties as Record<string, unknown>)
+      : undefined;
+  const category =
+    readStringProperty(properties, "category") ?? readStringProperty(properties, "user_category");
+  if (category && NAVIGATION_NODE_CATEGORY_VALUES.has(category)) {
+    return false;
+  }
+  if (category === "pedestrian") {
+    return true;
+  }
+
+  const featureType =
+    readStringProperty(properties, "feature_type") ??
+    readStringProperty(properties, "user_feature_type") ??
+    readStringProperty(properties, "kind") ??
+    readStringProperty(properties, "user_kind");
+  if (featureType === "relationship") {
+    return false;
+  }
+  if (featureType === "path") {
+    return true;
+  }
+  if (featureType === "opening") {
+    return true;
+  }
+
+  const rawAccessibility = properties?.["accessibility"];
+  const rawUserAccessibility = properties?.["user_accessibility"];
+  const accessibility =
+    (rawAccessibility && typeof rawAccessibility === "object"
+      ? (rawAccessibility as Record<string, unknown>)
+      : undefined) ??
+    (rawUserAccessibility && typeof rawUserAccessibility === "object"
+      ? (rawUserAccessibility as Record<string, unknown>)
+      : undefined);
+  if (readBooleanProperty(accessibility, "wheelchair") === true) {
+    return true;
+  }
+
+  return false;
+};
+
+const isNavigationNodeLineFeature = (feature: GeoJsonFeature | undefined): boolean => {
+  if (!feature) {
+    return false;
+  }
+  const normalized = normalizeDrawFeature(feature);
+  return Boolean(
+    normalized &&
+      normalized.geometry.type === "LineString" &&
+      normalized.geometry.coordinates.length === 2 &&
+      readNavigationNodeCategory(normalized),
+  );
+};
+
+const snapMarkerStateForCandidate = (
+  candidate: SnapCandidate,
+  sourceFeature: GeoJsonFeature,
+  drawFeaturesById: Map<string, GeoJsonFeature>,
+): SnapMarkerState => {
+  if (!isNavigationPathLineFeature(sourceFeature)) {
+    return "snapped";
+  }
+  if (candidate.kind !== "vertex" || candidate.targetVertexIndex !== 1) {
+    return "snapped";
+  }
+
+  const targetFeature = drawFeaturesById.get(candidate.targetFeatureId);
+  return isNavigationNodeLineFeature(targetFeature) ? "graph_ready" : "snapped";
+};
+
 const angleFromCenter = (center: Coordinates, point: Coordinates): number => {
   const localPoint = toLocalMeters(point, center);
   return Math.atan2(localPoint.y, localPoint.x);
@@ -1429,6 +1652,7 @@ export const createMapController = async (
   let currentFeatures: FeatureCollection = emptyFeatureCollection();
   let currentLockedFeatureIds = new Set<string>();
   let currentRouteOverlay: FeatureCollection = emptyFeatureCollection();
+  let currentSnapMarkers: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
   let currentRoutePickEnabled = false;
@@ -2146,6 +2370,34 @@ export const createMapController = async (
     map.moveLayer(ROUTE_POINT_LAYER_ID);
   };
 
+  const applySnapMarkerOverlay = () => {
+    const source = map.getSource(SNAP_MARKER_SOURCE_ID);
+    if (isGeoJsonSourceWithSetData(source)) {
+      source.setData(currentSnapMarkers);
+    } else if (!source) {
+      map.addSource(SNAP_MARKER_SOURCE_ID, {
+        type: "geojson",
+        data: currentSnapMarkers,
+      });
+    }
+
+    if (!map.getLayer(SNAP_MARKER_LAYER_ID)) {
+      map.addLayer({
+        id: SNAP_MARKER_LAYER_ID,
+        type: "symbol",
+        source: SNAP_MARKER_SOURCE_ID,
+        layout: {
+          "icon-image": snapMarkerIconExpression as never,
+          "icon-size": 0.8,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
+    }
+
+    map.moveLayer(SNAP_MARKER_LAYER_ID);
+  };
+
   const applyOpeningEndpointOverlay = () => {
     const endpointFeatures = deriveNavigationOpeningEndpointMarkers(currentFeatures.features);
     const source = map.getSource(OPENING_ENDPOINT_SOURCE_ID);
@@ -2184,6 +2436,59 @@ export const createMapController = async (
         pixelRatio: 2,
       });
     }
+    if (!map.hasImage(SNAP_MARKER_ICON_ID)) {
+      map.addImage(SNAP_MARKER_ICON_ID, createSnapMarkerImage("#ffffff", "#0f172a"), {
+        pixelRatio: 2,
+      });
+    }
+    if (!map.hasImage(SNAP_MARKER_GRAPH_READY_ICON_ID)) {
+      map.addImage(SNAP_MARKER_GRAPH_READY_ICON_ID, createSnapMarkerImage("#22c55e", "#14532d"), {
+        pixelRatio: 2,
+      });
+    }
+  };
+
+  const setSnapMarkerCandidates = (candidates: SnapMarkerCandidate[]) => {
+    if (!currentSnapEnabled || candidates.length === 0) {
+      currentSnapMarkers = emptyFeatureCollection();
+      if (isStyleReady) {
+        applySnapMarkerOverlay();
+      }
+      return;
+    }
+
+    const statesByCoordinate = new Map<string, SnapMarkerState>();
+    const coordinatesByCoordinate = new Map<string, Coordinates>();
+    for (const candidate of candidates) {
+      const key = coordinateKey(candidate.coordinate);
+      const existing = statesByCoordinate.get(key);
+      if (existing === "graph_ready") {
+        continue;
+      }
+      statesByCoordinate.set(
+        key,
+        existing === "snapped" || candidate.state === "graph_ready" ? candidate.state : "snapped",
+      );
+      coordinatesByCoordinate.set(key, candidate.coordinate);
+    }
+
+    const markerFeatures = [...coordinatesByCoordinate.entries()].map(([key, coordinate], index) =>
+      createSnapMarkerFeature(coordinate, statesByCoordinate.get(key) ?? "snapped", index),
+    );
+    currentSnapMarkers = {
+      type: "FeatureCollection",
+      features: markerFeatures,
+    };
+    if (isStyleReady) {
+      applySnapMarkerOverlay();
+    }
+  };
+
+  const clearSnapMarkers = () => {
+    currentSnapMarkers = emptyFeatureCollection();
+    if (isStyleReady) {
+      applySnapMarkerOverlay();
+    }
   };
 
   const applyPendingState = () => {
@@ -2195,6 +2500,7 @@ export const createMapController = async (
       applyFeatures();
       applyOpeningEndpointOverlay();
       applyRouteOverlay();
+      applySnapMarkerOverlay();
       applyInteractionMode();
       applySelection();
       applyOverlay();
@@ -2285,6 +2591,7 @@ export const createMapController = async (
 
   const applySnappingToFeatureIds = (featureIds: string[], phase: "create" | "update"): void => {
     if (!currentSnapEnabled || featureIds.length === 0) {
+      clearSnapMarkers();
       return;
     }
 
@@ -2300,6 +2607,12 @@ export const createMapController = async (
 
     const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
     const allDrawFeatures = draw.getAll().features;
+    const drawFeaturesById = new Map(
+      allDrawFeatures
+        .map((feature) => [parseFeatureId(feature.id), feature] as const)
+        .filter((entry): entry is [string, GeoJsonFeature] => Boolean(entry[0])),
+    );
+    const snapMarkerCandidates: SnapMarkerCandidate[] = [];
     const updatesById = new Map<string, GeoJsonFeature>();
     const getWorkingFeature = (id: string): GeoJsonFeature | undefined =>
       updatesById.get(id) ?? draw.get(id);
@@ -2325,7 +2638,14 @@ export const createMapController = async (
         }
 
         const candidate = findBestSnapCandidate(coordinate, targets, maxDistanceMeters, center);
-        if (!candidate || coordinateEquals(coordinate, candidate.coordinate)) {
+        if (!candidate) {
+          continue;
+        }
+        snapMarkerCandidates.push({
+          coordinate: candidate.coordinate,
+          state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+        });
+        if (coordinateEquals(coordinate, candidate.coordinate)) {
           continue;
         }
 
@@ -2346,6 +2666,15 @@ export const createMapController = async (
         }
 
         const snapped = snapCoordinates(coordinates, targets, maxDistanceMeters, center);
+        for (const candidate of snapped.candidates) {
+          if (!candidate) {
+            continue;
+          }
+          snapMarkerCandidates.push({
+            coordinate: candidate.coordinate,
+            state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+          });
+        }
         const nextCoordinates = [...snapped.coordinates];
         if (!snapped.changed) {
           continue;
@@ -2368,6 +2697,15 @@ export const createMapController = async (
         }
 
         const snapped = snapCoordinates(ring, targets, maxDistanceMeters, center);
+        for (const candidate of snapped.candidates) {
+          if (!candidate) {
+            continue;
+          }
+          snapMarkerCandidates.push({
+            coordinate: candidate.coordinate,
+            state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+          });
+        }
         if (!snapped.changed) {
           continue;
         }
@@ -2386,6 +2724,7 @@ export const createMapController = async (
       featureId,
       feature,
     }));
+    setSnapMarkerCandidates(snapMarkerCandidates);
 
     if (updates.length === 0) {
       return;
@@ -2411,17 +2750,73 @@ export const createMapController = async (
 
   const applyLivePointerSnapping = (): void => {
     if (!currentSnapEnabled) {
+      clearSnapMarkers();
       return;
     }
 
     const drawMode = draw.getMode();
+    if (drawMode === "direct_select") {
+      const selectedVertex = getSelectedLineVertex();
+      if (!selectedVertex) {
+        clearSnapMarkers();
+        return;
+      }
+
+      const sourceFeature = draw.get(selectedVertex.featureId);
+      if (!sourceFeature) {
+        clearSnapMarkers();
+        return;
+      }
+
+      const allDrawFeatures = draw.getAll().features;
+      const targets = collectSnapTargets(allDrawFeatures, selectedVertex.featureId);
+      if (targets.vertices.length === 0 && targets.edges.length === 0) {
+        clearSnapMarkers();
+        return;
+      }
+
+      const zoomLevel = map.getZoom();
+      const maxDistanceMeters = effectiveSnapDistanceMeters(snapBaseDistanceMeters, zoomLevel);
+      if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
+        clearSnapMarkers();
+        return;
+      }
+
+      const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
+      const candidate = findBestSnapCandidate(
+        selectedVertex.coordinate,
+        targets,
+        maxDistanceMeters,
+        center,
+      );
+      if (!candidate) {
+        clearSnapMarkers();
+        return;
+      }
+
+      const drawFeaturesById = new Map(
+        allDrawFeatures
+          .map((feature) => [parseFeatureId(feature.id), feature] as const)
+          .filter((entry): entry is [string, GeoJsonFeature] => Boolean(entry[0])),
+      );
+      setSnapMarkerCandidates([
+        {
+          coordinate: candidate.coordinate,
+          state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+        },
+      ]);
+      return;
+    }
+
     if (drawMode !== "draw_line_string" && drawMode !== "draw_polygon") {
+      clearSnapMarkers();
       return;
     }
 
     const allDrawFeatures = draw.getAll().features;
     const activeFeatureIds = getActiveDrawFeatureIds(allDrawFeatures);
     if (activeFeatureIds.length === 0) {
+      clearSnapMarkers();
       return;
     }
 
@@ -2436,6 +2831,12 @@ export const createMapController = async (
       featureId: string;
       feature: GeoJsonFeature;
     }> = [];
+    const drawFeaturesById = new Map(
+      allDrawFeatures
+        .map((feature) => [parseFeatureId(feature.id), feature] as const)
+        .filter((entry): entry is [string, GeoJsonFeature] => Boolean(entry[0])),
+    );
+    const snapMarkerCandidates: SnapMarkerCandidate[] = [];
 
     for (const featureId of activeFeatureIds) {
       const sourceFeature = draw.get(featureId);
@@ -2465,7 +2866,14 @@ export const createMapController = async (
           maxDistanceMeters,
           center,
         );
-        if (!candidate || coordinateEquals(activeCoordinate, candidate.coordinate)) {
+        if (!candidate) {
+          continue;
+        }
+        snapMarkerCandidates.push({
+          coordinate: candidate.coordinate,
+          state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+        });
+        if (coordinateEquals(activeCoordinate, candidate.coordinate)) {
           continue;
         }
 
@@ -2490,7 +2898,14 @@ export const createMapController = async (
       }
 
       const candidate = findBestSnapCandidate(activeCoordinate, targets, maxDistanceMeters, center);
-      if (!candidate || coordinateEquals(activeCoordinate, candidate.coordinate)) {
+      if (!candidate) {
+        continue;
+      }
+      snapMarkerCandidates.push({
+        coordinate: candidate.coordinate,
+        state: snapMarkerStateForCandidate(candidate, sourceFeature, drawFeaturesById),
+      });
+      if (coordinateEquals(activeCoordinate, candidate.coordinate)) {
         continue;
       }
 
@@ -2514,6 +2929,7 @@ export const createMapController = async (
         },
       });
     }
+    setSnapMarkerCandidates(snapMarkerCandidates);
 
     if (updates.length === 0) {
       return;
@@ -2580,6 +2996,7 @@ export const createMapController = async (
       return;
     }
 
+    clearSnapMarkers();
     emitFeaturesChange();
     emitVertexSelectionChange();
   });
@@ -2812,6 +3229,9 @@ export const createMapController = async (
     },
     setSnapEnabled: (enabled) => {
       currentSnapEnabled = enabled;
+      if (!enabled) {
+        clearSnapMarkers();
+      }
     },
     setView: (center, zoom) => {
       map.flyTo({
@@ -2867,6 +3287,9 @@ export const createMapController = async (
 
       const sourceFeature = draw.get(selectedVertex.featureId);
       if (!sourceFeature || sourceFeature.geometry.type !== "LineString") {
+        return;
+      }
+      if (!canSplitOrForkLineFeature(sourceFeature)) {
         return;
       }
 
@@ -2936,6 +3359,9 @@ export const createMapController = async (
 
       const sourceFeature = draw.get(selectedVertex.featureId);
       if (!sourceFeature || sourceFeature.geometry.type !== "LineString") {
+        return;
+      }
+      if (!canSplitOrForkLineFeature(sourceFeature)) {
         return;
       }
 

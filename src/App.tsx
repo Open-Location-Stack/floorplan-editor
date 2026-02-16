@@ -2757,7 +2757,12 @@ function App() {
 
   const canUndo = projectUndoStack.length > 0 || editorState.undoStack.length > 0;
   const canRedo = projectRedoStack.length > 0 || editorState.redoStack.length > 0;
-  const canEditPathNode = drawMode === "select" && hasSelectedVertex;
+  const selectedFeatureIsBlockedForSplitFork = Boolean(
+    selectedFeature &&
+      (selectedFeature.geometry.type !== "LineString" || isNavigationNodeOpening(selectedFeature)),
+  );
+  const canEditPathNode =
+    drawMode === "select" && hasSelectedVertex && !selectedFeatureIsBlockedForSplitFork;
   const trimmedLocationQuery = locationQuery.trim();
   const showLocationSearchPopup =
     locationSearchFocused &&

@@ -12,6 +12,7 @@ const MockMapCanvas = ({
   onViewStateChange,
   onFeatureSelectionChange,
   onInteractionModeChange,
+  onVertexSelectionChange,
   onMapClick: _onMapClick,
   onFeaturesChange,
   drawMode,
@@ -39,6 +40,7 @@ const MockMapCanvas = ({
   onViewStateChange: (center: [number, number], zoom: number) => void;
   onFeatureSelectionChange: (featureId: string | undefined) => void;
   onInteractionModeChange: (mode: "select" | "point" | "line" | "polygon") => void;
+  onVertexSelectionChange: (hasSelectedVertex: boolean) => void;
   onMapClick: (coordinate: [number, number]) => void;
   onFeaturesChange: (
     features: Array<{
@@ -103,6 +105,34 @@ const MockMapCanvas = ({
         }}
       >
         select feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-select-path-feature"
+        onClick={() => {
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("path-1");
+        }}
+      >
+        select path feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-select-vertex"
+        onClick={() => {
+          onVertexSelectionChange(true);
+        }}
+      >
+        select vertex
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-clear-vertex"
+        onClick={() => {
+          onVertexSelectionChange(false);
+        }}
+      >
+        clear vertex
       </button>
       <button
         type="button"
@@ -991,6 +1021,80 @@ describe("App browser smoke", () => {
 
     fireEvent.click(snapToggle);
     expect(snapToggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("enables split and fork only for selected path openings with a selected vertex", async () => {
+    mockRepository.loadProject.mockResolvedValue({
+      id: "default-project",
+      name: "test project",
+      version: 7,
+      updatedAt: "2026-02-13T00:00:00.000Z",
+      venues: [{ id: "venue-1", name: "Venue 1" }],
+      buildings: [{ id: "building-1", venueId: "venue-1", name: "Building 1" }],
+      levels: [{ id: "floor-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "shape-1",
+          feature_type: "unit",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.121, 52.091],
+                [5.122, 52.091],
+                [5.122, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+              ],
+            ],
+          },
+          properties: {
+            kind: "unit",
+            feature_type: "unit",
+            level_id: "floor-1",
+            floorId: "floor-1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "path-1",
+          feature_type: "opening",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [5.12, 52.09],
+              [5.121, 52.091],
+            ],
+          },
+          properties: {
+            kind: "opening",
+            feature_type: "opening",
+            category: "pedestrian",
+            level_id: "floor-1",
+            floorId: "floor-1",
+            name: { en: "Path 1" },
+          },
+        },
+      ],
+      overlays: [],
+    });
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const splitButton = await screen.findByRole("button", { name: /split selected edge/i });
+    const forkButton = screen.getByRole("button", { name: /fork edge from selected node/i });
+
+    fireEvent.click(screen.getByTestId("mock-map-select-feature"));
+    fireEvent.click(screen.getByTestId("mock-map-select-vertex"));
+    expect(splitButton).toBeDisabled();
+    expect(forkButton).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("mock-map-select-path-feature"));
+    fireEvent.click(screen.getByTestId("mock-map-select-vertex"));
+    expect(splitButton).toBeEnabled();
+    expect(forkButton).toBeEnabled();
   });
 
   it("shows lock switches for floor bitmap and feature geometry", async () => {
