@@ -9,9 +9,6 @@ description: Enforce mandatory validation guardrails from planning docs, includi
 - Preserve the quality bar and avoid guardrail regressions.
 - Standardize validation evidence for PR and merge readiness.
 
-## Source
-- `docs/IMPLEMENTATION_PLAN_V1.md` sections "4. Quality Bar and Guard Rails" and "5. Test Strategy".
-- `docs/TECHNICAL_PLAN.md` section "10. Testing and Quality Gates".
 
 ## Workflow
 1. Run the canonical validation chain from `skills/build-test-run/SKILL.md` instead of duplicating commands here.
@@ -27,3 +24,4 @@ description: Enforce mandatory validation guardrails from planning docs, includi
 
 ## Notes
 - If branch protection and CI policies exist, align local validation with those policies.
+- 
