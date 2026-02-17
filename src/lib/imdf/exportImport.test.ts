@@ -22,6 +22,7 @@ describe("imdf export/import", () => {
         {
           type: "Feature",
           id: "feature-1",
+          feature_type: "unit",
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -35,16 +36,15 @@ describe("imdf export/import", () => {
             ],
           },
           properties: {
-            kind: "unit",
-            floorId: "f1",
+            level_id: "f1",
           },
         },
       ],
     });
 
     expect(collection.features).toHaveLength(1);
-    expect(collection.features[0]?.properties.imdfType).toBe("unit");
-    expect(collection.features[0]?.properties.buildingId).toBe("b1");
+    expect(collection.features[0]?.feature_type).toBe("unit");
+    expect(collection.features[0]?.properties.building_ids).toBeUndefined();
   });
 
   it("round-trips a floor feature collection", () => {
@@ -62,7 +62,7 @@ describe("imdf export/import", () => {
             ],
           },
           properties: {
-            kind: "path",
+            category: "pedestrian",
           },
         },
       ],
@@ -70,7 +70,7 @@ describe("imdf export/import", () => {
 
     const imported = importFloorGeoJson({
       buildingId: "b1",
-      floorId: "f1",
+      level_id: "f1",
       raw,
     });
 
@@ -86,7 +86,7 @@ describe("imdf export/import", () => {
     });
 
     expect(exported.features).toHaveLength(1);
-    expect(exported.features[0]?.properties.floorId).toBe("f1");
+    expect(exported.features[0]?.properties.level_id).toBe("f1");
   });
 
   it("applies deterministic render ordering", () => {
@@ -94,6 +94,7 @@ describe("imdf export/import", () => {
       {
         type: "Feature",
         id: "b",
+        feature_type: "unit",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -107,13 +108,13 @@ describe("imdf export/import", () => {
           ],
         },
         properties: {
-          kind: "unit",
-          floorId: "f1",
+          level_id: "f1",
         },
       },
       {
         type: "Feature",
         id: "a",
+        feature_type: "level",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -127,14 +128,13 @@ describe("imdf export/import", () => {
           ],
         },
         properties: {
-          kind: "level",
-          floorId: "f1",
+          level_id: "f1",
         },
       },
     ]);
 
-    expect(ordered[0]?.properties.kind).toBe("level");
-    expect(ordered[1]?.properties.kind).toBe("unit");
+    expect(ordered[0]?.feature_type).toBe("level");
+    expect(ordered[1]?.feature_type).toBe("unit");
   });
 
   it("exports a proper IMDF package with required files", () => {

@@ -368,19 +368,10 @@ export const buildImdfArchivePayload = ({
   const floorsInBuilding = floors.filter((floor) => floor.buildingId === building.id);
   const floorIds = new Set(floorsInBuilding.map((floor) => floor.id));
   const featuresInBuilding = features.filter((feature) =>
-    floorIds.has(
-      (typeof feature.properties.level_id === "string"
-        ? feature.properties.level_id
-        : feature.properties.floorId) ?? "",
-    ),
+    floorIds.has(feature.properties.level_id ?? ""),
   );
   const resolvedTypeByFeatureId = new Map(
-    featuresInBuilding.map((feature) => [
-      feature.id,
-      readImdfType(feature.feature_type) ??
-        readImdfType(feature.properties.imdfType) ??
-        readImdfType(feature.properties.kind),
-    ]),
+    featuresInBuilding.map((feature) => [feature.id, readImdfType(feature.feature_type)]),
   );
   const featureUuidById = new Map(
     featuresInBuilding.map((feature) => [feature.id, resolveImdfUuid(feature.id)]),
@@ -393,10 +384,7 @@ export const buildImdfArchivePayload = ({
 
   const levelPolygons: Array<Extract<FloorFeature["geometry"], { type: "Polygon" }>> = [];
   const levelFeatures = featuresInBuilding.filter(
-    (feature) =>
-      (readImdfType(feature.feature_type) ??
-        readImdfType(feature.properties.imdfType) ??
-        readImdfType(feature.properties.kind)) === "level",
+    (feature) => readImdfType(feature.feature_type) === "level",
   );
   for (const floor of floorsInBuilding) {
     const floorLevelFeature = levelFeatures.find(
@@ -522,10 +510,7 @@ export const buildImdfArchivePayload = ({
 
   const datasetTypeSet = new Set<string>(IMDF_STANDARD_DATASET_TYPES);
   for (const feature of featuresInBuilding) {
-    const mappedType =
-      readImdfType(feature.feature_type) ??
-      readImdfType(feature.properties.imdfType) ??
-      readImdfType(feature.properties.kind);
+    const mappedType = readImdfType(feature.feature_type);
     if (!mappedType || !datasetTypeSet.has(mappedType) || mappedType === "level") {
       continue;
     }
@@ -540,7 +525,7 @@ export const buildImdfArchivePayload = ({
     }
     const spec = getImdfSchemaRule(mappedType);
     const featureSpec = getFeatureSpec(mappedType);
-    const level_id = feature.properties["level_id"] ?? feature.properties.floorId;
+    const level_id = feature.properties["level_id"];
     const levelId = typeof level_id === "string" ? levelByFloor.get(level_id) : undefined;
     if (!levelId && spec.type !== "relationship") {
       warnings.push(`Feature ${feature.id} skipped: missing floor/level reference.`);
@@ -718,14 +703,11 @@ export const buildImdfArchivePayload = ({
     if (!exportedFeatureIds.has(feature.id)) {
       continue;
     }
-    const mappedType =
-      readImdfType(feature.feature_type) ??
-      readImdfType(feature.properties.imdfType) ??
-      readImdfType(feature.properties.kind);
+    const mappedType = readImdfType(feature.feature_type);
     if (!mappedType || mappedType === "level" || mappedType === "relationship") {
       continue;
     }
-    const level_id = feature.properties.level_id ?? feature.properties.floorId;
+    const level_id = feature.properties.level_id;
     const levelId = typeof level_id === "string" ? levelByFloor.get(level_id) : undefined;
     if (!levelId) {
       continue;

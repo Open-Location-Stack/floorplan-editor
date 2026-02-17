@@ -1,3 +1,4 @@
+import { readCanonicalFeatureType } from "../../lib/imdf/featureAccess";
 import { readImdfType } from "../../lib/imdf/featureCatalog";
 import {
   isNavigationNodeOpening,
@@ -36,16 +37,7 @@ type FeatureEditorProps = {
 };
 
 const resolveType = (feature: FloorFeature): string => {
-  if (typeof feature.feature_type === "string") {
-    return feature.feature_type;
-  }
-  if (typeof feature.properties.feature_type === "string") {
-    return feature.properties.feature_type;
-  }
-  if (typeof feature.properties.kind === "string") {
-    return feature.properties.kind;
-  }
-  return "unit";
+  return readCanonicalFeatureType(feature) || "unit";
 };
 
 export const FeatureEditor = (props: FeatureEditorProps) => {

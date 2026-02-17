@@ -6,17 +6,15 @@ import { normalizeFeature } from "./normalize";
 type ImportFloorInput = {
   buildingId: string;
   level_id?: string;
-  floorId?: string;
   raw: string;
 };
 
 export const importFloorGeoJson = ({
   buildingId,
   level_id,
-  floorId,
   raw,
 }: ImportFloorInput): { ok: true; features: FloorFeature[] } | { ok: false; errors: string[] } => {
-  const resolvedLevelId = level_id ?? floorId ?? "";
+  const resolvedLevelId = level_id ?? "";
   let parsed: unknown;
 
   try {

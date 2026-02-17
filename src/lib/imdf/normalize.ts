@@ -5,7 +5,6 @@ import { getImdfSchemaRule, isKnownImdfType } from "./schema";
 export type NormalizeContext = {
   buildingId: string;
   level_id?: string;
-  floorId?: string;
 };
 
 const readReferenceId = (value: unknown): string | undefined => {
@@ -37,7 +36,7 @@ export const normalizeFeature = (
   feature: FloorFeature,
   context: NormalizeContext,
 ): FloorFeature => {
-  const resolvedLevelId = context.level_id ?? context.floorId ?? "";
+  const resolvedLevelId = context.level_id ?? "";
   const explicitFeatureType =
     typeof feature.feature_type === "string" ? feature.feature_type : undefined;
   const isFormationFeature = Boolean(explicitFeatureType?.startsWith("formation:"));
@@ -59,14 +58,7 @@ export const normalizeFeature = (
       feature_type: formationType,
       properties: {
         ...feature.properties,
-        kind: formationType,
-        imdfType: formationType,
         level_id: resolvedLevelId,
-        floorId: resolvedLevelId,
-        buildingId: context.buildingId,
-        building_id: context.buildingId,
-        id: feature.id,
-        imdf_id: feature.id,
         name: normalizedName,
       },
     };
@@ -129,14 +121,7 @@ export const normalizeFeature = (
     feature_type: normalizedType,
     properties: {
       ...feature.properties,
-      kind: normalizedType,
-      imdfType: normalizedType,
       level_id: resolvedLevelId,
-      floorId: resolvedLevelId,
-      buildingId: context.buildingId,
-      building_id: context.buildingId,
-      id: feature.id,
-      imdf_id: feature.id,
       ...(normalizedType === "level" ? { building_ids: [context.buildingId] } : {}),
       ...(origin ? { origin: { id: origin, feature_type: "unit" }, origin_id: origin } : {}),
       ...(intermediary

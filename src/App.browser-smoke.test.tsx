@@ -582,14 +582,16 @@ describe("App browser smoke", () => {
         {
           type: "Feature",
           id: "feature-1",
+          feature_type: "amenity",
           geometry: { type: "Point", coordinates: [5.121, 52.091] },
-          properties: { kind: "amenity", floorId: "floor-1", name: "A" },
+          properties: { level_id: "floor-1", name: "A" },
         },
         {
           type: "Feature",
           id: "feature-2",
+          feature_type: "amenity",
           geometry: { type: "Point", coordinates: [5.122, 52.092] },
-          properties: { kind: "amenity", floorId: "floor-2", name: "B" },
+          properties: { level_id: "floor-2", name: "B" },
         },
       ],
       overlays: [
@@ -814,7 +816,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Room A" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Room A" },
         },
       ],
       overlays: [],
@@ -858,6 +861,7 @@ describe("App browser smoke", () => {
         {
           type: "Feature",
           id: "shape-ground",
+          feature_type: "unit",
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -870,11 +874,12 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Ground Room" },
+          properties: { level_id: "floor-1", name: "Ground Room" },
         },
         {
           type: "Feature",
           id: "shape-first",
+          feature_type: "unit",
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -887,7 +892,7 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-2", name: "First Room" },
+          properties: { level_id: "floor-2", name: "First Room" },
         },
       ],
       overlays: [
@@ -1049,7 +1054,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [],
@@ -1182,7 +1188,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [
@@ -1374,7 +1381,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [
@@ -1445,7 +1453,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [],
@@ -1500,12 +1509,12 @@ describe("App browser smoke", () => {
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
         features: Array<{
           id: string;
+          feature_type?: string;
           geometry: {
             type: "LineString";
             coordinates: number[][];
           };
           properties: {
-            kind?: string;
             name?: { en: string };
           };
         }>;
@@ -1517,7 +1526,7 @@ describe("App browser smoke", () => {
         [5.201, 52.201],
         [5.202, 52.202],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("opening");
+      expect(latestSnapshot.features[0]?.feature_type).toBe("opening");
       expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Path 1" });
     });
   });
@@ -1610,13 +1619,11 @@ describe("App browser smoke", () => {
         features: Array<{
           id: string;
           feature_type?: string;
-          properties: { imdfType?: string; kind?: string; name?: { en?: string } };
+          properties: { name?: { en?: string } };
         }>;
       };
       const path = latestSnapshot.features.find((feature) => feature.id === "path-1");
       expect(path?.feature_type).toBe("opening");
-      expect(path?.properties.imdfType).toBe("opening");
-      expect(path?.properties.kind).toBe("opening");
       expect(path?.properties.name).toEqual({ en: "Path 1 updated" });
     });
   });
@@ -1648,11 +1655,7 @@ describe("App browser smoke", () => {
             ],
           },
           properties: {
-            kind: "level",
-            feature_type: "level",
-            imdfType: "level",
             level_id: "floor-1",
-            floorId: "floor-1",
             building_ids: ["building-1"],
             short_name: { en: "G" },
             ordinal: 0,
@@ -1682,13 +1685,11 @@ describe("App browser smoke", () => {
         features: Array<{
           id: string;
           feature_type?: string;
-          properties: { imdfType?: string; kind?: string; name?: { en?: string } };
+          properties: { name?: { en?: string } };
         }>;
       };
       const levelGeometry = latestSnapshot.features.find((feature) => feature.id === "floor-1");
       expect(levelGeometry?.feature_type).toBe("level");
-      expect(levelGeometry?.properties.imdfType).toBe("level");
-      expect(levelGeometry?.properties.kind).toBe("level");
       expect(levelGeometry?.properties.name).toEqual({ en: "Level" });
     });
   });
@@ -1719,12 +1720,12 @@ describe("App browser smoke", () => {
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
         features: Array<{
           id: string;
+          feature_type?: string;
           geometry: {
             type: "Polygon";
             coordinates: number[][][];
           };
           properties: {
-            kind?: string;
             name?: { en: string };
           };
         }>;
@@ -1739,7 +1740,7 @@ describe("App browser smoke", () => {
           [5.3, 52.3],
         ],
       ]);
-      expect(latestSnapshot.features[0]?.properties.kind).toBe("section");
+      expect(latestSnapshot.features[0]?.feature_type).toBe("section");
       expect(latestSnapshot.features[0]?.properties.name).toEqual({ en: "Section" });
     });
   });
@@ -1756,6 +1757,7 @@ describe("App browser smoke", () => {
         {
           type: "Feature",
           id: "level-geometry-1",
+          feature_type: "level",
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -1769,9 +1771,7 @@ describe("App browser smoke", () => {
             ],
           },
           properties: {
-            kind: "level",
-            imdfType: "level",
-            floorId: "floor-1",
+            level_id: "floor-1",
             name: "Nested Level Feature",
           },
         },
@@ -1810,9 +1810,9 @@ describe("App browser smoke", () => {
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
         features: Array<{
           id: string;
+          feature_type?: string;
           properties: {
-            kind?: string;
-            floorId?: string;
+            level_id?: string;
             ordinal?: number;
             short_name?: { en?: string };
             outdoor?: boolean;
@@ -1820,8 +1820,7 @@ describe("App browser smoke", () => {
         }>;
       };
       const levelFeature = latestSnapshot.features.find(
-        (feature) =>
-          feature.properties.kind === "level" && feature.properties.floorId === "floor-1",
+        (feature) => feature.feature_type === "level" && feature.properties.level_id === "floor-1",
       );
       expect(levelFeature?.properties.ordinal).toBe(2);
       expect(levelFeature?.properties.short_name).toEqual({ en: "G" });
@@ -1841,16 +1840,16 @@ describe("App browser smoke", () => {
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
         features: Array<{
           id: string;
+          feature_type?: string;
           properties: {
-            kind?: string;
-            floorId?: string;
+            level_id?: string;
           };
         }>;
       };
       expect(
         latestSnapshot.features.some(
           (feature) =>
-            feature.properties.kind === "level" && feature.properties.floorId === "floor-1",
+            feature.feature_type === "level" && feature.properties.level_id === "floor-1",
         ),
       ).toBe(false);
     });
@@ -1880,7 +1879,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [
@@ -1956,7 +1956,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Room A" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Room A" },
         },
       ],
       overlays: [],
@@ -1979,9 +1980,9 @@ describe("App browser smoke", () => {
         floors: Array<{ id: string; buildingId: string; name: string }>;
         features: Array<{
           id: string;
+          feature_type?: string;
           properties: {
-            floorId?: string;
-            kind?: string;
+            level_id?: string;
           };
         }>;
       };
@@ -1993,11 +1994,11 @@ describe("App browser smoke", () => {
       expect(clonedFloor?.buildingId).toBe("building-1");
 
       const clonedFloorFeatures = latestSnapshot.features.filter(
-        (feature) => feature.properties.floorId === clonedFloor?.id,
+        (feature) => feature.properties.level_id === clonedFloor?.id,
       );
       expect(clonedFloorFeatures).toHaveLength(1);
 
-      const clonedUnit = clonedFloorFeatures.find((feature) => feature.properties.kind === "unit");
+      const clonedUnit = clonedFloorFeatures.find((feature) => feature.feature_type === "unit");
       expect(clonedUnit).toBeDefined();
       expect(clonedUnit?.id).not.toBe("unit-1");
     });
@@ -2027,7 +2028,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [
@@ -2104,7 +2106,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [],
@@ -2161,7 +2164,8 @@ describe("App browser smoke", () => {
               ],
             ],
           },
-          properties: { kind: "unit", floorId: "floor-1", name: "Test unit" },
+          feature_type: "unit",
+          properties: { level_id: "floor-1", name: "Test unit" },
         },
       ],
       overlays: [],

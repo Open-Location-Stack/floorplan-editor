@@ -12,6 +12,7 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "shape-1",
+        feature_type: "unit",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -25,8 +26,6 @@ describe("validateFloor", () => {
           ],
         },
         properties: {
-          kind: "unit",
-          floorId: "f1",
           level_id: "f1",
         },
       },
@@ -40,6 +39,7 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "shape-1",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -47,10 +47,7 @@ describe("validateFloor", () => {
             [1, 1],
           ],
         },
-        properties: {
-          kind: "opening",
-          floorId: "f1",
-        },
+        properties: {},
       },
     ]);
 
@@ -62,6 +59,7 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "unit-a",
+        feature_type: "unit",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -75,9 +73,6 @@ describe("validateFloor", () => {
           ],
         },
         properties: {
-          kind: "unit",
-          imdfType: "unit",
-          floorId: "f1",
           level_id: "f1",
           name: { en: "Unit A" },
           category: "room",
@@ -86,6 +81,7 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "unit-b",
+        feature_type: "unit",
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -99,9 +95,6 @@ describe("validateFloor", () => {
           ],
         },
         properties: {
-          kind: "unit",
-          imdfType: "unit",
-          floorId: "f1",
           level_id: "f1",
           name: { en: "Unit B" },
           category: "room",
@@ -110,6 +103,7 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "relationship-1",
+        feature_type: "relationship",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -118,9 +112,6 @@ describe("validateFloor", () => {
           ],
         },
         properties: {
-          kind: "relationship",
-          imdfType: "relationship",
-          floorId: "f1",
           level_id: "f1",
           name: { en: "contains" },
           direction: "directed",
@@ -138,13 +129,12 @@ describe("validateFloor", () => {
       {
         type: "Feature",
         id: "fixture-1",
+        feature_type: "formation:unknown",
         geometry: {
           type: "Point",
           coordinates: [0, 0],
         },
         properties: {
-          kind: "unknown-type",
-          floorId: "f1",
           level_id: "f1",
           name: { en: "Coffee Cart" },
         },
@@ -169,7 +159,6 @@ describe("validateFloor", () => {
         },
         properties: {
           level_id: "f1",
-          floorId: "f1",
           name: { en: "Path 1" },
         },
       },

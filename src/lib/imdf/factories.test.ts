@@ -8,13 +8,13 @@ describe("imdf factories", () => {
       center: [5, 52],
       context: {
         buildingId: "b1",
-        floorId: "f1",
+        level_id: "f1",
       },
     });
 
     expect(feature.geometry.type).toBe("Polygon");
-    expect(feature.properties.imdfType).toBe("unit");
-    expect(feature.properties.floorId).toBe("f1");
+    expect(feature.feature_type).toBe("unit");
+    expect(feature.properties.level_id).toBe("f1");
   });
 
   it("creates line feature for opening", () => {
@@ -23,12 +23,12 @@ describe("imdf factories", () => {
       center: [5, 52],
       context: {
         buildingId: "b1",
-        floorId: "f1",
+        level_id: "f1",
       },
     });
 
     expect(feature.geometry.type).toBe("LineString");
-    expect(feature.properties.kind).toBe("opening");
+    expect(feature.feature_type).toBe("opening");
   });
 
   it("clones with new id and shifted coordinates", () => {
@@ -37,17 +37,17 @@ describe("imdf factories", () => {
       center: [5, 52],
       context: {
         buildingId: "b1",
-        floorId: "f1",
+        level_id: "f1",
       },
     });
 
     const clone = cloneImdfFeature(source, {
       buildingId: "b1",
-      floorId: "f1",
+      level_id: "f1",
     });
 
     expect(clone.id).not.toBe(source.id);
     expect(clone.geometry).not.toEqual(source.geometry);
-    expect(clone.properties.floorId).toBe("f1");
+    expect(clone.properties.level_id).toBe("f1");
   });
 });

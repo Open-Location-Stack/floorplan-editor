@@ -917,11 +917,7 @@ const toDrawFeature = (feature: FloorFeature): GeoJsonFeature => ({
   properties: {
     ...structuredClone(feature.properties),
     __draw_line_color: drawLineColorForFeature(feature),
-    feature_type:
-      feature.feature_type ??
-      (typeof feature.properties.kind === "string"
-        ? (feature.properties.kind as FloorFeature["feature_type"])
-        : undefined),
+    feature_type: feature.feature_type,
   },
 });
 

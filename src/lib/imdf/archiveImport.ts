@@ -467,14 +467,11 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
         feature_type: "level",
         geometry,
         properties: {
-          kind: "level",
-          imdfType: "level",
           ...(levelLabel ? { name: levelLabel } : {}),
           ...(shortNameLabel ? { short_name: shortNameLabel } : {}),
           ordinal: typeof properties["ordinal"] === "number" ? properties["ordinal"] : 0,
           outdoor: Boolean(properties["outdoor"]),
           level_id: levelFeature["id"],
-          floorId: levelFeature["id"],
           building_ids: [buildingId],
         },
       });
@@ -652,18 +649,13 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       properties["category"],
       raw["id"],
     );
-    const buildingId = levelToBuildingId.get(level_id);
     features.push({
       type: "Feature",
       id: raw["id"],
       feature_type: "amenity",
       geometry,
       properties: {
-        kind: "amenity",
-        imdfType: "amenity",
         level_id: level_id,
-        floorId: level_id,
-        ...(buildingId ? { building_ids: [buildingId] } : {}),
         ...(featureNameLabel ? { name: featureNameLabel } : {}),
         ...(normalizedCategory ? { category: normalizedCategory } : {}),
         ...(isJsonValue(properties["accessibility"])
@@ -738,21 +730,13 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           : typeof destinationFeature?.properties.level_id === "string"
             ? destinationFeature.properties.level_id
             : undefined);
-      const relationBuildingId = relationLevelId
-        ? levelToBuildingId.get(relationLevelId)
-        : undefined;
       features.push({
         type: "Feature",
         id: raw["id"],
         feature_type: "relationship",
         geometry,
         properties: {
-          kind: "relationship",
-          imdfType: "relationship",
-          ...(typeof relationLevelId === "string"
-            ? { level_id: relationLevelId, floorId: relationLevelId }
-            : {}),
-          ...(relationBuildingId ? { building_ids: [relationBuildingId] } : {}),
+          ...(typeof relationLevelId === "string" ? { level_id: relationLevelId } : {}),
           ...(typeof properties["direction"] === "string"
             ? {
                 direction:

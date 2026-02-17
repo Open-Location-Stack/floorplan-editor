@@ -1,3 +1,4 @@
+import { readCanonicalFeatureType, readCanonicalLevelId } from "../imdf/featureAccess";
 import type { Coordinates, FloorFeature } from "../types";
 import {
   isNavigationNodeOpening,
@@ -34,12 +35,7 @@ const haversineMeters = (from: Coordinates, to: Coordinates): number => {
   return earthRadiusMeters * c;
 };
 
-const readLevelId = (feature: FloorFeature): string | undefined =>
-  typeof feature.properties.level_id === "string"
-    ? feature.properties.level_id
-    : typeof feature.properties.floorId === "string"
-      ? feature.properties.floorId
-      : undefined;
+const readLevelId = (feature: FloorFeature): string | undefined => readCanonicalLevelId(feature);
 
 const readRelationshipRefId = (value: unknown): string | undefined => {
   if (
@@ -77,14 +73,7 @@ const interpolate = (from: Coordinates, to: Coordinates, t: number): Coordinates
 const collectOpeningSegments = (features: FloorFeature[]): Segment[] => {
   const segments: Segment[] = [];
   for (const feature of features) {
-    const featureType =
-      typeof feature.feature_type === "string"
-        ? feature.feature_type
-        : typeof feature.properties.feature_type === "string"
-          ? feature.properties.feature_type
-          : typeof feature.properties.kind === "string"
-            ? feature.properties.kind
-            : "";
+    const featureType = readCanonicalFeatureType(feature);
     if (featureType !== "opening" || feature.geometry.type !== "LineString") {
       continue;
     }

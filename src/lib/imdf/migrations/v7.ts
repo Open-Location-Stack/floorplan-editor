@@ -29,11 +29,7 @@ const readLabelName = (value: unknown): { en: string } => {
 };
 
 const readLevelId = (feature: FloorFeature): string | undefined =>
-  typeof feature.properties.level_id === "string"
-    ? feature.properties.level_id
-    : typeof feature.properties.floorId === "string"
-      ? feature.properties.floorId
-      : undefined;
+  typeof feature.properties.level_id === "string" ? feature.properties.level_id : undefined;
 
 const readBuildingId = (
   levelId: string | undefined,
@@ -118,9 +114,6 @@ export const migrateProjectSnapshotToImdfNavigationV7 = (
           name: readLabelName(source.properties.name),
           category,
           level_id: levelId,
-          floorId: levelId,
-          kind: "opening",
-          feature_type: "opening",
         },
       },
       {
@@ -131,14 +124,7 @@ export const migrateProjectSnapshotToImdfNavigationV7 = (
   };
 
   for (const feature of snapshot.features) {
-    const rawType =
-      typeof feature.feature_type === "string"
-        ? feature.feature_type
-        : typeof feature.properties.feature_type === "string"
-          ? feature.properties.feature_type
-          : typeof feature.properties.kind === "string"
-            ? feature.properties.kind
-            : "";
+    const rawType = typeof feature.feature_type === "string" ? feature.feature_type : "";
 
     if (rawType === "formation:navigation-node") {
       const legacyLevelsRaw = feature.properties["formation:navigation_levels"];
@@ -175,9 +161,6 @@ export const migrateProjectSnapshotToImdfNavigationV7 = (
               ? { accessibility: { wheelchair: true } }
               : {}),
             level_id: levelId,
-            floorId: levelId,
-            kind: "opening",
-            feature_type: "opening",
           },
         },
         {
@@ -261,9 +244,7 @@ export const migrateProjectSnapshotToImdfNavigationV7 = (
             },
             properties: {
               name: { en: "Navigation link" },
-              ...(typeof link.levelId === "string"
-                ? { level_id: link.levelId, floorId: link.levelId }
-                : {}),
+              ...(typeof link.levelId === "string" ? { level_id: link.levelId } : {}),
               direction: "undirected",
               origin: { id: link.edgeId, feature_type: "opening" },
               destination: { id: nodeId, feature_type: "opening" },
@@ -312,7 +293,6 @@ export const migrateProjectSnapshotToImdfNavigationV7 = (
               properties: {
                 name: { en: "Vertical connector" },
                 level_id: leftLevel,
-                floorId: leftLevel,
                 direction: "undirected",
                 origin: { id: leftNodeId, feature_type: "opening" },
                 destination: { id: rightNodeId, feature_type: "opening" },

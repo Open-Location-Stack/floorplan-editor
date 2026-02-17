@@ -1,3 +1,4 @@
+import { readCanonicalFeatureType, readCanonicalLevelId } from "../imdf/featureAccess";
 import type { Coordinates, FloorFeature } from "../types";
 
 export const NAVIGATION_NODE_CATEGORIES = [
@@ -22,13 +23,7 @@ export const VERTICAL_NAVIGATION_NODE_CATEGORIES = new Set<NavigationNodeCategor
 ]);
 
 export const readFeatureTypeString = (feature: FloorFeature): string =>
-  typeof feature.feature_type === "string"
-    ? feature.feature_type
-    : typeof feature.properties.feature_type === "string"
-      ? feature.properties.feature_type
-      : typeof feature.properties.kind === "string"
-        ? feature.properties.kind
-        : "";
+  readCanonicalFeatureType(feature);
 
 export const readOpeningCategory = (feature: FloorFeature): string | undefined =>
   typeof feature.properties.category === "string" ? feature.properties.category : undefined;
@@ -73,9 +68,7 @@ export const readNavigationPathCategory = (feature: FloorFeature): NavigationPat
 };
 
 export const featureHasLevel = (feature: FloorFeature, levelId: string): boolean =>
-  feature.properties.level_id === levelId ||
-  feature.properties.floorId === levelId ||
-  (!feature.properties.level_id && !feature.properties.floorId);
+  readCanonicalLevelId(feature) === levelId || !readCanonicalLevelId(feature);
 
 export const coordinatesEqual = (left: Coordinates, right: Coordinates, epsilon = 1e-7): boolean =>
   Math.abs(left[0] - right[0]) <= epsilon && Math.abs(left[1] - right[1]) <= epsilon;

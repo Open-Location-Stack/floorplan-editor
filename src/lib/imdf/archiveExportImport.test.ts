@@ -58,6 +58,7 @@ describe("imdf archive export/import", () => {
         {
           type: "Feature",
           id: "level-1",
+          feature_type: "level",
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -140,9 +141,7 @@ describe("imdf archive export/import", () => {
     expect(imported.value.venues.length).toBeGreaterThan(0);
     expect(imported.value.buildings.length).toBeGreaterThan(0);
     expect(imported.value.floors.length).toBeGreaterThan(0);
-    expect(imported.value.features.some((feature) => feature.properties.imdfType === "level")).toBe(
-      true,
-    );
+    expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
   });
 
   it("exports and imports a venue archive with multiple buildings", async () => {
@@ -330,25 +329,19 @@ describe("imdf archive export/import", () => {
             ],
           },
           properties: {
-            kind: "level",
-            imdfType: "level",
-            floorId: "level-1",
             level_id: "level-1",
-            buildingId: "building-1",
+            building_ids: ["building-1"],
           },
         },
         {
           type: "Feature",
           id: "kiosk-1",
+          feature_type: "kiosk",
           geometry: {
             type: "Point",
             coordinates: [5.1205, 52.0905],
           },
-          properties: {
-            kind: "kiosk",
-            imdfType: "kiosk",
-            floorId: "level-1",
-          },
+          properties: { level_id: "level-1" },
         },
       ],
       overlays: [],

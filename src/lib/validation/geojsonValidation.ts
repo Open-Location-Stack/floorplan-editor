@@ -38,16 +38,15 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
 const featureSchema = z.object({
   type: z.literal("Feature"),
   id: z.string().min(1),
+  feature_type: z.string().optional(),
   geometry: geometrySchema,
   properties: z
     .object({
-      kind: z.string().min(1),
       name: z.string().optional(),
       level_id: z.string().optional(),
       featureType: z.string().optional(),
       category: z.string().optional(),
       externalId: z.string().optional(),
-      feature_type: z.string().optional(),
       imdfClass: z.string().optional(),
       metadata: z.record(z.string(), jsonValueSchema).optional(),
     })

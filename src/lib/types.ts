@@ -76,13 +76,7 @@ export type FeatureStyle = {
 export type FeatureProperties = {
   name?: string | ImdfLabel;
   level_id?: string;
-  floorId?: string;
-  buildingId?: string;
-  building_id?: string;
-  kind?: string;
-  imdfType?: string;
   imdf_feature_type?: ImdfFeatureType;
-  feature_type?: string;
   featureType?: string;
   externalId?: string;
   imdfClass?: string;
@@ -120,10 +114,6 @@ export type FeatureProperties = {
   relation?: RelationshipRefs;
   containmentParentId?: string;
   containmentParentType?: ImdfFeatureType | "level";
-  // Legacy fields remain typed while code is being migrated.
-  floor_id?: string;
-  id?: string;
-  imdf_id?: string;
   // Internal-only extension keys should be namespaced.
   [key: `formation:${string}`]: JsonValue | undefined;
   [key: string]: JsonValue | undefined;

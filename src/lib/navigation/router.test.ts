@@ -10,6 +10,7 @@ describe("path graph + point routing", () => {
       {
         type: "Feature",
         id: "opening-horizontal",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -27,6 +28,7 @@ describe("path graph + point routing", () => {
       {
         type: "Feature",
         id: "opening-vertical",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -60,6 +62,7 @@ describe("path graph + point routing", () => {
       {
         type: "Feature",
         id: "opening-main",
+        feature_type: "opening",
         geometry: {
           type: "LineString",
           coordinates: [
@@ -87,6 +90,7 @@ describe("path graph + point routing", () => {
       {
         type: "Feature",
         id: "relationship-main",
+        feature_type: "relationship",
         geometry: {
           type: "LineString",
           coordinates: [

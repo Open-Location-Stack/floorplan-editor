@@ -174,7 +174,6 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
   const rawProperties =
     raw.properties && typeof raw.properties === "object"
       ? (raw.properties as {
-          kind?: unknown;
           name?: unknown;
           level_id?: unknown;
           [key: string]: unknown;
@@ -197,6 +196,18 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
       if (disallowedNavigationKeys.has(key)) {
         return accumulator;
       }
+      if (
+        key === "kind" ||
+        key === "imdfType" ||
+        key === "feature_type" ||
+        key === "floorId" ||
+        key === "buildingId" ||
+        key === "building_id" ||
+        key === "id" ||
+        key === "imdf_id"
+      ) {
+        return accumulator;
+      }
       const normalized = normalizeJsonValue(propertyValue);
       if (normalized !== undefined) {
         accumulator[key] = normalized;
@@ -209,22 +220,19 @@ const normalizeFeature = (value: unknown): FloorFeature | undefined => {
   const rawFeatureType =
     isNonEmptyString(raw.feature_type) && typeof raw.feature_type === "string"
       ? raw.feature_type
-      : isNonEmptyString(rawProperties.kind)
-        ? rawProperties.kind
-        : "unit";
+      : "unit";
   const featureType: Exclude<FloorFeature["feature_type"], undefined> =
     rawFeatureType === "formation:navigation-node" || rawFeatureType === "formation:navigation-edge"
       ? "opening"
       : (rawFeatureType as Exclude<FloorFeature["feature_type"], undefined>);
   const name = isNonEmptyString(rawProperties.name) ? rawProperties.name : undefined;
   const level_id = isNonEmptyString(rawProperties.level_id) ? rawProperties.level_id : undefined;
-  const properties: FloorFeature["properties"] = { ...normalizedProperties, kind: featureType };
+  const properties: FloorFeature["properties"] = { ...normalizedProperties };
   if (name) {
     properties.name = name;
   }
   if (level_id) {
     properties.level_id = level_id;
-    properties.floorId = level_id;
   }
 
   return {
@@ -414,20 +422,11 @@ const normalizeFeatures = (
       ...feature,
       properties: {
         ...feature.properties,
-        level_id: (() => {
-          const candidate =
-            typeof feature.properties.level_id === "string"
-              ? feature.properties.level_id
-              : feature.properties.floorId;
-          return candidate && floorIds.has(candidate) ? candidate : defaultFloorId;
-        })(),
-        floorId: (() => {
-          const candidate =
-            typeof feature.properties.level_id === "string"
-              ? feature.properties.level_id
-              : feature.properties.floorId;
-          return candidate && floorIds.has(candidate) ? candidate : defaultFloorId;
-        })(),
+        level_id:
+          typeof feature.properties.level_id === "string" &&
+          floorIds.has(feature.properties.level_id)
+            ? feature.properties.level_id
+            : defaultFloorId,
       },
     }));
 };

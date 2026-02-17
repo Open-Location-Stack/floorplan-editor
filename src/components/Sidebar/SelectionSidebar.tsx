@@ -160,8 +160,15 @@ export const SelectionSidebar = ({
   }
 
   if (selection.kind === "building") {
+    const buildingLevelIds = new Set(
+      levels
+        .filter((candidate) => candidate.buildingId === building.id)
+        .map((candidate) => candidate.id),
+    );
     const buildingFeatures = allFeatures.filter(
-      (current) => current.properties.buildingId === building.id,
+      (current) =>
+        typeof current.properties.level_id === "string" &&
+        buildingLevelIds.has(current.properties.level_id),
     );
     const anchorCandidates = buildingFeatures.filter(
       (current) => readFeatureType(current) === "anchor",

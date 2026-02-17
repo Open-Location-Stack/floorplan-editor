@@ -521,7 +521,7 @@ const syncEdgeEndpointRelationships = (
     properties: {
       name: { en: "Navigation link" },
       ...(typeof edge.properties.level_id === "string"
-        ? { level_id: edge.properties.level_id, floorId: edge.properties.level_id }
+        ? { level_id: edge.properties.level_id }
         : {}),
       direction: "undirected",
       origin: { id: edge.id, feature_type: "opening" },
@@ -881,13 +881,7 @@ function App() {
           .filter((floor) => floor.buildingId === building.id)
           .map((floor) => floor.id);
         const levelPolygons = editorState.features
-          .filter((feature) =>
-            floorIds.includes(
-              (typeof feature.properties.level_id === "string"
-                ? feature.properties.level_id
-                : feature.properties.floorId) ?? "",
-            ),
-          )
+          .filter((feature) => floorIds.includes(feature.properties.level_id ?? ""))
           .filter(
             (feature) =>
               feature.geometry.type === "Polygon" && String(feature.feature_type) === "level",
@@ -1202,9 +1196,6 @@ function App() {
           const resolvedFeatureType =
             resolveImdfFeatureType(
               feature.feature_type,
-              mergedProperties.feature_type,
-              mergedProperties.kind,
-              mergedProperties.imdfType,
               shouldApplyPendingTemplate ? pendingDrawTemplate?.featureType : undefined,
             ) ?? kindForGeometry(normalizedGeometry.type);
           const isNewPath =
@@ -2715,7 +2706,6 @@ function App() {
           properties: {
             category: request.category,
             level_id: activeLevel.id,
-            floorId: activeLevel.id,
           },
         });
         return;
@@ -2731,7 +2721,6 @@ function App() {
             category: "pedestrian",
             ...(request.category === "wheelchair" ? { accessibility: { wheelchair: true } } : {}),
             level_id: activeLevel.id,
-            floorId: activeLevel.id,
           },
         });
         return;
@@ -3361,7 +3350,6 @@ function App() {
                               properties: {
                                 ...target.properties,
                                 level_id: levelId,
-                                floorId: levelId,
                               },
                             },
                             {
@@ -3428,10 +3416,7 @@ function App() {
                               properties: {
                                 name: { en: "Vertical connector" },
                                 ...(typeof left.properties.level_id === "string"
-                                  ? {
-                                      level_id: left.properties.level_id,
-                                      floorId: left.properties.level_id,
-                                    }
+                                  ? { level_id: left.properties.level_id }
                                   : {}),
                                 direction: "undirected",
                                 origin: { id: left.id, feature_type: "opening" },

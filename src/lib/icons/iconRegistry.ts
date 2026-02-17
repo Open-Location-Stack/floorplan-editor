@@ -1,3 +1,4 @@
+import { readCanonicalFeatureType } from "../imdf/featureAccess";
 import { readImdfType } from "../imdf/featureCatalog";
 import {
   type NavigationNodeCategory,
@@ -50,10 +51,9 @@ export const getNavigationEdgeCategoryIconKey = (
 ): NavigationEdgeIconKey => category;
 
 export const getFeatureIconKey = (feature: FloorFeature): FeatureIconKey => {
-  const imdfType =
-    readImdfType(readFeatureTypeString(feature)) ??
-    readImdfType(feature.properties.imdfType) ??
-    readImdfType(feature.properties.kind);
+  const imdfType = readImdfType(
+    readCanonicalFeatureType(feature) || readFeatureTypeString(feature),
+  );
 
   return imdfType ?? "unknown";
 };

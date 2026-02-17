@@ -400,10 +400,7 @@ export const exportFloorGeoJson = ({
   features,
 }: ExportFloorInput): FeatureCollection => {
   const floorFeatures = features
-    .filter(
-      (feature) =>
-        feature.properties.level_id === floor.id || feature.properties.floorId === floor.id,
-    )
+    .filter((feature) => feature.properties.level_id === floor.id)
     .map((feature) => normalizeFeature(feature, { buildingId: building.id, level_id: floor.id }));
 
   return {

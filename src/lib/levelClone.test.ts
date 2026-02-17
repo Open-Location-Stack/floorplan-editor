@@ -19,6 +19,7 @@ describe("cloneLevelWithReferences", () => {
     const sourceFeatureA: FloorFeature = {
       type: "Feature",
       id: "unit-1",
+      feature_type: "unit",
       geometry: {
         type: "Polygon",
         coordinates: [
@@ -31,20 +32,16 @@ describe("cloneLevelWithReferences", () => {
         ],
       },
       properties: {
-        kind: "unit",
+        category: "unspecified",
         name: "Room A",
-        floorId: "floor-1",
-        buildingId: "building-1",
-        id: "unit-1",
-        imdf_id: "unit-1",
         level_id: "floor-1",
-        building_id: "building-1",
       },
     };
 
     const sourceFeatureB: FloorFeature = {
       type: "Feature",
       id: "relationship-1",
+      feature_type: "relationship",
       geometry: {
         type: "LineString",
         coordinates: [
@@ -53,9 +50,7 @@ describe("cloneLevelWithReferences", () => {
         ],
       },
       properties: {
-        kind: "relationship",
-        floorId: "floor-1",
-        buildingId: "building-1",
+        level_id: "floor-1",
         origin_id: "unit-1",
         destination_id: "unit-1",
         linked_feature_ids: ["unit-1", "relationship-1"],
@@ -117,12 +112,10 @@ describe("cloneLevelWithReferences", () => {
       | undefined;
 
     expect(clonedUnit).toBeDefined();
-    expect(clonedUnit?.properties.floorId).toBe("floor-3");
-    expect(clonedUnit?.properties.id).toBe("unit-2");
-    expect(clonedUnit?.properties.imdf_id).toBe("unit-2");
+    expect(clonedUnit?.properties.level_id).toBe("floor-3");
 
     expect(clonedRelationship).toBeDefined();
-    expect(clonedRelationship?.properties.floorId).toBe("floor-3");
+    expect(clonedRelationship?.properties.level_id).toBe("floor-3");
     expect(clonedRelationshipProperties?.origin_id).toBe("unit-2");
     expect(clonedRelationshipProperties?.destination_id).toBe("unit-2");
     expect(clonedRelationshipProperties?.linked_feature_ids).toEqual(["unit-2", "relationship-2"]);

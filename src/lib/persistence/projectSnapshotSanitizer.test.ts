@@ -14,12 +14,14 @@ describe("sanitizeProjectSnapshot", () => {
         {
           type: "Feature",
           id: "ok-point",
+          feature_type: "amenity",
           geometry: { type: "Point", coordinates: [5, 52] },
-          properties: { kind: "amenity" },
+          properties: {},
         },
         {
           type: "Feature",
           id: "ok-relationship",
+          feature_type: "relationship",
           geometry: {
             type: "LineString",
             coordinates: [
@@ -27,13 +29,14 @@ describe("sanitizeProjectSnapshot", () => {
               [5.001, 52.001],
             ],
           },
-          properties: { kind: "relationship" },
+          properties: {},
         },
         {
           type: "Feature",
           id: "broken",
+          feature_type: "unit",
           geometry: { type: "Polygon", coordinates: [[[5, 52]]] },
-          properties: { kind: "unit" },
+          properties: {},
         },
       ],
       overlays: [
@@ -71,7 +74,7 @@ describe("sanitizeProjectSnapshot", () => {
     });
 
     expect(sanitized.features).toHaveLength(1);
-    expect(sanitized.features[0]?.properties.floorId).toBe("f1");
+    expect(sanitized.features[0]?.properties.level_id).toBe("f1");
     expect(sanitized.features.some((feature) => feature.feature_type === "relationship")).toBe(
       false,
     );

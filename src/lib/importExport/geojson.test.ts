@@ -95,6 +95,6 @@ describe("geojson import/export", () => {
     }
     expect(imported.features).toHaveLength(1);
     expect(imported.features[0]?.id).toBe("u1");
-    expect(imported.features[0]?.properties.kind).toBe("unit");
+    expect(imported.features[0]?.feature_type).toBe("unit");
   });
 });

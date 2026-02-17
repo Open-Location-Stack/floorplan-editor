@@ -7,6 +7,7 @@ const floor = { id: "f1", buildingId: "b1", name: "Floor" };
 const feature: FloorFeature = {
   type: "Feature" as const,
   id: "shape-1",
+  feature_type: "unit",
   geometry: {
     type: "Polygon" as const,
     coordinates: [
@@ -20,8 +21,7 @@ const feature: FloorFeature = {
     ],
   },
   properties: {
-    kind: "unit",
-    floorId: "f1",
+    level_id: "f1",
   },
 };
 

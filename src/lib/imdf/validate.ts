@@ -63,9 +63,7 @@ export const validateFloor = (
 ): FloorValidationResult => {
   const floorFeatures = features.filter((feature) => {
     const featureLevelId =
-      typeof feature.properties.level_id === "string"
-        ? feature.properties.level_id
-        : feature.properties.floorId;
+      typeof feature.properties.level_id === "string" ? feature.properties.level_id : undefined;
     return featureLevelId === level_id || featureLevelId === undefined;
   });
   const allIds = new Set(features.map((feature) => feature.id));
@@ -74,10 +72,7 @@ export const validateFloor = (
 
   for (const feature of floorFeatures) {
     const featureDescription = describeFeature(feature);
-    const featureType =
-      readImdfType(feature.feature_type) ??
-      readImdfType(feature.properties.imdfType) ??
-      readImdfType(feature.properties.kind);
+    const featureType = readImdfType(feature.feature_type);
     if (feature.properties.level_id !== level_id) {
       errors.push(`${featureDescription} is not assigned to level_id ${level_id}.`);
     }
