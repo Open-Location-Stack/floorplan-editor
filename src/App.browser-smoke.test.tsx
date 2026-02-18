@@ -18,6 +18,8 @@ const MockMapCanvas = ({
   drawMode,
   routePickEnabled: _routePickEnabled,
   snapEnabled: _snapEnabled,
+  gridVisible,
+  orientationMode,
   deleteRequestVersion,
 }: {
   mapStyleId: string;
@@ -57,6 +59,8 @@ const MockMapCanvas = ({
   drawMode: "select" | "point" | "line" | "polygon";
   routePickEnabled: boolean;
   snapEnabled: boolean;
+  gridVisible: boolean;
+  orientationMode: "north" | "grid";
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
   splitPathRequestVersion: number;
@@ -97,6 +101,8 @@ const MockMapCanvas = ({
         {features.map((feature) => feature.id).join(",")}
       </div>
       <div data-testid="mock-map-overlay-floor">{overlay?.floorId ?? "none"}</div>
+      <div data-testid="mock-map-grid-visible">{gridVisible ? "on" : "off"}</div>
+      <div data-testid="mock-map-orientation-mode">{orientationMode}</div>
       <button
         type="button"
         data-testid="mock-map-select-feature"
@@ -1088,6 +1094,40 @@ describe("App browser smoke", () => {
 
     fireEvent.click(snapToggle);
     expect(snapToggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("toggles grid visibility from the toolbar", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const gridToggle = await screen.findByRole("button", { name: /toggle grid overlay/i });
+    expect(gridToggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("mock-map-grid-visible")).toHaveTextContent("off");
+
+    fireEvent.click(gridToggle);
+    expect(gridToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("mock-map-grid-visible")).toHaveTextContent("on");
+  });
+
+  it("toggles compass orientation mode between north and grid", async () => {
+    mockRepository.loadProject.mockResolvedValue(undefined);
+
+    const { default: App } = await import("./App");
+    render(<App />);
+
+    const compassToggle = await screen.findByRole("button", {
+      name: /toggle map orientation mode/i,
+    });
+    expect(compassToggle).toHaveAttribute("aria-pressed", "false");
+    expect(compassToggle).toHaveAttribute("title", expect.stringMatching(/north-up/i));
+    expect(screen.getByTestId("mock-map-orientation-mode")).toHaveTextContent("north");
+
+    fireEvent.click(compassToggle);
+    expect(compassToggle).toHaveAttribute("aria-pressed", "true");
+    expect(compassToggle).toHaveAttribute("title", expect.stringMatching(/grid-up/i));
+    expect(screen.getByTestId("mock-map-orientation-mode")).toHaveTextContent("grid");
   });
 
   it("enables split and fork only for selected path openings with a selected vertex", async () => {

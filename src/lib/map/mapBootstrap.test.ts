@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureCollection, FloorOverlay } from "../types";
-import { createMapController, deriveNavigationOpeningEndpointMarkers } from "./mapBootstrap";
+import {
+  createMapController,
+  deriveNavigationOpeningEndpointMarkers,
+  snapDistanceMetersForZoom,
+} from "./mapBootstrap";
 
 type EventHandler = (payload?: unknown) => void;
 
@@ -144,6 +148,11 @@ class MockMap {
   getStyle = vi.fn(() => ({ layers: this.styleLayers }));
   getCenter = vi.fn(() => ({ lng: 5.1214, lat: 52.0907 }));
   getZoom = vi.fn(() => 17);
+  getBounds = vi.fn(() => ({
+    getNorthEast: () => ({ lng: 5.122, lat: 52.091 }),
+    getSouthWest: () => ({ lng: 5.1208, lat: 52.0898 }),
+  }));
+  getBearing = vi.fn(() => 0);
   easeTo = vi.fn();
   flyTo = vi.fn();
   getCanvas = vi.fn(() => this.canvas);
@@ -3908,6 +3917,284 @@ describe("createMapController", () => {
       speed: 1,
       zoom: 16,
     });
+  });
+
+  it("returns discrete snap distances for configured zoom bands", () => {
+    expect(snapDistanceMetersForZoom(17)).toBe(1);
+    expect(snapDistanceMetersForZoom(18)).toBe(0.5);
+    expect(snapDistanceMetersForZoom(19)).toBe(0.2);
+    expect(snapDistanceMetersForZoom(20)).toBe(0.1);
+    expect(snapDistanceMetersForZoom(21)).toBe(0.05);
+  });
+
+  it("adds grid layers and keeps them below draw layers", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    map.styleLayers = [{ id: "gl-draw-line-inactive" }];
+    controller.setGridVisible(true);
+    controller.setOverlay(createOverlay());
+    map.emit("load");
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      "grid-overlay",
+      expect.objectContaining({
+        type: "geojson",
+      }),
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "grid-overlay-line" }),
+      "gl-draw-line-inactive",
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "grid-overlay-node" }),
+      "gl-draw-line-inactive",
+    );
+    expect(map.moveLayer).toHaveBeenCalledWith("grid-overlay-line", "gl-draw-line-inactive");
+    expect(map.moveLayer).toHaveBeenCalledWith("grid-overlay-node", "gl-draw-line-inactive");
+  });
+
+  it("recomputes grid data when overlay orientation changes", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    controller.setGridVisible(true);
+    controller.setOverlay(createOverlay());
+    map.emit("load");
+
+    const initialGridData = (
+      map.addSource as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls.find(([id]) => id === "grid-overlay")?.[1] as
+      | { data?: FeatureCollection }
+      | undefined;
+    const source = map.getSource("grid-overlay") as
+      | { setData: ReturnType<typeof vi.fn> }
+      | undefined;
+    expect(source).toBeDefined();
+    if (!source || !initialGridData?.data) {
+      throw new Error("Expected grid source");
+    }
+
+    const rotated = createOverlay();
+    rotated.corners = {
+      topLeft: [5.12135, 52.09062],
+      topRight: [5.12135, 52.0908],
+      bottomRight: [5.12145, 52.0908],
+      bottomLeft: [5.12145, 52.09062],
+    };
+    controller.setOverlay(rotated);
+
+    const updatedGridData = source.setData.mock.lastCall?.[0] as FeatureCollection | undefined;
+    expect(updatedGridData).toBeDefined();
+    expect(updatedGridData).not.toEqual(initialGridData.data);
+  });
+
+  it("toggles orientation mode between north and grid bearings", async () => {
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      throw new Error("Expected map instance");
+    }
+
+    const rotated = createOverlay();
+    rotated.corners = {
+      topLeft: [5.12135, 52.09062],
+      topRight: [5.12135, 52.0908],
+      bottomRight: [5.12145, 52.0908],
+      bottomLeft: [5.12145, 52.09062],
+    };
+    controller.setOverlay(rotated);
+    map.emit("load");
+    (map.easeTo as unknown as { mockClear: () => void }).mockClear();
+
+    controller.setOrientationMode("grid");
+    const gridBearing = (
+      (map.easeTo as unknown as { mock: { lastCall?: [unknown] } }).mock.lastCall?.[0] as
+        | { bearing?: number }
+        | undefined
+    )?.bearing;
+    expect(typeof gridBearing).toBe("number");
+    expect(Math.abs(Math.abs(gridBearing as number) - 90)).toBeLessThan(10);
+
+    controller.setOrientationMode("north");
+    expect(map.easeTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bearing: 0,
+      }),
+    );
+  });
+
+  it("snaps points to grid nodes when grid is visible", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setGridVisible(true);
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "moving-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.120001, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "moving-point" }],
+    });
+
+    const latestFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    const moving = latestFeatures?.find((feature) => feature.id === "moving-point");
+    expect(moving).toBeDefined();
+    if (!moving || moving.geometry.type !== "Point") {
+      throw new Error("Expected moving point feature");
+    }
+    expect(moving.geometry.coordinates).not.toEqual([5.120001, 52.09]);
+  });
+
+  it("prefers nearest candidate between geometry and grid nodes", async () => {
+    const onFeaturesChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange,
+        onFeatureSelectionChange: vi.fn(),
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    controller.setGridVisible(true);
+    map.emit("load");
+    draw.add({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "anchor-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.12002, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+        {
+          type: "Feature",
+          id: "moving-point",
+          geometry: {
+            type: "Point",
+            coordinates: [5.120021, 52.09],
+          },
+          properties: {
+            kind: "amenity",
+            floorId: "f1",
+          },
+        },
+      ],
+    });
+
+    map.emit("draw.update", {
+      features: [{ id: "moving-point" }],
+    });
+
+    const latestFeatures = onFeaturesChange.mock.lastCall?.[0] as
+      | FeatureCollection["features"]
+      | undefined;
+    const moving = latestFeatures?.find((feature) => feature.id === "moving-point");
+    expect(moving).toBeDefined();
+    if (!moving || moving.geometry.type !== "Point") {
+      throw new Error("Expected moving point feature");
+    }
+    expect(moving.geometry.coordinates).toEqual([5.12002, 52.09]);
   });
 
   it("updates cursor when hovering controllable draw elements", async () => {

@@ -22,6 +22,8 @@ export type UiActionIconKey =
   | "fork"
   | "select"
   | "snap"
+  | "grid"
+  | "compass"
   | "route"
   | "clear"
   | "upload"

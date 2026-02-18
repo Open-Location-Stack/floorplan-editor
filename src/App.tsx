@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppIcon } from "./components/icons/AppIcon";
-import { type DrawMode, MapCanvas } from "./components/MapCanvas";
+import { type DrawMode, MapCanvas, type OrientationMode } from "./components/MapCanvas";
 import type { AddFeatureRequest } from "./components/Sidebar/AddFeatureButtonGroups";
 import { SelectionSidebar } from "./components/Sidebar/SelectionSidebar";
 import { BuildingsTree } from "./components/Tree/BuildingsTree";
@@ -639,6 +639,8 @@ function App() {
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [gridVisible, setGridVisible] = useState(false);
+  const [orientationMode, setOrientationMode] = useState<OrientationMode>("north");
   const [deleteRequestVersion, setDeleteRequestVersion] = useState(0);
   const [deleteVertexRequestVersion, setDeleteVertexRequestVersion] = useState(0);
   const [splitPathRequestVersion, setSplitPathRequestVersion] = useState(0);
@@ -3071,6 +3073,16 @@ function App() {
                         <AppIcon name="snap" />
                       </button>
                       <button
+                        className={`btn btn-sm join-item ${gridVisible ? "btn-secondary" : ""}`}
+                        type="button"
+                        aria-label="Toggle grid overlay"
+                        title="Toggle grid overlay"
+                        aria-pressed={gridVisible}
+                        onClick={() => setGridVisible((current) => !current)}
+                      >
+                        <AppIcon name="grid" />
+                      </button>
+                      <button
                         className="btn btn-sm join-item"
                         type="button"
                         aria-label="Undo"
@@ -3131,6 +3143,24 @@ function App() {
                       </button>
                     </div>
                   </div>
+                  <div className="absolute right-3 top-3 z-10">
+                    <button
+                      className={`btn btn-sm ${orientationMode === "grid" ? "btn-primary" : "btn-outline"} bg-base-100/95 shadow`}
+                      type="button"
+                      aria-label="Toggle map orientation mode"
+                      title={
+                        orientationMode === "grid"
+                          ? "Grid-up orientation (click for north-up)"
+                          : "North-up orientation (click for grid-up)"
+                      }
+                      aria-pressed={orientationMode === "grid"}
+                      onClick={() =>
+                        setOrientationMode((current) => (current === "north" ? "grid" : "north"))
+                      }
+                    >
+                      <AppIcon name="compass" />
+                    </button>
+                  </div>
                   <MapCanvas
                     maptilerApiKey={runtimeConfig.config.maptilerApiKey}
                     mapStyleId={mapStyleId}
@@ -3143,6 +3173,8 @@ function App() {
                     drawMode={drawMode}
                     routePickEnabled={routePickEnabled && drawMode === "select"}
                     snapEnabled={snapEnabled}
+                    gridVisible={gridVisible}
+                    orientationMode={orientationMode}
                     deleteRequestVersion={deleteRequestVersion}
                     deleteVertexRequestVersion={deleteVertexRequestVersion}
                     splitPathRequestVersion={splitPathRequestVersion}

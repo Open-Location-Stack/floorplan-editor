@@ -1,10 +1,10 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import { useEffect, useRef } from "react";
-import { createMapController, type DrawMode } from "../lib/map/mapBootstrap";
+import { createMapController, type DrawMode, type OrientationMode } from "../lib/map/mapBootstrap";
 import type { Coordinates, FloorFeature, FloorOverlay, OverlayCorners } from "../lib/types";
 
-export type { DrawMode } from "../lib/map/mapBootstrap";
+export type { DrawMode, OrientationMode } from "../lib/map/mapBootstrap";
 
 type MapRelocationRequest = {
   center: Coordinates;
@@ -27,6 +27,8 @@ type MapCanvasProps = {
   drawMode: DrawMode;
   routePickEnabled: boolean;
   snapEnabled: boolean;
+  gridVisible: boolean;
+  orientationMode: OrientationMode;
   deleteRequestVersion: number;
   deleteVertexRequestVersion: number;
   splitPathRequestVersion: number;
@@ -55,6 +57,8 @@ export const MapCanvas = ({
   drawMode,
   routePickEnabled,
   snapEnabled,
+  gridVisible,
+  orientationMode,
   deleteRequestVersion,
   deleteVertexRequestVersion,
   splitPathRequestVersion,
@@ -90,6 +94,8 @@ export const MapCanvas = ({
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
   const snapEnabledRef = useRef(snapEnabled);
+  const gridVisibleRef = useRef(gridVisible);
+  const orientationModeRef = useRef(orientationMode);
   const routePickEnabledRef = useRef(routePickEnabled);
   const relocationRequestRef = useRef(relocationRequest);
 
@@ -156,6 +162,14 @@ export const MapCanvas = ({
   useEffect(() => {
     snapEnabledRef.current = snapEnabled;
   }, [snapEnabled]);
+
+  useEffect(() => {
+    gridVisibleRef.current = gridVisible;
+  }, [gridVisible]);
+
+  useEffect(() => {
+    orientationModeRef.current = orientationMode;
+  }, [orientationMode]);
 
   useEffect(() => {
     routePickEnabledRef.current = routePickEnabled;
@@ -228,6 +242,8 @@ export const MapCanvas = ({
       controller.setInteractionMode(drawModeRef.current);
       controller.setRoutePickEnabled(routePickEnabledRef.current);
       controller.setSnapEnabled(snapEnabledRef.current);
+      controller.setGridVisible(gridVisibleRef.current);
+      controller.setOrientationMode(orientationModeRef.current);
 
       if (relocationRequestRef.current) {
         controller.setView(relocationRequestRef.current.center, relocationRequestRef.current.zoom);
@@ -284,6 +300,14 @@ export const MapCanvas = ({
   useEffect(() => {
     controllerRef.current?.setSnapEnabled(snapEnabled);
   }, [snapEnabled]);
+
+  useEffect(() => {
+    controllerRef.current?.setGridVisible(gridVisible);
+  }, [gridVisible]);
+
+  useEffect(() => {
+    controllerRef.current?.setOrientationMode(orientationMode);
+  }, [orientationMode]);
 
   useEffect(() => {
     if (!deleteRequestVersion) {

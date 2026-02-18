@@ -16,6 +16,7 @@ import type { Coordinates, FeatureCollection, FloorFeature, FloorOverlay } from 
 type MapLibreModule = typeof import("maplibre-gl");
 
 export type DrawMode = "select" | "point" | "line" | "polygon";
+export type OrientationMode = "north" | "grid";
 
 type FeaturesChangeHandler = (features: FloorFeature[]) => void;
 type FeatureSelectionChangeHandler = (featureId: string | undefined) => void;
@@ -35,6 +36,8 @@ type MapController = {
   setInteractionMode: (mode: DrawMode) => void;
   setRoutePickEnabled: (enabled: boolean) => void;
   setSnapEnabled: (enabled: boolean) => void;
+  setGridVisible: (visible: boolean) => void;
+  setOrientationMode: (mode: OrientationMode) => void;
   setView: (center: Coordinates, zoom?: number) => void;
   deleteSelection: () => void;
   deleteVertex: () => void;
@@ -52,11 +55,13 @@ type PendingForkState = {
 
 type SnapSettings = {
   enabled: boolean;
-  baseDistanceMeters: number;
 };
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
+const GRID_SOURCE_ID = "grid-overlay";
+const GRID_LINE_LAYER_ID = "grid-overlay-line";
+const GRID_NODE_LAYER_ID = "grid-overlay-node";
 const ROUTE_SOURCE_ID = "route-overlay";
 const ROUTE_LINE_LAYER_ID = "route-overlay-line";
 const ROUTE_POINT_LAYER_ID = "route-overlay-point";
@@ -76,8 +81,10 @@ const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
 const OVERLAY_ROTATE_HANDLE_OFFSET_RATIO = 0.2;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS = 1.5;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MAX_METERS = 6;
-const DEFAULT_SNAP_BASE_DISTANCE_METERS = 0.2;
-const SNAP_REFERENCE_ZOOM = 17;
+const GRID_BASE_SPACING_METERS = 0.5;
+const GRID_NODE_DISPLAY_EVERY = 4;
+const GRID_EXTENT_FALLBACK_METERS = 30;
+const GRID_EXTENT_MAX_METERS = 400;
 const OVERLAY_HANDLE_KEYS = ["topLeft", "topRight", "bottomRight", "bottomLeft"] as const;
 type OverlayCornerKey = (typeof OVERLAY_HANDLE_KEYS)[number];
 const featureTypeExpression: unknown[] = [
@@ -1055,6 +1062,9 @@ const getEventLngLat = (event: unknown): Coordinates | undefined => {
 const isOverlayLayerHit = (hit: RenderedFeatureHit | undefined): boolean =>
   hit?.layer?.id === OVERLAY_LAYER_ID;
 
+const hasOverlayLayerHit = (hits: RenderedFeatureHit[]): boolean =>
+  hits.some((hit) => isOverlayLayerHit(hit));
+
 const shiftOverlayCorners = (
   corners: FloorOverlay["corners"],
   dx: number,
@@ -1094,6 +1104,200 @@ const toCoordinates = (xMeters: number, yMeters: number, center: Coordinates): C
   center[1] + yMeters / (EARTH_RADIUS_METERS * DEG_TO_RAD),
 ];
 
+const rotateMeters = (
+  x: number,
+  y: number,
+  angleDegrees: number,
+): {
+  x: number;
+  y: number;
+} => {
+  if (angleDegrees === 0) {
+    return { x, y };
+  }
+
+  const radians = angleDegrees * DEG_TO_RAD;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  };
+};
+
+const overlayRotationDegrees = (overlay: FloorOverlay | undefined): number => {
+  if (!overlay?.corners || overlay.visible === false) {
+    return 0;
+  }
+
+  const center = overlayCenter(overlay.corners);
+  const left = toLocalMeters(overlay.corners.topLeft, center);
+  const right = toLocalMeters(overlay.corners.topRight, center);
+  const dx = right.x - left.x;
+  const dy = right.y - left.y;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 1e-9) {
+    return 0;
+  }
+  return Math.atan2(dy, dx) * RAD_TO_DEG;
+};
+
+export const snapDistanceMetersForZoom = (zoom: number): number => {
+  if (zoom >= 21) {
+    return 0.05;
+  }
+  if (zoom >= 20) {
+    return 0.1;
+  }
+  if (zoom >= 19) {
+    return 0.2;
+  }
+  if (zoom >= 18) {
+    return 0.5;
+  }
+  return 1;
+};
+
+const gridSpacingMetersForZoom = (zoom: number): number => {
+  if (zoom >= 22) {
+    return 0.25;
+  }
+  if (zoom >= 17) {
+    return GRID_BASE_SPACING_METERS;
+  }
+  return 1;
+};
+
+const readBoundsCorner = (
+  value: unknown,
+):
+  | {
+      lng: number;
+      lat: number;
+    }
+  | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const maybe = value as { lng?: unknown; lat?: unknown };
+  if (typeof maybe.lng !== "number" || typeof maybe.lat !== "number") {
+    return undefined;
+  }
+  return { lng: maybe.lng, lat: maybe.lat };
+};
+
+const deriveGridExtentMeters = (
+  map: {
+    getBounds?: () => unknown;
+  },
+  center: Coordinates,
+  gridSpacingMeters: number,
+): number => {
+  const bounds = map.getBounds?.();
+  if (!bounds || typeof bounds !== "object") {
+    return GRID_EXTENT_FALLBACK_METERS;
+  }
+
+  const candidate = bounds as {
+    getNorthEast?: () => unknown;
+    getSouthWest?: () => unknown;
+    _ne?: unknown;
+    _sw?: unknown;
+  };
+  const northEast = readBoundsCorner(candidate.getNorthEast?.() ?? candidate._ne);
+  const southWest = readBoundsCorner(candidate.getSouthWest?.() ?? candidate._sw);
+  if (!northEast || !southWest) {
+    return GRID_EXTENT_FALLBACK_METERS;
+  }
+
+  const neLocal = toLocalMeters([northEast.lng, northEast.lat], center);
+  const swLocal = toLocalMeters([southWest.lng, southWest.lat], center);
+  const extent = Math.max(
+    Math.abs(neLocal.x),
+    Math.abs(swLocal.x),
+    Math.abs(neLocal.y),
+    Math.abs(swLocal.y),
+  );
+  if (!Number.isFinite(extent) || extent <= 0) {
+    return GRID_EXTENT_FALLBACK_METERS;
+  }
+  return Math.min(GRID_EXTENT_MAX_METERS, extent + gridSpacingMeters * 4);
+};
+
+const gridDataForViewport = (
+  center: Coordinates,
+  angleDegrees: number,
+  extentMeters: number,
+  gridSpacingMeters: number,
+): FeatureCollection => {
+  const clampedExtent = Math.max(gridSpacingMeters, extentMeters);
+  const minStep = Math.ceil(-clampedExtent / gridSpacingMeters);
+  const maxStep = Math.floor(clampedExtent / gridSpacingMeters);
+  const features: FloorFeature[] = [];
+
+  for (let step = minStep; step <= maxStep; step += 1) {
+    const xMeters = step * gridSpacingMeters;
+    const verticalStart = rotateMeters(xMeters, -clampedExtent, angleDegrees);
+    const verticalEnd = rotateMeters(xMeters, clampedExtent, angleDegrees);
+    features.push({
+      type: "Feature",
+      id: `grid-v-${step}`,
+      feature_type: "formation:grid",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          toCoordinates(verticalStart.x, verticalStart.y, center),
+          toCoordinates(verticalEnd.x, verticalEnd.y, center),
+        ],
+      },
+      properties: {},
+    });
+
+    const yMeters = step * gridSpacingMeters;
+    const horizontalStart = rotateMeters(-clampedExtent, yMeters, angleDegrees);
+    const horizontalEnd = rotateMeters(clampedExtent, yMeters, angleDegrees);
+    features.push({
+      type: "Feature",
+      id: `grid-h-${step}`,
+      feature_type: "formation:grid",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          toCoordinates(horizontalStart.x, horizontalStart.y, center),
+          toCoordinates(horizontalEnd.x, horizontalEnd.y, center),
+        ],
+      },
+      properties: {},
+    });
+  }
+
+  const minNodeStep = Math.ceil(-clampedExtent / (gridSpacingMeters * GRID_NODE_DISPLAY_EVERY));
+  const maxNodeStep = Math.floor(clampedExtent / (gridSpacingMeters * GRID_NODE_DISPLAY_EVERY));
+  for (let stepX = minNodeStep; stepX <= maxNodeStep; stepX += 1) {
+    for (let stepY = minNodeStep; stepY <= maxNodeStep; stepY += 1) {
+      const pointMeters = rotateMeters(
+        stepX * gridSpacingMeters * GRID_NODE_DISPLAY_EVERY,
+        stepY * gridSpacingMeters * GRID_NODE_DISPLAY_EVERY,
+        angleDegrees,
+      );
+      features.push({
+        type: "Feature",
+        id: `grid-node-${stepX}-${stepY}`,
+        feature_type: "formation:grid",
+        geometry: {
+          type: "Point",
+          coordinates: toCoordinates(pointMeters.x, pointMeters.y, center),
+        },
+        properties: {},
+      });
+    }
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
+};
+
 type SnapTargets = {
   vertices: Array<{
     featureId: string;
@@ -1113,7 +1317,7 @@ type SnapTargets = {
 type SnapCandidate = {
   coordinate: Coordinates;
   distanceMeters: number;
-  kind: "vertex" | "edge";
+  kind: "vertex" | "edge" | "grid";
   targetFeatureId: string;
   targetGeometryType: "Point" | "LineString" | "Polygon";
   targetVertexIndex?: number;
@@ -1171,9 +1375,6 @@ type ActiveDrawPointerTarget =
       ring: Coordinates[];
       activeCoordinateIndex: number;
     };
-
-const effectiveSnapDistanceMeters = (baseDistanceMeters: number, zoom: number): number =>
-  baseDistanceMeters * 2 ** Math.max(0, SNAP_REFERENCE_ZOOM - zoom);
 
 const distanceMetersBetween = (
   from: Coordinates,
@@ -1343,11 +1544,72 @@ const findBestSnapCandidate = (
   return bestCandidate;
 };
 
+const findGridSnapCandidate = (
+  coordinate: Coordinates,
+  gridAngleDegrees: number,
+  referenceCenter: Coordinates,
+  gridSpacingMeters: number,
+): SnapCandidate => {
+  const local = toLocalMeters(coordinate, referenceCenter);
+  const unrotated = rotateMeters(local.x, local.y, -gridAngleDegrees);
+  const snappedUnrotated = {
+    x: Math.round(unrotated.x / gridSpacingMeters) * gridSpacingMeters,
+    y: Math.round(unrotated.y / gridSpacingMeters) * gridSpacingMeters,
+  };
+  const rotated = rotateMeters(snappedUnrotated.x, snappedUnrotated.y, gridAngleDegrees);
+  const snappedCoordinate = toCoordinates(rotated.x, rotated.y, referenceCenter);
+  return {
+    coordinate: snappedCoordinate,
+    distanceMeters: distanceMetersBetween(coordinate, snappedCoordinate, referenceCenter),
+    kind: "grid",
+    targetFeatureId: "grid",
+    targetGeometryType: "Point",
+  };
+};
+
+const findBestSnapCandidateWithGrid = (
+  coordinate: Coordinates,
+  targets: SnapTargets,
+  maxDistanceMeters: number,
+  referenceCenter: Coordinates,
+  gridEnabled: boolean,
+  gridAngleDegrees: number,
+  gridSpacingMeters: number,
+): SnapCandidate | undefined => {
+  const geometryCandidate = findBestSnapCandidate(
+    coordinate,
+    targets,
+    maxDistanceMeters,
+    referenceCenter,
+  );
+  if (!gridEnabled) {
+    return geometryCandidate;
+  }
+
+  const gridCandidate = findGridSnapCandidate(
+    coordinate,
+    gridAngleDegrees,
+    referenceCenter,
+    gridSpacingMeters,
+  );
+  const maxGridDistanceMeters = maxDistanceMeters * 0.65;
+  if (gridCandidate.distanceMeters > maxGridDistanceMeters) {
+    return geometryCandidate;
+  }
+  if (!geometryCandidate || gridCandidate.distanceMeters <= geometryCandidate.distanceMeters) {
+    return gridCandidate;
+  }
+  return geometryCandidate;
+};
+
 const snapCoordinates = (
   coordinates: Coordinates[],
   targets: SnapTargets,
   maxDistanceMeters: number,
   referenceCenter: Coordinates,
+  gridEnabled: boolean,
+  gridAngleDegrees: number,
+  gridSpacingMeters: number,
 ): {
   coordinates: Coordinates[];
   changed: boolean;
@@ -1356,11 +1618,14 @@ const snapCoordinates = (
   let changed = false;
   const candidates: Array<SnapCandidate | undefined> = [];
   const snapped = coordinates.map((coordinate) => {
-    const candidate = findBestSnapCandidate(
+    const candidate = findBestSnapCandidateWithGrid(
       coordinate,
       targets,
       maxDistanceMeters,
       referenceCenter,
+      gridEnabled,
+      gridAngleDegrees,
+      gridSpacingMeters,
     );
     candidates.push(candidate);
     if (!candidate) {
@@ -1635,6 +1900,8 @@ const createOverlayHandleElement = (
   return element;
 };
 
+const normalizeBearingDegrees = (value: number): number => (((value % 360) + 540) % 360) - 180;
+
 export const createMapController = async (
   container: HTMLElement,
   maptilerApiKey: string,
@@ -1666,6 +1933,7 @@ export const createMapController = async (
     style: `https://api.maptiler.com/maps/${mapStyleId}/style.json?key=${maptilerApiKey}`,
     center: initialView?.center ?? [5.1214, 52.0907],
     zoom: initialView?.zoom ?? 17,
+    maxZoom: 24,
   });
 
   const draw = new MapboxDraw({
@@ -1683,10 +1951,10 @@ export const createMapController = async (
   let currentSnapMarkers: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
   let currentInteractionMode: DrawMode = "select";
+  let currentOrientationMode: OrientationMode = "north";
   let currentRoutePickEnabled = false;
   let currentSnapEnabled = options?.snapping?.enabled ?? true;
-  const snapBaseDistanceMeters =
-    options?.snapping?.baseDistanceMeters ?? DEFAULT_SNAP_BASE_DISTANCE_METERS;
+  let currentGridVisible = false;
   let currentSelectedFeatureId: string | undefined;
   let pendingForkState: PendingForkState | undefined;
   let overlayDragState:
@@ -1728,6 +1996,7 @@ export const createMapController = async (
   let overlayCornersUpdateAnimationFrame: number | undefined;
   let pendingOverlayCornersUpdate: FloorOverlay["corners"] | undefined;
   let isOverlayInteractionActive = false;
+  let lastAppliedOrientationBearing: number | undefined;
 
   const scheduleAnimationFrame = (callback: FrameRequestCallback): number => {
     if (typeof globalThis.requestAnimationFrame === "function") {
@@ -2289,6 +2558,111 @@ export const createMapController = async (
     });
   };
 
+  const gridRotationDegrees = (): number => overlayRotationDegrees(currentOverlay);
+
+  const applyOrientationBearing = (force = false) => {
+    if (!isStyleReady) {
+      return;
+    }
+
+    const targetBearing = currentOrientationMode === "north" ? 0 : -gridRotationDegrees();
+    if (!Number.isFinite(targetBearing)) {
+      return;
+    }
+
+    const normalizedTarget = normalizeBearingDegrees(targetBearing);
+    if (!force && lastAppliedOrientationBearing !== undefined) {
+      const delta = Math.abs(normalizedTarget - lastAppliedOrientationBearing);
+      if (delta < 0.01) {
+        return;
+      }
+    }
+
+    map.easeTo({
+      bearing: normalizedTarget,
+      duration: 200,
+      essential: true,
+    });
+    lastAppliedOrientationBearing = normalizedTarget;
+  };
+
+  const applyGridOverlay = () => {
+    const source = map.getSource(GRID_SOURCE_ID);
+    const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
+    const gridSpacingMeters = gridSpacingMetersForZoom(map.getZoom());
+    const extent = deriveGridExtentMeters(map, center, gridSpacingMeters);
+    const gridData = currentGridVisible
+      ? gridDataForViewport(center, gridRotationDegrees(), extent, gridSpacingMeters)
+      : emptyFeatureCollection();
+
+    if (isGeoJsonSourceWithSetData(source)) {
+      source.setData(gridData);
+    } else if (!source) {
+      map.addSource(GRID_SOURCE_ID, {
+        type: "geojson",
+        data: gridData,
+      });
+    }
+
+    const beforeLayerId = firstDrawLayerId(map.getStyle().layers);
+    if (!map.getLayer(GRID_LINE_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: GRID_LINE_LAYER_ID,
+          type: "line",
+          source: GRID_SOURCE_ID,
+          filter: ["==", "$type", "LineString"],
+          paint: {
+            "line-color": "#6b7280",
+            "line-width": 1,
+            "line-opacity": 0.45,
+          },
+          layout: {
+            visibility: currentGridVisible ? "visible" : "none",
+          },
+        },
+        beforeLayerId,
+      );
+    } else {
+      map.setLayoutProperty(
+        GRID_LINE_LAYER_ID,
+        "visibility",
+        currentGridVisible ? "visible" : "none",
+      );
+    }
+
+    if (!map.getLayer(GRID_NODE_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: GRID_NODE_LAYER_ID,
+          type: "circle",
+          source: GRID_SOURCE_ID,
+          filter: ["==", "$type", "Point"],
+          paint: {
+            "circle-color": "#6b7280",
+            "circle-opacity": 0.35,
+            "circle-radius": 1.25,
+          },
+          layout: {
+            visibility: currentGridVisible ? "visible" : "none",
+          },
+        },
+        beforeLayerId,
+      );
+    } else {
+      map.setLayoutProperty(
+        GRID_NODE_LAYER_ID,
+        "visibility",
+        currentGridVisible ? "visible" : "none",
+      );
+    }
+
+    if (beforeLayerId) {
+      map.moveLayer(GRID_LINE_LAYER_ID, beforeLayerId);
+      map.moveLayer(GRID_NODE_LAYER_ID, beforeLayerId);
+    }
+  };
+
   const applyOverlay = () => {
     if (!currentOverlay?.imageDataUrl) {
       if (map.getLayer(OVERLAY_LAYER_ID)) {
@@ -2298,6 +2672,10 @@ export const createMapController = async (
         map.removeSource(OVERLAY_SOURCE_ID);
       }
       removeOverlayHandles();
+      applyGridOverlay();
+      if (currentOrientationMode === "grid") {
+        applyOrientationBearing(true);
+      }
       return;
     }
 
@@ -2340,6 +2718,10 @@ export const createMapController = async (
         beforeLayerId,
       );
       syncOverlayHandles();
+      applyGridOverlay();
+      if (currentOrientationMode === "grid") {
+        applyOrientationBearing(true);
+      }
       return;
     }
 
@@ -2353,6 +2735,10 @@ export const createMapController = async (
       map.moveLayer(OVERLAY_LAYER_ID, beforeLayerId);
     }
     syncOverlayHandles();
+    applyGridOverlay();
+    if (currentOrientationMode === "grid") {
+      applyOrientationBearing(true);
+    }
   };
 
   const applyRouteOverlay = () => {
@@ -2628,7 +3014,8 @@ export const createMapController = async (
     }
 
     const zoomLevel = map.getZoom();
-    const maxDistanceMeters = effectiveSnapDistanceMeters(snapBaseDistanceMeters, zoomLevel);
+    const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
+    const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
     if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
       return;
     }
@@ -2655,7 +3042,7 @@ export const createMapController = async (
       }
 
       const targets = collectSnapTargets(allDrawFeatures, featureId);
-      if (targets.vertices.length === 0 && targets.edges.length === 0) {
+      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
         continue;
       }
 
@@ -2665,7 +3052,15 @@ export const createMapController = async (
           continue;
         }
 
-        const candidate = findBestSnapCandidate(coordinate, targets, maxDistanceMeters, center);
+        const candidate = findBestSnapCandidateWithGrid(
+          coordinate,
+          targets,
+          maxDistanceMeters,
+          center,
+          currentGridVisible,
+          gridRotationDegrees(),
+          gridSpacingMeters,
+        );
         if (!candidate) {
           continue;
         }
@@ -2693,7 +3088,15 @@ export const createMapController = async (
           continue;
         }
 
-        const snapped = snapCoordinates(coordinates, targets, maxDistanceMeters, center);
+        const snapped = snapCoordinates(
+          coordinates,
+          targets,
+          maxDistanceMeters,
+          center,
+          currentGridVisible,
+          gridRotationDegrees(),
+          gridSpacingMeters,
+        );
         for (const candidate of snapped.candidates) {
           if (!candidate) {
             continue;
@@ -2724,7 +3127,15 @@ export const createMapController = async (
           continue;
         }
 
-        const snapped = snapCoordinates(ring, targets, maxDistanceMeters, center);
+        const snapped = snapCoordinates(
+          ring,
+          targets,
+          maxDistanceMeters,
+          center,
+          currentGridVisible,
+          gridRotationDegrees(),
+          gridSpacingMeters,
+        );
         for (const candidate of snapped.candidates) {
           if (!candidate) {
             continue;
@@ -2798,24 +3209,28 @@ export const createMapController = async (
 
       const allDrawFeatures = draw.getAll().features;
       const targets = collectSnapTargets(allDrawFeatures, selectedVertex.featureId);
-      if (targets.vertices.length === 0 && targets.edges.length === 0) {
+      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
         clearSnapMarkers();
         return;
       }
 
       const zoomLevel = map.getZoom();
-      const maxDistanceMeters = effectiveSnapDistanceMeters(snapBaseDistanceMeters, zoomLevel);
+      const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
+      const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
       if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
         clearSnapMarkers();
         return;
       }
 
       const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
-      const candidate = findBestSnapCandidate(
+      const candidate = findBestSnapCandidateWithGrid(
         selectedVertex.coordinate,
         targets,
         maxDistanceMeters,
         center,
+        currentGridVisible,
+        gridRotationDegrees(),
+        gridSpacingMeters,
       );
       if (!candidate) {
         clearSnapMarkers();
@@ -2849,7 +3264,8 @@ export const createMapController = async (
     }
 
     const zoomLevel = map.getZoom();
-    const maxDistanceMeters = effectiveSnapDistanceMeters(snapBaseDistanceMeters, zoomLevel);
+    const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
+    const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
     if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
       return;
     }
@@ -2878,7 +3294,7 @@ export const createMapController = async (
       }
 
       const targets = collectSnapTargets(allDrawFeatures, featureId);
-      if (targets.vertices.length === 0 && targets.edges.length === 0) {
+      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
         continue;
       }
 
@@ -2888,11 +3304,14 @@ export const createMapController = async (
           continue;
         }
 
-        const candidate = findBestSnapCandidate(
+        const candidate = findBestSnapCandidateWithGrid(
           activeCoordinate,
           targets,
           maxDistanceMeters,
           center,
+          currentGridVisible,
+          gridRotationDegrees(),
+          gridSpacingMeters,
         );
         if (!candidate) {
           continue;
@@ -2925,7 +3344,15 @@ export const createMapController = async (
         continue;
       }
 
-      const candidate = findBestSnapCandidate(activeCoordinate, targets, maxDistanceMeters, center);
+      const candidate = findBestSnapCandidateWithGrid(
+        activeCoordinate,
+        targets,
+        maxDistanceMeters,
+        center,
+        currentGridVisible,
+        gridRotationDegrees(),
+        gridSpacingMeters,
+      );
       if (!candidate) {
         continue;
       }
@@ -2973,6 +3400,13 @@ export const createMapController = async (
   map.on("load", () => {
     registerPointIcons();
     map.addControl(draw as never, "top-left");
+    if ("ScaleControl" in maplibre) {
+      const scaleControl = new maplibre.ScaleControl({
+        maxWidth: 120,
+        unit: "metric",
+      });
+      map.addControl(scaleControl as never, "bottom-right");
+    }
     isStyleReady = true;
     applyPendingState();
 
@@ -2980,9 +3414,13 @@ export const createMapController = async (
       [map.getCenter().lng, map.getCenter().lat],
       Number(map.getZoom().toFixed(2)),
     );
+    applyOrientationBearing(true);
   });
 
   map.on("moveend", () => {
+    if (isStyleReady) {
+      applyGridOverlay();
+    }
     handlers.onViewStateChange(
       [map.getCenter().lng, map.getCenter().lat],
       Number(map.getZoom().toFixed(2)),
@@ -3153,7 +3591,7 @@ export const createMapController = async (
     applyLivePointerSnapping();
 
     const hovered = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
-    if (canDragOverlay() && isOverlayLayerHit(hovered[0])) {
+    if (canDragOverlay() && hasOverlayLayerHit(hovered)) {
       map.getCanvas().style.cursor = "grab";
       return;
     }
@@ -3176,7 +3614,7 @@ export const createMapController = async (
     }
 
     const hits = map.queryRenderedFeatures([point.x, point.y]) as RenderedFeatureHit[];
-    if (!isOverlayLayerHit(hits[0]) || !currentOverlay) {
+    if (!hasOverlayLayerHit(hits) || !currentOverlay) {
       return;
     }
 
@@ -3260,6 +3698,16 @@ export const createMapController = async (
       if (!enabled) {
         clearSnapMarkers();
       }
+    },
+    setGridVisible: (visible) => {
+      currentGridVisible = visible;
+      if (isStyleReady) {
+        applyGridOverlay();
+      }
+    },
+    setOrientationMode: (mode) => {
+      currentOrientationMode = mode;
+      applyOrientationBearing(true);
     },
     setView: (center, zoom) => {
       map.flyTo({
