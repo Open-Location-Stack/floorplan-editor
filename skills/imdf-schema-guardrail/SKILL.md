@@ -34,6 +34,14 @@ The main goal of this project is being able to work with IMDF floor plans produc
 - We added the ability to associate a scaled and rotated bitmap with a level. The properties for this should remain supported.
 - Geometries and bitmaps can be locked. That state is stored separately from the floor plan data and linked by id
 
+## Internal State Boundary (Hard Rule)
+
+- Do not use IMDF export payloads as storage for internal editor state, transient caches, UI state, workflow hints, or derived runtime data.
+- Internal/transient data must never be mixed into exported IMDF feature properties.
+- Exported IMDF must contain only IMDF-standard data (plus explicitly approved extension files), never internal bookkeeping.
+- On import, rebuild transient/runtime/editor-derived state from imported IMDF data; do not persist transient state into IMDF to "round-trip" it.
+- If internal state is required, store it outside IMDF data structures and outside exported IMDF collections.
+
 ## Openings and Relations
 
 - Openings are stored as path segments that connect to each other by id. Additionally relations are used to construct relations between features.

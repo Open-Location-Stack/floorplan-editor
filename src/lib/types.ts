@@ -107,9 +107,6 @@ export type FeatureProperties = {
   destination_id?: string;
   "formation:relation"?: RelationshipRefs;
   "formation:style"?: FeatureStyle;
-  "formation:metadata"?: JsonObject;
-  "formation:containment_parent_id"?: string;
-  "formation:containment_parent_type"?: ImdfFeatureType | "level";
   metadata?: JsonObject;
   relation?: RelationshipRefs;
   containmentParentId?: string;

@@ -49,7 +49,7 @@ describe("containment helpers", () => {
     expect(resolvePendingContainmentParent(amenityFeature)).toBeUndefined();
   });
 
-  it("applies and clears containment properties", () => {
+  it("does not persist containment state in feature properties", () => {
     const withParent = applyContainmentParent(
       {
         name: { en: "Path 1" },
@@ -59,11 +59,13 @@ describe("containment helpers", () => {
         parentType: "unit",
       },
     );
-    expect(withParent["formation:containment_parent_id"]).toBe("unit-1");
-    expect(withParent["formation:containment_parent_type"]).toBe("unit");
+    expect(withParent).toEqual({
+      name: { en: "Path 1" },
+    });
 
     const cleared = applyContainmentParent(withParent, undefined);
-    expect(cleared["formation:containment_parent_id"]).toBeUndefined();
-    expect(cleared["formation:containment_parent_type"]).toBeUndefined();
+    expect(cleared).toEqual({
+      name: { en: "Path 1" },
+    });
   });
 });

@@ -2,6 +2,7 @@
 import JSZip from "jszip";
 import type { Building, Coordinates, Floor, FloorFeature, FloorOverlay, Venue } from "../types";
 import { isStandardCategoryForType } from "./categories";
+import { buildContainmentParentMap } from "./containment";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
 import {
   imdfCollectionFileName,
@@ -699,6 +700,15 @@ export const buildImdfArchivePayload = ({
     exportedFeatureIds.add(feature.id);
   }
 
+  const sourceFeatureById = new Map(featuresInBuilding.map((feature) => [feature.id, feature]));
+  const containmentParentByFeatureId = new Map<string, string>();
+  for (const floor of floorsInBuilding) {
+    const parentMap = buildContainmentParentMap(featuresInBuilding, floor.id);
+    for (const [featureId, parentId] of parentMap.entries()) {
+      containmentParentByFeatureId.set(featureId, parentId);
+    }
+  }
+
   for (const feature of featuresInBuilding) {
     if (!exportedFeatureIds.has(feature.id)) {
       continue;
@@ -713,32 +723,20 @@ export const buildImdfArchivePayload = ({
       continue;
     }
     const childId = featureUuidById.get(feature.id) ?? resolveImdfUuid(feature.id);
-    const metadata =
-      feature.properties["formation:metadata"] &&
-      typeof feature.properties["formation:metadata"] === "object"
-        ? (feature.properties["formation:metadata"] as {
-            imdfRelationshipParentId?: string;
-            imdfRelationshipParentType?: string;
-          })
+    const parentSourceId = containmentParentByFeatureId.get(feature.id);
+    const parentFeature =
+      parentSourceId && parentSourceId !== level_id
+        ? sourceFeatureById.get(parentSourceId)
         : undefined;
-    const overrideParentRaw =
-      typeof feature.properties["formation:containment_parent_id"] === "string"
-        ? feature.properties["formation:containment_parent_id"]
-        : metadata && typeof metadata.imdfRelationshipParentId === "string"
-          ? metadata.imdfRelationshipParentId
-          : undefined;
-    const overrideParentType =
-      typeof feature.properties["formation:containment_parent_type"] === "string"
-        ? feature.properties["formation:containment_parent_type"]
-        : metadata && typeof metadata.imdfRelationshipParentType === "string"
-          ? metadata.imdfRelationshipParentType
-          : undefined;
-    const parentId = overrideParentRaw
-      ? (featureUuidById.get(overrideParentRaw) ??
-        levelByFloor.get(overrideParentRaw) ??
-        resolveImdfUuid(overrideParentRaw))
-      : levelId;
-    const parentType = overrideParentRaw ? (overrideParentType ?? "unit") : "level";
+    const parentId =
+      !parentSourceId || parentSourceId === level_id
+        ? levelId
+        : (featureUuidById.get(parentSourceId) ??
+          levelByFloor.get(parentSourceId) ??
+          resolveImdfUuid(parentSourceId));
+    const parentType = parentFeature
+      ? (readImdfType(parentFeature.feature_type) ?? "unit")
+      : "level";
     collections.relationship.features.push({
       type: "Feature",
       id: resolveImdfUuid(`contains:${parentId}:${childId}`),

@@ -3456,7 +3456,7 @@ function App() {
                       ...feature,
                       properties: {
                         ...feature.properties,
-                        "formation:metadata": metadata,
+                        metadata,
                       },
                     })),
                   );

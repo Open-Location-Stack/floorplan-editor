@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
 
 import type { Building, FeatureCollection, Floor, FloorFeature } from "../types";
+import { buildContainmentParentMap } from "./containment";
 import { imdfCollectionFileName } from "./fileNames";
 import { normalizeFeature } from "./normalize";
 import { sortOrderForFeatureType } from "./renderRules";
@@ -335,45 +336,6 @@ const resolveInternalType = (feature: FloorFeature): string => {
   return typeof typeCandidate === "string" ? typeCandidate : "";
 };
 
-const resolveContainmentParent = (
-  feature: FloorFeature,
-): { parentId?: string; parentType?: string } => {
-  if (typeof feature.properties["formation:containment_parent_id"] === "string") {
-    const parentType =
-      typeof feature.properties["formation:containment_parent_type"] === "string"
-        ? feature.properties["formation:containment_parent_type"]
-        : undefined;
-    return parentType
-      ? {
-          parentId: feature.properties["formation:containment_parent_id"],
-          parentType,
-        }
-      : {
-          parentId: feature.properties["formation:containment_parent_id"],
-        };
-  }
-  const metadata =
-    feature.properties["formation:metadata"] &&
-    typeof feature.properties["formation:metadata"] === "object"
-      ? (feature.properties["formation:metadata"] as Record<string, unknown>)
-      : undefined;
-  if (metadata && typeof metadata["imdfRelationshipParentId"] === "string") {
-    const parentType =
-      typeof metadata["imdfRelationshipParentType"] === "string"
-        ? (metadata["imdfRelationshipParentType"] as string)
-        : undefined;
-    return parentType
-      ? {
-          parentId: metadata["imdfRelationshipParentId"] as string,
-          parentType,
-        }
-      : {
-          parentId: metadata["imdfRelationshipParentId"] as string,
-        };
-  }
-  return {};
-};
-
 const buildEmptyCollections = (): Record<ImdfDatasetType, ImdfFeatureCollection> => ({
   address: { type: "FeatureCollection", features: [] },
   amenity: { type: "FeatureCollection", features: [] },
@@ -661,6 +623,7 @@ export const exportImdfDataset = ({
   }
 
   const sourceById = new Map(normalizedFloorFeatures.map((feature) => [feature.id, feature]));
+  const containmentParentByFeatureId = buildContainmentParentMap(normalizedFloorFeatures, floor.id);
   const childFeatures = [
     ...unitSourceFeatures,
     ...sectionSourceFeatures,
@@ -674,18 +637,22 @@ export const exportImdfDataset = ({
     if (!childId) {
       continue;
     }
-    const containment = resolveContainmentParent(sourceFeature);
-    const parentSource = containment.parentId ? sourceById.get(containment.parentId) : undefined;
-    const parentType = containment.parentType ?? resolveInternalType(parentSource ?? sourceFeature);
-    const resolvedParent = containment.parentId
-      ? exportedBySourceId.get(containment.parentId)
-      : undefined;
+    const containmentParentId = containmentParentByFeatureId.get(sourceFeature.id);
+    const parentSource =
+      containmentParentId && containmentParentId !== floor.id
+        ? sourceById.get(containmentParentId)
+        : undefined;
+    const parentType = parentSource ? resolveInternalType(parentSource) : "level";
+    const resolvedParent =
+      containmentParentId && containmentParentId !== floor.id
+        ? exportedBySourceId.get(containmentParentId)
+        : undefined;
     const parentId =
-      !containment.parentId || containment.parentId === floor.id
+      !containmentParentId || containmentParentId === floor.id
         ? primaryLevelId
         : (resolvedParent?.id ?? primaryLevelId);
     const resolvedParentType =
-      !containment.parentId || containment.parentId === floor.id
+      !containmentParentId || containmentParentId === floor.id
         ? "level"
         : (resolvedParent?.type ?? parentType ?? "level");
     collections.relationship.features.push({

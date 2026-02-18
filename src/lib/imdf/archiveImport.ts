@@ -767,30 +767,10 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           },
         },
       });
-      continue;
     }
 
-    const childFeature = destinationFeature;
-    if (!childFeature) {
-      continue;
-    }
-    // Relationship features are not editable in the UI.
-    // We extract containment metadata from supported containment relationships.
-    if (!["level", "unit", "section", "geofence"].includes(originType)) {
-      continue;
-    }
-    const metadata =
-      childFeature.properties["formation:metadata"] &&
-      typeof childFeature.properties["formation:metadata"] === "object"
-        ? childFeature.properties["formation:metadata"]
-        : {};
-    childFeature.properties["formation:metadata"] = {
-      ...metadata,
-      imdfRelationshipParentId: originId,
-      imdfRelationshipParentType: originType,
-    };
-    childFeature.properties["formation:containment_parent_id"] = originId;
-    childFeature.properties["formation:containment_parent_type"] = originType as ImdfFeatureType;
+    // Non-navigation containment relationships are derived at runtime from imported IMDF data.
+    // They are intentionally not persisted as internal state on feature properties.
   }
 
   const overlays: FloorOverlay[] = [];
