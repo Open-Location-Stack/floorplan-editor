@@ -34,6 +34,11 @@ import {
   type ContainmentParent,
   resolvePendingContainmentParent,
 } from "./lib/imdf/containment";
+import {
+  defaultCategoryForType,
+  requiresAnchorId,
+  resolveUnitIdForNewAnchor,
+} from "./lib/imdf/creationDefaults";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { readImdfType } from "./lib/imdf/featureCatalog";
@@ -674,6 +679,7 @@ function App() {
   const projectRedoStackRef = useRef<ProjectHistoryEntry[]>([]);
   const overlayInteractionSnapshotRef = useRef<ProjectSnapshot | undefined>(undefined);
   const overlayInteractionChangedRef = useRef(false);
+  const pendingCreatedFeatureSelectionRef = useRef<string | undefined>(undefined);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const runtimeConfig = getRuntimeConfig();
@@ -860,6 +866,21 @@ function App() {
     () => editorState.features.find((feature) => feature.id === editorState.selectedFeatureId),
     [editorState.features, editorState.selectedFeatureId],
   );
+
+  useEffect(() => {
+    const pendingFeatureId = pendingCreatedFeatureSelectionRef.current;
+    if (!pendingFeatureId) {
+      return;
+    }
+    if (editorState.selectedFeatureId !== pendingFeatureId) {
+      return;
+    }
+    if (!editorState.features.some((feature) => feature.id === pendingFeatureId)) {
+      return;
+    }
+    setSelection({ kind: "feature", id: pendingFeatureId });
+    pendingCreatedFeatureSelectionRef.current = undefined;
+  }, [editorState.features, editorState.selectedFeatureId]);
 
   const selectedOverlay = useMemo(
     () => overlays.find((overlay) => overlay.level_id === activeLevel?.id),
@@ -1156,16 +1177,20 @@ function App() {
       let consumedPendingTemplate = false;
 
       setEditorState((current) => {
+        let createdFeatureId: string | undefined;
         let nextPathNumber = nextPathNumberForLevel(current.features, activeLevel.id);
         const currentVisible = current.features.filter((feature) =>
           isFeatureOnLevel(feature, activeLevel.id),
         );
         const currentVisibleById = new Map(currentVisible.map((feature) => [feature.id, feature]));
 
-        const nextVisible = featuresFromMap.map((feature) => {
+        const nextVisible: FloorFeature[] = [];
+
+        for (const feature of featuresFromMap) {
           const existing = currentVisibleById.get(feature.id);
           if (lockedFeatureIdsSet.has(feature.id) && existing) {
-            return existing;
+            nextVisible.push(existing);
+            continue;
           }
           const shouldApplyPendingTemplate =
             !existing &&
@@ -1209,8 +1234,7 @@ function App() {
             : typeof mergedProperties.name === "string" && mergedProperties.name
               ? mergedProperties.name
               : (existing?.properties.name ?? nameForGeometry(feature.geometry.type));
-
-          return normalizeFeature(
+          let normalizedFeature = normalizeFeature(
             {
               ...feature,
               geometry: normalizedGeometry,
@@ -1228,7 +1252,78 @@ function App() {
               buildingId: activeBuilding.id,
             },
           );
-        });
+
+          const normalizedType = readImdfType(normalizedFeature.feature_type);
+          const needsAutoAnchor =
+            shouldApplyPendingTemplate &&
+            normalizedType !== undefined &&
+            requiresAnchorId(normalizedType) &&
+            typeof normalizedFeature.properties.anchor_id !== "string";
+          if (needsAutoAnchor && normalizedFeature.geometry.type === "Point" && normalizedType) {
+            const candidateFeatures = [
+              ...current.features.filter((candidate) => candidate.id !== normalizedFeature.id),
+              ...nextVisible,
+            ];
+            const anchorUnitId = resolveUnitIdForNewAnchor(
+              candidateFeatures,
+              activeLevel.id,
+              normalizedFeature.geometry.coordinates,
+              selectedFeature,
+              pendingContainmentParent,
+            );
+            if (!anchorUnitId) {
+              clientLogger.warn(
+                "Skipping creation of anchor-required feature because no unit is available on level.",
+                {
+                  featureId: normalizedFeature.id,
+                  featureType: normalizedType,
+                  levelId: activeLevel.id,
+                },
+              );
+              continue;
+            }
+            const anchorId = createId();
+            const anchor = normalizeFeature(
+              {
+                type: "Feature",
+                id: anchorId,
+                feature_type: "anchor",
+                geometry: {
+                  type: "Point",
+                  coordinates: normalizedFeature.geometry.coordinates,
+                },
+                properties: {
+                  name: "Anchor",
+                  feature_type: "anchor",
+                  level_id: activeLevel.id,
+                  unit_id: anchorUnitId,
+                },
+              },
+              {
+                level_id: activeLevel.id,
+                buildingId: activeBuilding.id,
+              },
+            );
+            nextVisible.push(anchor);
+            normalizedFeature = normalizeFeature(
+              {
+                ...normalizedFeature,
+                properties: {
+                  ...normalizedFeature.properties,
+                  anchor_id: anchorId,
+                },
+              },
+              {
+                level_id: activeLevel.id,
+                buildingId: activeBuilding.id,
+              },
+            );
+          }
+          if (shouldApplyPendingTemplate && !createdFeatureId) {
+            createdFeatureId = normalizedFeature.id;
+          }
+          nextVisible.push(normalizedFeature);
+        }
 
         for (const existing of currentVisible) {
           if (!lockedFeatureIdsSet.has(existing.id)) {
@@ -1249,10 +1344,12 @@ function App() {
         );
         const nextFeatures = [...nonVisible, ...nextVisible];
         const nextSelectedFeatureId =
-          current.selectedFeatureId &&
+          createdFeatureId ??
+          (current.selectedFeatureId &&
           nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
             ? current.selectedFeatureId
-            : undefined;
+            : undefined);
+        pendingCreatedFeatureSelectionRef.current = createdFeatureId;
 
         return selectFeature(replaceAllFeatures(current, nextFeatures), nextSelectedFeatureId);
       });
@@ -1268,6 +1365,7 @@ function App() {
       pendingDrawTemplate,
       pendingContainmentParent,
       lockedFeatureIdsSet,
+      selectedFeature,
     ],
   );
 
@@ -2729,34 +2827,43 @@ function App() {
       }
       const schema = getImdfSchemaRule(request.type);
       if (schema.geometryType === "Point") {
+        const defaultCategory = defaultCategoryForType(request.type);
         startDrawMode("point");
         setPendingDrawTemplate({
           featureType: request.type,
           geometryType: "Point",
           defaultName: schema.defaultName,
-          properties: {},
+          properties: {
+            ...(defaultCategory ? { category: defaultCategory } : {}),
+          },
         });
         setPendingContainmentParent(nextContainmentParent);
         return;
       }
       if (schema.geometryType === "LineString") {
+        const defaultCategory = defaultCategoryForType(request.type);
         startDrawMode("line");
         setPendingDrawTemplate({
           featureType: request.type,
           geometryType: "LineString",
           defaultName: schema.defaultName,
-          properties: {},
+          properties: {
+            ...(defaultCategory ? { category: defaultCategory } : {}),
+          },
         });
         setPendingContainmentParent(nextContainmentParent);
         return;
       }
 
+      const defaultCategory = defaultCategoryForType(request.type);
       startDrawMode("polygon");
       setPendingDrawTemplate({
         featureType: request.type,
         geometryType: "Polygon",
         defaultName: schema.defaultName,
-        properties: {},
+        properties: {
+          ...(defaultCategory ? { category: defaultCategory } : {}),
+        },
       });
       setPendingContainmentParent(nextContainmentParent);
     },
