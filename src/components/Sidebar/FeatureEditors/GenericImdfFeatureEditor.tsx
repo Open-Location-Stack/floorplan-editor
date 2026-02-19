@@ -7,21 +7,20 @@ import {
 } from "../../../lib/geometry/measurements";
 import { getCategoryOptions } from "../../../lib/imdf/categories";
 import { canContainChildren, resolveFeatureType } from "../../../lib/imdf/containment";
-import type { ImdfFeatureField } from "../../../lib/imdf/featureCatalog";
 import { getFeatureSpec } from "../../../lib/imdf/featureCatalog";
 import { formatFeatureOptionLabel } from "../../../lib/imdf/featureDisplay";
-import type {
-  FeatureProperties,
-  FloorFeature,
-  ImdfFeatureType,
-  JsonObject,
-  JsonValue,
-} from "../../../lib/types";
+import type { FloorFeature, ImdfFeatureType, JsonObject, JsonValue } from "../../../lib/types";
 import { AppIcon } from "../../icons/AppIcon";
 import {
   AddFeatureButtonGroups,
   type AddFeatureRequest,
 } from "../../Sidebar/AddFeatureButtonGroups";
+import {
+  readEnglishLabel,
+  readListValue,
+  readStringValue,
+  validateFieldValue,
+} from "./fieldValueUtils";
 
 export type ImdfFeatureEditorProps = {
   feature: FloorFeature;
@@ -36,119 +35,6 @@ export type ImdfFeatureEditorProps = {
   onToggleLock: () => void;
   rawGeoJsonFeature?: unknown;
   rawGeoJsonWarning?: string;
-};
-
-const isEmpty = (value: JsonValue | undefined): boolean => {
-  if (value === undefined || value === null) {
-    return true;
-  }
-  if (typeof value === "string") {
-    return value.trim().length === 0;
-  }
-  if (Array.isArray(value)) {
-    return value.length === 0;
-  }
-  if (typeof value === "object") {
-    return Object.keys(value).length === 0;
-  }
-  return false;
-};
-
-const readEnglishLabel = (value: JsonValue | undefined): string => {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const english = (value as { en?: unknown }).en;
-    if (typeof english === "string") {
-      return english;
-    }
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  return "";
-};
-
-const readString = (properties: FeatureProperties, key: string): string => {
-  const value = properties[key];
-  if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as { id?: unknown }).id === "string"
-  ) {
-    return (value as { id: string }).id;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return "";
-};
-
-const readListValue = (properties: FeatureProperties, key: string): string => {
-  const value = properties[key];
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) =>
-        typeof entry === "object" && entry !== null && "id" in entry
-          ? String((entry as { id: string }).id)
-          : String(entry),
-      )
-      .join(", ");
-  }
-  return "";
-};
-
-const validateField = (
-  field: ImdfFeatureField,
-  value: JsonValue | undefined,
-): string | undefined => {
-  if (field.required && isEmpty(value)) {
-    return "Required field is empty.";
-  }
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (field.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
-    return "Must be a valid number.";
-  }
-  if (field.type === "boolean" && typeof value !== "boolean") {
-    return "Must be true or false.";
-  }
-  if (field.type === "uuid" && typeof value !== "string") {
-    return "Must be a UUID string.";
-  }
-  if (field.type === "label") {
-    if (typeof value !== "object" || !value || Array.isArray(value)) {
-      return "Must be a label JSON object.";
-    }
-    const entries = Object.entries(value);
-    if (entries.length === 0 || !entries.every(([, entry]) => typeof entry === "string")) {
-      return "Label object must contain non-empty locale strings.";
-    }
-  }
-  if (field.type === "string[]" && !Array.isArray(value)) {
-    return "Must be a comma-separated list.";
-  }
-  if (field.type === "json") {
-    if (typeof value === "undefined") {
-      return undefined;
-    }
-    return undefined;
-  }
-  if (field.type === "reference") {
-    if (
-      typeof value !== "object" ||
-      !value ||
-      Array.isArray(value) ||
-      typeof (value as { id?: unknown }).id !== "string" ||
-      typeof (value as { feature_type?: unknown }).feature_type !== "string"
-    ) {
-      return "Must be a reference object.";
-    }
-  }
-  return undefined;
 };
 
 export const GenericImdfFeatureEditor = ({
@@ -188,7 +74,7 @@ export const GenericImdfFeatureEditor = ({
   useEffect(() => {
     const nextErrors: Record<string, string | undefined> = {};
     for (const field of spec.fields) {
-      nextErrors[field.key] = validateField(field, feature.properties[field.key]);
+      nextErrors[field.key] = validateFieldValue(field, feature.properties[field.key]);
     }
     setFieldErrors(nextErrors);
   }, [feature.properties, spec.fields]);
@@ -297,7 +183,7 @@ export const GenericImdfFeatureEditor = ({
             const label = `${field.key}${field.required ? " *" : ""}`;
 
             if (field.key === "category") {
-              const currentValue = readString(feature.properties, field.key);
+              const currentValue = readStringValue(feature.properties, field.key);
               const datalistId = `${idPrefix}-${feature.id}-${field.key}-suggestions`;
               return (
                 <label className="fieldset" key={field.key}>
@@ -332,7 +218,7 @@ export const GenericImdfFeatureEditor = ({
                 field.key === "direction") &&
               field.enumOptions
             ) {
-              const currentValue = readString(feature.properties, field.key);
+              const currentValue = readStringValue(feature.properties, field.key);
               return (
                 <label className="fieldset" key={field.key}>
                   <span className="fieldset-legend">{label}</span>
@@ -492,7 +378,7 @@ export const GenericImdfFeatureEditor = ({
             }
 
             if (field.type === "uuid") {
-              const currentValue = readString(feature.properties, field.key);
+              const currentValue = readStringValue(feature.properties, field.key);
               const selectable =
                 field.key.endsWith("_id") ||
                 field.key.endsWith("_ids") ||
@@ -571,7 +457,7 @@ export const GenericImdfFeatureEditor = ({
                 <input
                   className={`input input-bordered input-sm ${hasError ? "input-error" : ""}`}
                   type="text"
-                  value={readString(feature.properties, field.key)}
+                  value={readStringValue(feature.properties, field.key)}
                   onChange={(event) =>
                     onUpdateProperty(field.key, event.currentTarget.value || undefined)
                   }

@@ -42,6 +42,18 @@ const resolveType = (feature: FloorFeature): string => {
 
 export const FeatureEditor = (props: FeatureEditorProps) => {
   const type = resolveType(props.feature);
+  const navigationOpeningProps = {
+    feature: props.feature,
+    allFeatures: props.allFeatures,
+    levels: props.levels,
+    locked: props.locked,
+    onUpdateProperty: props.onUpdateProperty,
+    onDelete: props.onDelete,
+    onClone: props.onClone,
+    onToggleLock: props.onToggleLock,
+    rawGeoJsonFeature: props.rawGeoJsonFeature,
+    ...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {}),
+  };
 
   switch (type) {
     case "level":
@@ -66,36 +78,10 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
       return <OccupantFeatureEditor {...props} type="occupant" />;
     case "opening":
       if (isNavigationPathOpening(props.feature)) {
-        return (
-          <NavigationEdgeFeatureEditor
-            feature={props.feature}
-            allFeatures={props.allFeatures}
-            levels={props.levels}
-            locked={props.locked}
-            onUpdateProperty={props.onUpdateProperty}
-            onDelete={props.onDelete}
-            onClone={props.onClone}
-            onToggleLock={props.onToggleLock}
-            rawGeoJsonFeature={props.rawGeoJsonFeature}
-            {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
-          />
-        );
+        return <NavigationEdgeFeatureEditor {...navigationOpeningProps} />;
       }
       if (isNavigationNodeOpening(props.feature)) {
-        return (
-          <NavigationNodeFeatureEditor
-            feature={props.feature}
-            allFeatures={props.allFeatures}
-            levels={props.levels}
-            locked={props.locked}
-            onUpdateProperty={props.onUpdateProperty}
-            onDelete={props.onDelete}
-            onClone={props.onClone}
-            onToggleLock={props.onToggleLock}
-            rawGeoJsonFeature={props.rawGeoJsonFeature}
-            {...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {})}
-          />
-        );
+        return <NavigationNodeFeatureEditor {...navigationOpeningProps} />;
       }
       return <OpeningFeatureEditor {...props} type="opening" />;
     default:
