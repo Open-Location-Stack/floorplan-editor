@@ -3145,7 +3145,11 @@ function App() {
                   </div>
                   <div className="absolute right-3 top-3 z-10">
                     <button
-                      className={`btn btn-sm ${orientationMode === "grid" ? "btn-primary" : "btn-outline"} bg-base-100/95 shadow`}
+                      className={`btn btn-sm bg-base-100/95 shadow !text-black ${
+                        orientationMode === "grid"
+                          ? "border-black/60 ring-2 ring-black/40"
+                          : "btn-outline border-black/40"
+                      }`}
                       type="button"
                       aria-label="Toggle map orientation mode"
                       title={

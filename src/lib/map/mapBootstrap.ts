@@ -1157,14 +1157,23 @@ export const snapDistanceMetersForZoom = (zoom: number): number => {
   return 1;
 };
 
-const gridSpacingMetersForZoom = (zoom: number): number => {
-  if (zoom >= 22) {
+export const gridSpacingMetersForZoom = (zoom: number): number | undefined => {
+  if (zoom >= 21) {
     return 0.25;
   }
-  if (zoom >= 17) {
+  if (zoom >= 18) {
     return GRID_BASE_SPACING_METERS;
   }
-  return 1;
+  if (zoom >= 16) {
+    return 1;
+  }
+  if (zoom >= 14) {
+    return 5;
+  }
+  if (zoom >= 13) {
+    return 10;
+  }
+  return undefined;
 };
 
 const readBoundsCorner = (
@@ -2590,8 +2599,11 @@ export const createMapController = async (
     const source = map.getSource(GRID_SOURCE_ID);
     const center = [map.getCenter().lng, map.getCenter().lat] as Coordinates;
     const gridSpacingMeters = gridSpacingMetersForZoom(map.getZoom());
-    const extent = deriveGridExtentMeters(map, center, gridSpacingMeters);
-    const gridData = currentGridVisible
+    const gridVisibleAtZoom = currentGridVisible && typeof gridSpacingMeters === "number";
+    const extent = gridVisibleAtZoom
+      ? deriveGridExtentMeters(map, center, gridSpacingMeters)
+      : GRID_EXTENT_FALLBACK_METERS;
+    const gridData = gridVisibleAtZoom
       ? gridDataForViewport(center, gridRotationDegrees(), extent, gridSpacingMeters)
       : emptyFeatureCollection();
 
@@ -2618,7 +2630,7 @@ export const createMapController = async (
             "line-opacity": 0.45,
           },
           layout: {
-            visibility: currentGridVisible ? "visible" : "none",
+            visibility: gridVisibleAtZoom ? "visible" : "none",
           },
         },
         beforeLayerId,
@@ -2627,7 +2639,7 @@ export const createMapController = async (
       map.setLayoutProperty(
         GRID_LINE_LAYER_ID,
         "visibility",
-        currentGridVisible ? "visible" : "none",
+        gridVisibleAtZoom ? "visible" : "none",
       );
     }
 
@@ -2644,7 +2656,7 @@ export const createMapController = async (
             "circle-radius": 1.25,
           },
           layout: {
-            visibility: currentGridVisible ? "visible" : "none",
+            visibility: gridVisibleAtZoom ? "visible" : "none",
           },
         },
         beforeLayerId,
@@ -2653,7 +2665,7 @@ export const createMapController = async (
       map.setLayoutProperty(
         GRID_NODE_LAYER_ID,
         "visibility",
-        currentGridVisible ? "visible" : "none",
+        gridVisibleAtZoom ? "visible" : "none",
       );
     }
 
@@ -3016,6 +3028,7 @@ export const createMapController = async (
     const zoomLevel = map.getZoom();
     const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
     const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
+    const gridSnapEnabled = currentGridVisible && typeof gridSpacingMeters === "number";
     if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
       return;
     }
@@ -3042,7 +3055,7 @@ export const createMapController = async (
       }
 
       const targets = collectSnapTargets(allDrawFeatures, featureId);
-      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
+      if (!gridSnapEnabled && targets.vertices.length === 0 && targets.edges.length === 0) {
         continue;
       }
 
@@ -3057,9 +3070,9 @@ export const createMapController = async (
           targets,
           maxDistanceMeters,
           center,
-          currentGridVisible,
+          gridSnapEnabled,
           gridRotationDegrees(),
-          gridSpacingMeters,
+          gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
         );
         if (!candidate) {
           continue;
@@ -3093,9 +3106,9 @@ export const createMapController = async (
           targets,
           maxDistanceMeters,
           center,
-          currentGridVisible,
+          gridSnapEnabled,
           gridRotationDegrees(),
-          gridSpacingMeters,
+          gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
         );
         for (const candidate of snapped.candidates) {
           if (!candidate) {
@@ -3132,9 +3145,9 @@ export const createMapController = async (
           targets,
           maxDistanceMeters,
           center,
-          currentGridVisible,
+          gridSnapEnabled,
           gridRotationDegrees(),
-          gridSpacingMeters,
+          gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
         );
         for (const candidate of snapped.candidates) {
           if (!candidate) {
@@ -3209,14 +3222,14 @@ export const createMapController = async (
 
       const allDrawFeatures = draw.getAll().features;
       const targets = collectSnapTargets(allDrawFeatures, selectedVertex.featureId);
-      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
-        clearSnapMarkers();
-        return;
-      }
-
       const zoomLevel = map.getZoom();
       const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
       const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
+      const gridSnapEnabled = currentGridVisible && typeof gridSpacingMeters === "number";
+      if (!gridSnapEnabled && targets.vertices.length === 0 && targets.edges.length === 0) {
+        clearSnapMarkers();
+        return;
+      }
       if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
         clearSnapMarkers();
         return;
@@ -3228,9 +3241,9 @@ export const createMapController = async (
         targets,
         maxDistanceMeters,
         center,
-        currentGridVisible,
+        gridSnapEnabled,
         gridRotationDegrees(),
-        gridSpacingMeters,
+        gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
       );
       if (!candidate) {
         clearSnapMarkers();
@@ -3266,6 +3279,7 @@ export const createMapController = async (
     const zoomLevel = map.getZoom();
     const maxDistanceMeters = snapDistanceMetersForZoom(zoomLevel);
     const gridSpacingMeters = gridSpacingMetersForZoom(zoomLevel);
+    const gridSnapEnabled = currentGridVisible && typeof gridSpacingMeters === "number";
     if (!Number.isFinite(maxDistanceMeters) || maxDistanceMeters <= 0) {
       return;
     }
@@ -3294,7 +3308,7 @@ export const createMapController = async (
       }
 
       const targets = collectSnapTargets(allDrawFeatures, featureId);
-      if (!currentGridVisible && targets.vertices.length === 0 && targets.edges.length === 0) {
+      if (!gridSnapEnabled && targets.vertices.length === 0 && targets.edges.length === 0) {
         continue;
       }
 
@@ -3309,9 +3323,9 @@ export const createMapController = async (
           targets,
           maxDistanceMeters,
           center,
-          currentGridVisible,
+          gridSnapEnabled,
           gridRotationDegrees(),
-          gridSpacingMeters,
+          gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
         );
         if (!candidate) {
           continue;
@@ -3349,9 +3363,9 @@ export const createMapController = async (
         targets,
         maxDistanceMeters,
         center,
-        currentGridVisible,
+        gridSnapEnabled,
         gridRotationDegrees(),
-        gridSpacingMeters,
+        gridSpacingMeters ?? GRID_BASE_SPACING_METERS,
       );
       if (!candidate) {
         continue;

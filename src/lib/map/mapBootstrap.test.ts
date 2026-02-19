@@ -3,6 +3,7 @@ import type { FeatureCollection, FloorOverlay } from "../types";
 import {
   createMapController,
   deriveNavigationOpeningEndpointMarkers,
+  gridSpacingMetersForZoom,
   snapDistanceMetersForZoom,
 } from "./mapBootstrap";
 
@@ -3925,6 +3926,16 @@ describe("createMapController", () => {
     expect(snapDistanceMetersForZoom(19)).toBe(0.2);
     expect(snapDistanceMetersForZoom(20)).toBe(0.1);
     expect(snapDistanceMetersForZoom(21)).toBe(0.05);
+  });
+
+  it("returns zoom-dependent grid spacing and disables grid when too far out", () => {
+    expect(gridSpacingMetersForZoom(21)).toBe(0.25);
+    expect(gridSpacingMetersForZoom(18)).toBe(0.5);
+    expect(gridSpacingMetersForZoom(16)).toBe(1);
+    expect(gridSpacingMetersForZoom(15)).toBe(5);
+    expect(gridSpacingMetersForZoom(14)).toBe(5);
+    expect(gridSpacingMetersForZoom(13)).toBe(10);
+    expect(gridSpacingMetersForZoom(12.99)).toBeUndefined();
   });
 
   it("adds grid layers and keeps them below draw layers", async () => {
