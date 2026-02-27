@@ -55,6 +55,7 @@
 ## Agent Skills
 - Agentic tools should look for reusable workflows in `skills/<skill-name>/SKILL.md`.
 - Use `skills/_template/SKILL.md` as the starting point for new skills and keep them short, task-focused, and validation-aware.
+- Dependency update policy: for any dependency upgrade/update, lockfile refresh, or npm audit remediation request, use `skills/dependency-updates/SKILL.md`.
 - IMDF guardrail policy: for any IMDF schema, IMDF import/export, IMDF validation, or IMDF editor-field change, use `skills/imdf-schema-guardrail/SKILL.md`.
 - IMDF quality gate: validation warnings/errors introduced by normal editing operations are bugs, are not acceptable, and must be covered by regression tests before merging.
 - Any change incompatible with IMDF specifications is not acceptable and must be treated as a hard failure.
