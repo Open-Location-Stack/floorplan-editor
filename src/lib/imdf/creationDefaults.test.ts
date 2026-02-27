@@ -4,6 +4,7 @@ import type { ContainmentParent } from "./containment";
 import {
   defaultCategoryForType,
   requiresAnchorId,
+  resolveHierarchyDefaultsForNewFeature,
   resolveUnitIdForNewAnchor,
 } from "./creationDefaults";
 
@@ -123,5 +124,75 @@ describe("resolveUnitIdForNewAnchor", () => {
     const result = resolveUnitIdForNewAnchor([detail], "level-1", [0, 0], undefined, undefined);
 
     expect(result).toBeUndefined();
+  });
+});
+
+describe("resolveHierarchyDefaultsForNewFeature", () => {
+  it("sets anchor unit_id from selected unit context", () => {
+    const unit = polygonFeature("unit-1", "unit", "level-1", [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+      [0, 0],
+    ]);
+
+    const defaults = resolveHierarchyDefaultsForNewFeature({
+      features: [unit],
+      featureType: "anchor",
+      levelId: "level-1",
+      point: [5, 5],
+      selectedFeature: unit,
+      pendingContainmentParent: undefined,
+    });
+
+    expect(defaults.unit_id).toBe("unit-1");
+  });
+
+  it("sets required anchor_id from selected anchor context", () => {
+    const anchor = pointFeature("anchor-1", "anchor", "level-1", [1, 1], {
+      unit_id: "unit-1",
+    });
+    const defaults = resolveHierarchyDefaultsForNewFeature({
+      features: [anchor],
+      featureType: "detail",
+      levelId: "level-1",
+      point: [1, 1],
+      selectedFeature: anchor,
+      pendingContainmentParent: undefined,
+    });
+
+    expect(defaults.anchor_id).toBe("anchor-1");
+  });
+
+  it("falls back to nearest anchor when no anchor is selected", () => {
+    const anchorA = pointFeature("anchor-a", "anchor", "level-1", [0, 0], { unit_id: "unit-1" });
+    const anchorB = pointFeature("anchor-b", "anchor", "level-1", [100, 100], {
+      unit_id: "unit-2",
+    });
+
+    const defaults = resolveHierarchyDefaultsForNewFeature({
+      features: [anchorA, anchorB],
+      featureType: "occupant",
+      levelId: "level-1",
+      point: [2, 2],
+      selectedFeature: undefined,
+      pendingContainmentParent: undefined,
+    });
+
+    expect(defaults.anchor_id).toBe("anchor-a");
+  });
+
+  it("sets section parent id when created under a section parent", () => {
+    const defaults = resolveHierarchyDefaultsForNewFeature({
+      features: [],
+      featureType: "section",
+      levelId: "level-1",
+      point: [0, 0],
+      selectedFeature: undefined,
+      pendingContainmentParent: { parentId: "section-parent", parentType: "section" },
+    });
+
+    expect(defaults.section_id).toBe("section-parent");
   });
 });

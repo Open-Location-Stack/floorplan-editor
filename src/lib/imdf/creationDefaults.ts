@@ -1,5 +1,5 @@
 /* biome-ignore-all lint/complexity/useLiteralKeys: bracket notation is required by noPropertyAccessFromIndexSignature */
-import type { Coordinates, FloorFeature, ImdfFeatureType } from "../types";
+import type { Coordinates, FeatureProperties, FloorFeature, ImdfFeatureType } from "../types";
 import { getCategoryOptions } from "./categories";
 import type { ContainmentParent } from "./containment";
 import { getFeatureSpec, readImdfType } from "./featureCatalog";
@@ -9,6 +9,24 @@ const readFeatureType = (feature: FloorFeature): ImdfFeatureType | undefined =>
   (typeof feature.properties["feature_type"] === "string"
     ? readImdfType(feature.properties["feature_type"])
     : undefined);
+
+const isAnchor = (feature: FloorFeature, levelId: string): boolean =>
+  feature.properties.level_id === levelId && readFeatureType(feature) === "anchor";
+
+const resolveAnchorIdFromContext = (
+  selectedFeature: FloorFeature | undefined,
+  levelId: string,
+): string | undefined => {
+  if (!selectedFeature || selectedFeature.properties.level_id !== levelId) {
+    return undefined;
+  }
+  if (readFeatureType(selectedFeature) === "anchor") {
+    return selectedFeature.id;
+  }
+  return typeof selectedFeature.properties.anchor_id === "string"
+    ? selectedFeature.properties.anchor_id
+    : undefined;
+};
 
 const isPointInPolygon = (point: Coordinates, polygon: FloorFeature["geometry"]): boolean => {
   if (polygon.type !== "Polygon") {
@@ -161,4 +179,97 @@ export const resolveUnitIdForNewAnchor = (
     .filter((candidate): candidate is { id: string; distance: number } => Boolean(candidate))
     .sort((left, right) => left.distance - right.distance)[0];
   return nearest?.id;
+};
+
+const nearestAnchorId = (
+  features: FloorFeature[],
+  levelId: string,
+  point: Coordinates,
+): string | undefined => {
+  const nearest = features
+    .filter((feature) => isAnchor(feature, levelId))
+    .map((feature) => {
+      const center = geometryCenter(feature);
+      if (!center) {
+        return undefined;
+      }
+      return {
+        id: feature.id,
+        distance: Math.hypot(point[0] - center[0], point[1] - center[1]),
+      };
+    })
+    .filter((candidate): candidate is { id: string; distance: number } => Boolean(candidate))
+    .sort((left, right) => left.distance - right.distance)[0];
+  return nearest?.id;
+};
+
+const resolveAnchorIdForNewFeature = (
+  features: FloorFeature[],
+  levelId: string,
+  point: Coordinates,
+  selectedFeature: FloorFeature | undefined,
+): string | undefined => {
+  const fromContext = resolveAnchorIdFromContext(selectedFeature, levelId);
+  if (fromContext) {
+    return fromContext;
+  }
+  return nearestAnchorId(features, levelId, point);
+};
+
+type CreationDefaultsContext = {
+  features: FloorFeature[];
+  featureType: ImdfFeatureType;
+  levelId: string;
+  point: Coordinates | undefined;
+  selectedFeature: FloorFeature | undefined;
+  pendingContainmentParent: ContainmentParent | undefined;
+};
+
+export const resolveHierarchyDefaultsForNewFeature = ({
+  features,
+  featureType,
+  levelId,
+  point,
+  selectedFeature,
+  pendingContainmentParent,
+}: CreationDefaultsContext): Partial<FeatureProperties> => {
+  const defaults: Partial<FeatureProperties> = {};
+  if (!point) {
+    return defaults;
+  }
+
+  const unitId = resolveUnitIdForNewAnchor(
+    features,
+    levelId,
+    point,
+    selectedFeature,
+    pendingContainmentParent,
+  );
+  const anchorId = resolveAnchorIdForNewFeature(features, levelId, point, selectedFeature);
+
+  if (featureType === "anchor" && unitId) {
+    defaults.unit_id = unitId;
+  }
+  if (featureType === "amenity") {
+    if (unitId) {
+      defaults.unit_ids = [unitId];
+    }
+    if (anchorId) {
+      defaults.anchor_id = anchorId;
+    }
+  }
+  if (featureType === "kiosk" && anchorId) {
+    defaults.anchor_id = anchorId;
+  }
+  if (
+    (featureType === "detail" || featureType === "fixture" || featureType === "occupant") &&
+    anchorId
+  ) {
+    defaults.anchor_id = anchorId;
+  }
+  if (featureType === "section" && pendingContainmentParent?.parentType === "section") {
+    defaults.section_id = pendingContainmentParent.parentId;
+  }
+
+  return defaults;
 };

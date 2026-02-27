@@ -37,6 +37,7 @@ import {
 import {
   defaultCategoryForType,
   requiresAnchorId,
+  resolveHierarchyDefaultsForNewFeature,
   resolveUnitIdForNewAnchor,
 } from "./lib/imdf/creationDefaults";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
@@ -1254,6 +1255,35 @@ function App() {
           );
 
           const normalizedType = readImdfType(normalizedFeature.feature_type);
+          if (shouldApplyPendingTemplate && normalizedType) {
+            const point =
+              normalizedFeature.geometry.type === "Point"
+                ? normalizedFeature.geometry.coordinates
+                : undefined;
+            const hierarchyDefaults = resolveHierarchyDefaultsForNewFeature({
+              features: [...current.features, ...nextVisible],
+              featureType: normalizedType,
+              levelId: activeLevel.id,
+              point,
+              selectedFeature,
+              pendingContainmentParent,
+            });
+            if (Object.keys(hierarchyDefaults).length > 0) {
+              normalizedFeature = normalizeFeature(
+                {
+                  ...normalizedFeature,
+                  properties: {
+                    ...normalizedFeature.properties,
+                    ...hierarchyDefaults,
+                  },
+                },
+                {
+                  level_id: activeLevel.id,
+                  buildingId: activeBuilding.id,
+                },
+              );
+            }
+          }
           const needsAutoAnchor =
             shouldApplyPendingTemplate &&
             normalizedType !== undefined &&
