@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { readCanonicalFeatureType } from "../../lib/imdf/featureAccess";
 import { readImdfType } from "../../lib/imdf/featureCatalog";
 import {
@@ -40,8 +41,41 @@ const resolveType = (feature: FloorFeature): string => {
   return readCanonicalFeatureType(feature) || "unit";
 };
 
+type MappedEditorType =
+  | "level"
+  | "unit"
+  | "section"
+  | "geofence"
+  | "amenity"
+  | "anchor"
+  | "detail"
+  | "fixture"
+  | "kiosk"
+  | "occupant";
+
+const RENDERERS: Record<MappedEditorType, (props: FeatureEditorProps) => ReactElement> = {
+  level: (props) => <LevelFeatureEditor {...props} type="level" />,
+  unit: (props) => <UnitFeatureEditor {...props} type="unit" />,
+  section: (props) => <SectionFeatureEditor {...props} type="section" />,
+  geofence: (props) => <GeofenceFeatureEditor {...props} type="geofence" />,
+  amenity: (props) => <AmenityFeatureEditor {...props} type="amenity" />,
+  anchor: (props) => <AnchorFeatureEditor {...props} type="anchor" />,
+  detail: (props) => <DetailFeatureEditor {...props} type="detail" />,
+  fixture: (props) => <FixtureFeatureEditor {...props} type="fixture" />,
+  kiosk: (props) => <KioskFeatureEditor {...props} type="kiosk" />,
+  occupant: (props) => <OccupantFeatureEditor {...props} type="occupant" />,
+};
+
+const isMappedEditorType = (value: string): value is MappedEditorType => value in RENDERERS;
+
 export const FeatureEditor = (props: FeatureEditorProps) => {
   const type = resolveType(props.feature);
+  const mappedRenderer = isMappedEditorType(type) ? RENDERERS[type] : undefined;
+
+  if (mappedRenderer) {
+    return mappedRenderer(props);
+  }
+
   const navigationOpeningProps = {
     feature: props.feature,
     allFeatures: props.allFeatures,
@@ -55,41 +89,16 @@ export const FeatureEditor = (props: FeatureEditorProps) => {
     ...(props.rawGeoJsonWarning ? { rawGeoJsonWarning: props.rawGeoJsonWarning } : {}),
   };
 
-  switch (type) {
-    case "level":
-      return <LevelFeatureEditor {...props} type="level" />;
-    case "unit":
-      return <UnitFeatureEditor {...props} type="unit" />;
-    case "section":
-      return <SectionFeatureEditor {...props} type="section" />;
-    case "geofence":
-      return <GeofenceFeatureEditor {...props} type="geofence" />;
-    case "amenity":
-      return <AmenityFeatureEditor {...props} type="amenity" />;
-    case "anchor":
-      return <AnchorFeatureEditor {...props} type="anchor" />;
-    case "detail":
-      return <DetailFeatureEditor {...props} type="detail" />;
-    case "fixture":
-      return <FixtureFeatureEditor {...props} type="fixture" />;
-    case "kiosk":
-      return <KioskFeatureEditor {...props} type="kiosk" />;
-    case "occupant":
-      return <OccupantFeatureEditor {...props} type="occupant" />;
-    case "opening":
-      if (isNavigationPathOpening(props.feature)) {
-        return <NavigationEdgeFeatureEditor {...navigationOpeningProps} />;
-      }
-      if (isNavigationNodeOpening(props.feature)) {
-        return <NavigationNodeFeatureEditor {...navigationOpeningProps} />;
-      }
-      return <OpeningFeatureEditor {...props} type="opening" />;
-    default:
-      return (
-        <GenericImdfFeatureEditor
-          {...props}
-          type={(readImdfType(type) ?? "unit") as ImdfFeatureType}
-        />
-      );
+  if (type === "opening") {
+    if (isNavigationPathOpening(props.feature)) {
+      return <NavigationEdgeFeatureEditor {...navigationOpeningProps} />;
+    }
+    if (isNavigationNodeOpening(props.feature)) {
+      return <NavigationNodeFeatureEditor {...navigationOpeningProps} />;
+    }
+    return <OpeningFeatureEditor {...props} type="opening" />;
   }
+
+  const fallbackType: ImdfFeatureType = readImdfType(type) ?? "unit";
+  return <GenericImdfFeatureEditor {...props} type={fallbackType} />;
 };

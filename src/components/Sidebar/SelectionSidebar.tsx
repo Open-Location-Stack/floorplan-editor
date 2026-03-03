@@ -17,6 +17,75 @@ import { FeatureEditor } from "./FeatureEditor";
 import { LevelEditor } from "./LevelEditor";
 import { VenueEditor } from "./VenueEditor";
 
+const SelectionMessageCard = ({ message }: { message: string }) => (
+  <section className="card bg-base-100 shadow">
+    <div className="card-body">
+      <h2 className="card-title text-lg">Selection</h2>
+      <p className="text-sm text-base-content/70">{message}</p>
+    </div>
+  </section>
+);
+
+const readLevelShortName = (
+  level: Level,
+  levelGeometryFeature: FloorFeature | undefined,
+): string => {
+  const shortName = levelGeometryFeature?.properties.short_name;
+  if (!shortName || typeof shortName !== "object" || Array.isArray(shortName)) {
+    return level.name;
+  }
+
+  const english = (shortName as { en?: unknown }).en;
+  return typeof english === "string" ? english : level.name;
+};
+
+const deriveBuildingFeatureCandidates = (
+  building: Building,
+  levels: Level[],
+  allFeatures: FloorFeature[],
+) => {
+  const buildingLevelIds = new Set(
+    levels
+      .filter((candidate) => candidate.buildingId === building.id)
+      .map((candidate) => candidate.id),
+  );
+  const buildingFeatures = allFeatures.filter(
+    (current) =>
+      typeof current.properties.level_id === "string" &&
+      buildingLevelIds.has(current.properties.level_id),
+  );
+
+  return {
+    anchorCandidates: buildingFeatures.filter((current) => readFeatureType(current) === "anchor"),
+    unitCandidates: buildingFeatures.filter((current) => readFeatureType(current) === "unit"),
+  };
+};
+
+const deriveLevelEditorState = (
+  level: Level,
+  allFeatures: FloorFeature[],
+  lockedFeatureIds: string[],
+) => {
+  const levelFeatures = allFeatures.filter((current) => current.properties.level_id === level.id);
+  const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
+  const levelGeometryLocked = Boolean(
+    levelGeometryFeature && lockedFeatureIds.includes(levelGeometryFeature.id),
+  );
+  const levelOrdinal =
+    typeof levelGeometryFeature?.properties.ordinal === "number"
+      ? levelGeometryFeature.properties.ordinal
+      : 0;
+
+  return {
+    levelFeatures,
+    levelGeometryFeature,
+    levelGeometryLocked,
+    levelShortName: readLevelShortName(level, levelGeometryFeature),
+    levelOrdinal,
+    levelOutdoor: Boolean(levelGeometryFeature?.properties.outdoor),
+  };
+};
+
 type SelectionSidebarProps = {
   selection: Selection | undefined;
   venue: Venue | undefined;
@@ -115,16 +184,7 @@ export const SelectionSidebar = ({
   onOverlayToggleLock,
 }: SelectionSidebarProps) => {
   if (!selection) {
-    return (
-      <section className="card bg-base-100 shadow">
-        <div className="card-body">
-          <h2 className="card-title text-lg">Selection</h2>
-          <p className="text-sm text-base-content/70">
-            Select a venue, building, level, or feature.
-          </p>
-        </div>
-      </section>
-    );
+    return <SelectionMessageCard message="Select a venue, building, level, or feature." />;
   }
 
   if (selection.kind === "venue" && venue) {
@@ -149,33 +209,16 @@ export const SelectionSidebar = ({
   }
 
   if (!building) {
-    return (
-      <section className="card bg-base-100 shadow">
-        <div className="card-body">
-          <h2 className="card-title text-lg">Selection</h2>
-          <p className="text-sm text-base-content/70">Selected item is unavailable.</p>
-        </div>
-      </section>
-    );
+    return <SelectionMessageCard message="Selected item is unavailable." />;
   }
 
   if (selection.kind === "building") {
-    const buildingLevelIds = new Set(
-      levels
-        .filter((candidate) => candidate.buildingId === building.id)
-        .map((candidate) => candidate.id),
+    const { anchorCandidates, unitCandidates } = deriveBuildingFeatureCandidates(
+      building,
+      levels,
+      allFeatures,
     );
-    const buildingFeatures = allFeatures.filter(
-      (current) =>
-        typeof current.properties.level_id === "string" &&
-        buildingLevelIds.has(current.properties.level_id),
-    );
-    const anchorCandidates = buildingFeatures.filter(
-      (current) => readFeatureType(current) === "anchor",
-    );
-    const unitCandidates = buildingFeatures.filter(
-      (current) => readFeatureType(current) === "unit",
-    );
+
     return (
       <BuildingEditor
         building={building}
@@ -211,26 +254,14 @@ export const SelectionSidebar = ({
   }
 
   if ((selection.kind === "level" || selection.kind === "floor") && level) {
-    const levelFeatures = allFeatures.filter((current) => current.properties.level_id === level.id);
-    const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
-    const levelGeometryLocked = Boolean(
-      levelGeometryFeature && lockedFeatureIds.includes(levelGeometryFeature.id),
-    );
-    const levelShortName = (() => {
-      const shortName = levelGeometryFeature?.properties.short_name;
-      if (shortName && typeof shortName === "object" && !Array.isArray(shortName)) {
-        const english = (shortName as { en?: unknown }).en;
-        if (typeof english === "string") {
-          return english;
-        }
-      }
-      return level.name;
-    })();
-    const levelOrdinal =
-      typeof levelGeometryFeature?.properties.ordinal === "number"
-        ? levelGeometryFeature.properties.ordinal
-        : 0;
-    const levelOutdoor = Boolean(levelGeometryFeature?.properties.outdoor);
+    const {
+      levelFeatures,
+      levelGeometryFeature,
+      levelGeometryLocked,
+      levelShortName,
+      levelOrdinal,
+      levelOutdoor,
+    } = deriveLevelEditorState(level, allFeatures, lockedFeatureIds);
     const validation = validateFloor(level.id, allFeatures);
 
     return (
@@ -290,12 +321,5 @@ export const SelectionSidebar = ({
     );
   }
 
-  return (
-    <section className="card bg-base-100 shadow">
-      <div className="card-body">
-        <h2 className="card-title text-lg">Selection</h2>
-        <p className="text-sm text-base-content/70">Selected item is unavailable.</p>
-      </div>
-    </section>
-  );
+  return <SelectionMessageCard message="Selected item is unavailable." />;
 };
