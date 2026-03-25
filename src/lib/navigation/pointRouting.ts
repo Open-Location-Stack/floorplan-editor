@@ -101,8 +101,10 @@ export const findRouteBetweenPoints = (
   graph: NavigationGraph,
   startPoint: Coordinates,
   endPoint: Coordinates,
-  floorId?: string,
+  startFloorId?: string,
+  endFloorId?: string,
 ): PointRouteResult => {
+  const resolvedEndFloorId = endFloorId ?? startFloorId;
   if (graph.nodes.length === 0 || graph.edges.length === 0) {
     return {
       found: false,
@@ -112,8 +114,18 @@ export const findRouteBetweenPoints = (
     };
   }
 
-  const snappedStart = snapPointToNetwork(startPoint, graph, MAX_SNAP_DISTANCE_METERS, floorId);
-  const snappedEnd = snapPointToNetwork(endPoint, graph, MAX_SNAP_DISTANCE_METERS, floorId);
+  const snappedStart = snapPointToNetwork(
+    startPoint,
+    graph,
+    MAX_SNAP_DISTANCE_METERS,
+    startFloorId,
+  );
+  const snappedEnd = snapPointToNetwork(
+    endPoint,
+    graph,
+    MAX_SNAP_DISTANCE_METERS,
+    resolvedEndFloorId,
+  );
   if (!snappedStart || !snappedEnd) {
     return {
       found: false,
@@ -191,7 +203,10 @@ export const findRouteBetweenPoints = (
     },
   );
 
-  if (snappedStart.edgeId === snappedEnd.edgeId) {
+  if (
+    snappedStart.edgeId === snappedEnd.edgeId &&
+    (!snappedStart.floorId || !snappedEnd.floorId || snappedStart.floorId === snappedEnd.floorId)
+  ) {
     transientEdges.push({
       id: `${startNodeId}:${endNodeId}`,
       fromNodeId: startNodeId,

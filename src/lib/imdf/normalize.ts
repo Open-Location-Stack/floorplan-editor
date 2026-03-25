@@ -22,6 +22,15 @@ const readReferenceId = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const readReferenceIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => readReferenceId(entry))
+    .filter((entry): entry is string => Boolean(entry));
+};
+
 const resolveType = (feature: FloorFeature): ImdfFeatureType => {
   if (typeof feature.feature_type === "string" && isKnownImdfType(feature.feature_type)) {
     return feature.feature_type;
@@ -86,9 +95,15 @@ export const normalizeFeature = (
   const schema = getImdfSchemaRule(normalizedType);
   const origin =
     readReferenceId(feature.properties.origin) ?? readReferenceId(feature.properties.origin_id);
-  const intermediary =
-    readReferenceId(feature.properties.intermediary) ??
-    readReferenceId(feature.properties.intermediary_id);
+  const intermediaryIdsFromArray = readReferenceIds(feature.properties.intermediary);
+  const intermediaryIds = intermediaryIdsFromArray.length
+    ? intermediaryIdsFromArray
+    : (() => {
+        const single =
+          readReferenceId(feature.properties.intermediary) ??
+          readReferenceId(feature.properties.intermediary_id);
+        return single ? [single] : [];
+      })();
   const destination =
     readReferenceId(feature.properties.destination) ??
     readReferenceId(feature.properties.destination_id);
@@ -97,8 +112,13 @@ export const normalizeFeature = (
     normalizedType === "relationship" && origin && destination
       ? {
           origin: { featureId: origin },
-          ...(intermediary
-            ? { intermediary: { featureId: intermediary, level_id: resolvedLevelId } }
+          ...(intermediaryIds.length > 0
+            ? {
+                intermediary: intermediaryIds.map((intermediaryId) => ({
+                  featureId: intermediaryId,
+                  level_id: resolvedLevelId,
+                })),
+              }
             : {}),
           destination: { featureId: destination },
         }
@@ -124,10 +144,13 @@ export const normalizeFeature = (
       level_id: resolvedLevelId,
       ...(normalizedType === "level" ? { building_ids: [context.buildingId] } : {}),
       ...(origin ? { origin: { id: origin, feature_type: "unit" }, origin_id: origin } : {}),
-      ...(intermediary
+      ...(intermediaryIds.length > 0
         ? {
-            intermediary: { id: intermediary, feature_type: "unit" },
-            intermediary_id: intermediary,
+            intermediary: intermediaryIds.map((intermediaryId) => ({
+              id: intermediaryId,
+              feature_type: "unit",
+            })),
+            intermediary_id: intermediaryIds[0],
           }
         : {}),
       ...(destination
@@ -167,6 +190,15 @@ export const normalizeFeature = (
       normalized.properties.category.trim().length === 0
     ) {
       normalized.properties.category = "pedestrian";
+    }
+  }
+
+  if (normalizedType === "relationship") {
+    if (
+      typeof normalized.properties.category !== "string" ||
+      normalized.properties.category.trim().length === 0
+    ) {
+      normalized.properties.category = "contains";
     }
   }
 

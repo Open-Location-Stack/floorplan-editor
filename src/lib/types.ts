@@ -62,7 +62,7 @@ export type RelationshipFeatureRef = {
 
 export type RelationshipRefs = {
   origin: RelationshipFeatureRef;
-  intermediary?: RelationshipFeatureRef;
+  intermediary?: RelationshipFeatureRef[];
   destination: RelationshipFeatureRef;
 };
 
@@ -100,7 +100,7 @@ export type FeatureProperties = {
   unit_ids?: string[];
   building_ids?: string[];
   origin?: string | ImdfReference;
-  intermediary?: string | ImdfReference;
+  intermediary?: string | ImdfReference | ImdfReference[];
   destination?: string | ImdfReference;
   origin_id?: string;
   intermediary_id?: string;
@@ -109,6 +109,7 @@ export type FeatureProperties = {
   "formation:style"?: FeatureStyle;
   metadata?: JsonObject;
   relation?: RelationshipRefs;
+  "formation:system_type"?: string;
   containmentParentId?: string;
   containmentParentType?: ImdfFeatureType | "level";
   // Internal-only extension keys should be namespaced.

@@ -42,6 +42,7 @@ import {
 } from "./lib/imdf/creationDefaults";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
+import { reconcileFallbackUnits } from "./lib/imdf/fallbackUnits";
 import { readImdfType } from "./lib/imdf/featureCatalog";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { migrateProjectSnapshotToImdfNavigationV7 } from "./lib/imdf/migrations/v7";
@@ -670,7 +671,9 @@ function App() {
   const [archiveNotices, setArchiveNotices] = useState<ArchiveNotice[]>([]);
   const [routePickEnabled, setRoutePickEnabled] = useState(false);
   const [routeStartCoordinate, setRouteStartCoordinate] = useState<Coordinates>();
+  const [routeStartLevelId, setRouteStartLevelId] = useState<string>();
   const [routeEndCoordinate, setRouteEndCoordinate] = useState<Coordinates>();
+  const [routeEndLevelId, setRouteEndLevelId] = useState<string>();
   const [relocationRequest, setRelocationRequest] = useState<MapRelocationRequest>({
     center: initialMapView.center,
     zoom: initialMapView.zoom,
@@ -957,21 +960,47 @@ function App() {
     );
   }, [editorState.features, activeLevel]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: feature edits must trigger fallback reconciliation.
+  useEffect(() => {
+    if (levels.length === 0) {
+      return;
+    }
+    setEditorState((current) => {
+      const reconciledFeatures = reconcileFallbackUnits(current.features, levels);
+      if (areFeatureListsEqual(current.features, reconciledFeatures)) {
+        return current;
+      }
+      const selectedFeatureId =
+        current.selectedFeatureId &&
+        reconciledFeatures.some((feature) => feature.id === current.selectedFeatureId)
+          ? current.selectedFeatureId
+          : undefined;
+      return selectFeature(replaceAllFeatures(current, reconciledFeatures), selectedFeatureId);
+    });
+  }, [levels, editorState.features]);
+
   const navigationGraph = useMemo(
     () => buildNavigationGraph(editorState.features),
     [editorState.features],
   );
   const routeResult = useMemo(() => {
-    if (!activeLevel || !routeStartCoordinate || !routeEndCoordinate) {
+    if (!routeStartCoordinate || !routeEndCoordinate) {
       return undefined;
     }
     return findRouteBetweenPoints(
       navigationGraph,
       routeStartCoordinate,
       routeEndCoordinate,
-      activeLevel.id,
+      routeStartLevelId,
+      routeEndLevelId,
     );
-  }, [navigationGraph, routeStartCoordinate, routeEndCoordinate, activeLevel]);
+  }, [
+    navigationGraph,
+    routeStartCoordinate,
+    routeEndCoordinate,
+    routeStartLevelId,
+    routeEndLevelId,
+  ]);
 
   const routeOverlayFeatures = useMemo(() => {
     if (!activeLevel || !routeResult?.found) {
@@ -1450,10 +1479,13 @@ function App() {
       }
       if (!routeStartCoordinate || routeEndCoordinate) {
         setRouteStartCoordinate(coordinate);
+        setRouteStartLevelId(activeLevel.id);
         setRouteEndCoordinate(undefined);
+        setRouteEndLevelId(undefined);
         return;
       }
       setRouteEndCoordinate(coordinate);
+      setRouteEndLevelId(activeLevel.id);
     },
     [activeLevel, routePickEnabled, drawMode, routeStartCoordinate, routeEndCoordinate],
   );
@@ -3147,13 +3179,13 @@ function App() {
                 <div className="mt-2 text-xs text-base-content/70">
                   Start:{" "}
                   {routeStartCoordinate
-                    ? `${routeStartCoordinate[0].toFixed(6)}, ${routeStartCoordinate[1].toFixed(6)}`
+                    ? `${routeStartCoordinate[0].toFixed(6)}, ${routeStartCoordinate[1].toFixed(6)} (${routeStartLevelId ?? "unknown floor"})`
                     : "not set"}
                 </div>
                 <div className="text-xs text-base-content/70">
                   Destination:{" "}
                   {routeEndCoordinate
-                    ? `${routeEndCoordinate[0].toFixed(6)}, ${routeEndCoordinate[1].toFixed(6)}`
+                    ? `${routeEndCoordinate[0].toFixed(6)}, ${routeEndCoordinate[1].toFixed(6)} (${routeEndLevelId ?? "unknown floor"})`
                     : "not set"}
                 </div>
                 <div className="mt-2 text-xs text-base-content/70">
@@ -3168,7 +3200,9 @@ function App() {
                   type="button"
                   onClick={() => {
                     setRouteStartCoordinate(undefined);
+                    setRouteStartLevelId(undefined);
                     setRouteEndCoordinate(undefined);
+                    setRouteEndLevelId(undefined);
                   }}
                 >
                   <AppIcon name="clear" />

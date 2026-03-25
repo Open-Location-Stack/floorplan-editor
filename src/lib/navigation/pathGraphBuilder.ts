@@ -130,7 +130,7 @@ const findIntersection = (
   };
 };
 
-const buildLegacyOpeningLineGraph = (features: FloorFeature[]): NavigationGraph => {
+const _buildLegacyOpeningLineGraph = (features: FloorFeature[]): NavigationGraph => {
   const segments = collectOpeningSegments(features);
   const splitPointsBySegment = new Map<string, number[]>();
   for (const segment of segments) {
@@ -365,7 +365,7 @@ const buildImdfOpeningRelationshipGraph = (features: FloorFeature[]): Navigation
   return { nodes, edges };
 };
 
-const mergeNavigationGraphs = (
+const _mergeNavigationGraphs = (
   primary: NavigationGraph,
   secondary: NavigationGraph,
 ): NavigationGraph => {
@@ -395,7 +395,7 @@ const mergeNavigationGraphs = (
 };
 
 export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
-  const openingGraph = buildLegacyOpeningLineGraph(features);
+  const openingGraph = _buildLegacyOpeningLineGraph(features);
   const hasImdfNavigationFeatures = features.some(
     (feature) => isNavigationNodeOpening(feature) || isNavigationPathOpening(feature),
   );
@@ -404,5 +404,5 @@ export const buildPathGraph = (features: FloorFeature[]): NavigationGraph => {
   }
 
   const imdfGraph = buildImdfOpeningRelationshipGraph(features);
-  return mergeNavigationGraphs(openingGraph, imdfGraph);
+  return _mergeNavigationGraphs(openingGraph, imdfGraph);
 };

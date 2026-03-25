@@ -21,11 +21,11 @@ type AddFeatureButtonGroupsProps = {
 const ADDABLE_GROUPS: Array<{ title: string; types: SupportedImdfType[] }> = [
   {
     title: "Areas",
-    types: ["unit", "section", "geofence"],
+    types: ["unit", "section", "geofence", "fixture", "kiosk"],
   },
   {
     title: "Points",
-    types: ["amenity", "anchor", "detail", "fixture", "kiosk", "occupant"],
+    types: ["amenity", "anchor", "detail", "occupant"],
   },
 ];
 

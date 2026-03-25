@@ -149,6 +149,15 @@ const readRelationshipRefId = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const readRelationshipRefIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => readRelationshipRefId(entry))
+    .filter((entry): entry is string => Boolean(entry));
+};
+
 const readRelationshipRefType = (value: unknown): string | undefined => {
   if (
     isRecord(value) &&
@@ -514,7 +523,9 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       const originId =
         readRelationshipRefId(properties["origin"]) ??
         (typeof properties["origin_id"] === "string" ? properties["origin_id"] : undefined);
+      const intermediaryIds = readRelationshipRefIds(properties["intermediary"]);
       const intermediaryId =
+        intermediaryIds[0] ??
         readRelationshipRefId(properties["intermediary"]) ??
         (typeof properties["intermediary_id"] === "string"
           ? properties["intermediary_id"]
@@ -559,7 +570,12 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
             : {}),
           ...(intermediaryId
             ? {
-                intermediary: { id: intermediaryId, feature_type: "unit" },
+                intermediary: [...new Set([intermediaryId, ...intermediaryIds]).values()].map(
+                  (id) => ({
+                    id,
+                    feature_type: "unit",
+                  }),
+                ),
                 intermediary_id: intermediaryId,
               }
             : {}),
@@ -574,7 +590,14 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
                 "formation:relation": {
                   origin: { featureId: originId },
                   ...(intermediaryId
-                    ? { intermediary: { featureId: intermediaryId, level_id } }
+                    ? {
+                        intermediary: [
+                          ...new Set([intermediaryId, ...intermediaryIds]).values(),
+                        ].map((id) => ({
+                          featureId: id,
+                          level_id,
+                        })),
+                      }
                     : {}),
                   destination: { featureId: destinationId },
                 },
@@ -730,6 +753,12 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           : typeof destinationFeature?.properties.level_id === "string"
             ? destinationFeature.properties.level_id
             : undefined);
+      const intermediaryForRelationship = readRelationshipRefIds(properties["intermediary"]);
+      const relationshipCategory = normalizeImportedCategory(
+        "relationship",
+        properties["category"],
+        raw["id"],
+      );
       features.push({
         type: "Feature",
         id: raw["id"],
@@ -748,6 +777,16 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
           ...(originId
             ? { origin: { id: originId, feature_type: "opening" }, origin_id: originId }
             : {}),
+          ...(relationshipCategory ? { category: relationshipCategory } : {}),
+          ...(intermediaryForRelationship.length > 0
+            ? {
+                intermediary: intermediaryForRelationship.map((id) => ({
+                  id,
+                  feature_type: "opening",
+                })),
+                intermediary_id: intermediaryForRelationship[0],
+              }
+            : {}),
           ...(destinationId
             ? {
                 destination: { id: destinationId, feature_type: "opening" },
@@ -758,6 +797,13 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
             ? {
                 "formation:relation": {
                   origin: { featureId: originId },
+                  ...(intermediaryForRelationship.length > 0
+                    ? {
+                        intermediary: intermediaryForRelationship.map((id) => ({
+                          featureId: id,
+                        })),
+                      }
+                    : {}),
                   destination: { featureId: destinationId },
                 },
               }

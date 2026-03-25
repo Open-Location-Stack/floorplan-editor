@@ -260,6 +260,15 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
     fields: [
       { key: "name", type: "label", required: true, editorControl: "label-json" },
       {
+        key: "category",
+        type: "string",
+        required: false,
+        editorControl: "enum",
+        enumOptions: ["contains", "pedestrian", "wheelchair", "vertical"],
+        allowCustomValues: true,
+        defaultValue: "contains",
+      },
+      {
         key: "origin",
         type: "reference",
         required: true,
@@ -268,9 +277,9 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       },
       {
         key: "intermediary",
-        type: "reference",
+        type: "json",
         required: false,
-        editorControl: "uuid-ref",
+        editorControl: "json",
         scope: "same-level",
       },
       {
@@ -309,7 +318,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
       {
         key: "unit_ids",
         type: "string[]",
-        required: false,
+        required: true,
         readOnly: true,
         derived: true,
         editorControl: "string-list",
@@ -358,7 +367,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
   },
   detail: {
     type: "detail",
-    geometryType: "Point",
+    geometryType: "LineString",
     defaultName: "Detail",
     sortOrder: 32,
     floorBound: true,
@@ -378,7 +387,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
   },
   fixture: {
     type: "fixture",
-    geometryType: "Point",
+    geometryType: "Polygon",
     defaultName: "Fixture",
     sortOrder: 33,
     floorBound: true,
@@ -406,7 +415,7 @@ export const IMDF_FEATURE_SPECS: Record<ImdfFeatureType, ImdfFeatureSpec> = {
   },
   kiosk: {
     type: "kiosk",
-    geometryType: "Point",
+    geometryType: "Polygon",
     defaultName: "Kiosk",
     sortOrder: 34,
     floorBound: true,

@@ -3,6 +3,7 @@ import type { Selection } from "../../lib/editor/selection";
 import { getFeatureIconKey } from "../../lib/icons/iconRegistry";
 import { getChildrenByParent } from "../../lib/imdf/containment";
 import { sortFeaturesForRendering } from "../../lib/imdf/export";
+import { isFallbackUnitFeature } from "../../lib/imdf/fallbackUnits";
 import { isLevelGeometryFeature } from "../../lib/imdf/levelGeometry";
 import {
   isNavigationPathOpening,
@@ -125,6 +126,9 @@ export const BuildingsTree = ({
     const groups = new Map<string, FloorFeature[]>();
     for (const feature of sortFeaturesForRendering(features)) {
       if (isLevelGeometryFeature(feature)) {
+        continue;
+      }
+      if (isFallbackUnitFeature(feature)) {
         continue;
       }
       if (typeof feature.properties.level_id !== "string") {

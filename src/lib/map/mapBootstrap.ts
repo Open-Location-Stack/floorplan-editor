@@ -435,8 +435,14 @@ const drawPolygonFillColorExpression: unknown[] = [
   "case",
   ["==", featureTypeExpression, "level"],
   "#ffffff",
+  [
+    "all",
+    ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
+    ["==", ["get", "formation:system_type"], "fallback_unit"],
+  ],
+  "#9ca3af",
   ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
-  "#e5e7eb",
+  "#ffffff",
   ["==", featureTypeExpression, "geofence"],
   geofenceFillColorExpression,
   "#9ca3af",
@@ -448,8 +454,14 @@ const drawPolygonFillOpacityExpression: unknown[] = [
   ["coalesce", ["get", "opacity", ["get", "style", ["get", "metadata"]]], 0.35],
   ["==", featureTypeExpression, "level"],
   0,
+  [
+    "all",
+    ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
+    ["==", ["get", "formation:system_type"], "fallback_unit"],
+  ],
+  0.35,
   ["any", ["==", featureTypeExpression, "unit"], ["==", featureTypeExpression, "room"]],
-  1,
+  0.55,
   0.3,
 ];
 

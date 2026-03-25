@@ -156,6 +156,22 @@ const normalizePolygon = (
   return { type: "Polygon", coordinates: [closed] };
 };
 
+const polygonFromPoint = (
+  coordinate: Coordinates,
+  span = 0.00001,
+): Extract<FloorFeature["geometry"], { type: "Polygon" }> => ({
+  type: "Polygon",
+  coordinates: [
+    [
+      [coordinate[0] - span, coordinate[1] - span],
+      [coordinate[0] + span, coordinate[1] - span],
+      [coordinate[0] + span, coordinate[1] + span],
+      [coordinate[0] - span, coordinate[1] + span],
+      [coordinate[0] - span, coordinate[1] - span],
+    ],
+  ],
+});
+
 const normalizeLine = (
   geometry: FloorFeature["geometry"],
 ): Extract<FloorFeature["geometry"], { type: "LineString" }> | undefined => {
@@ -341,6 +357,15 @@ const readRelationshipReference = (
   }
   return undefined;
 };
+
+const readRelationshipReferences = (
+  value: unknown,
+): Array<{ id: string; feature_type?: string }> =>
+  Array.isArray(value)
+    ? value
+        .map((entry) => readRelationshipReference(entry))
+        .filter((entry): entry is { id: string; feature_type?: string } => Boolean(entry))
+    : [];
 
 type BuildInput = {
   building: Building;
@@ -581,24 +606,28 @@ export const buildImdfArchivePayload = ({
       (typeof feature.properties.intermediary_id === "string"
         ? { id: feature.properties.intermediary_id }
         : undefined);
+    const intermediaryRefsFromArray = readRelationshipReferences(feature.properties.intermediary);
     const destinationRef =
       readRelationshipReference(feature.properties.destination) ??
       (typeof feature.properties.destination_id === "string"
         ? { id: feature.properties.destination_id }
         : undefined);
     const resolvedOriginId = relation?.origin?.featureId ?? originRef?.id;
-    const resolvedIntermediaryId = relation?.intermediary?.featureId ?? intermediaryRef?.id;
+    const resolvedIntermediaryIds =
+      relation?.intermediary?.map((entry) => entry.featureId).filter((entry) => Boolean(entry)) ??
+      (intermediaryRefsFromArray.length > 0
+        ? intermediaryRefsFromArray.map((entry) => entry.id)
+        : intermediaryRef?.id
+          ? [intermediaryRef.id]
+          : []);
     const resolvedDestinationId = relation?.destination?.featureId ?? destinationRef?.id;
     if (mappedType === "relationship") {
+      if (baseProperties["category"] === undefined) {
+        baseProperties["category"] = "contains";
+      }
       const resolvedOriginType =
         originRef?.feature_type ??
         (resolvedOriginId ? resolvedTypeByFeatureId.get(resolvedOriginId) : undefined) ??
-        "unit";
-      const resolvedIntermediaryType =
-        intermediaryRef?.feature_type ??
-        (resolvedIntermediaryId
-          ? resolvedTypeByFeatureId.get(resolvedIntermediaryId)
-          : undefined) ??
         "unit";
       const resolvedDestinationType =
         destinationRef?.feature_type ??
@@ -610,12 +639,14 @@ export const buildImdfArchivePayload = ({
           feature_type: resolvedOriginType,
         };
       }
-      if (resolvedIntermediaryId) {
-        baseProperties["intermediary"] = {
-          id:
-            featureUuidById.get(resolvedIntermediaryId) ?? resolveImdfUuid(resolvedIntermediaryId),
-          feature_type: resolvedIntermediaryType,
-        };
+      if (resolvedIntermediaryIds.length > 0) {
+        baseProperties["intermediary"] = resolvedIntermediaryIds.map((intermediaryId) => ({
+          id: featureUuidById.get(intermediaryId) ?? resolveImdfUuid(intermediaryId),
+          feature_type:
+            intermediaryRefsFromArray.find((entry) => entry.id === intermediaryId)?.feature_type ??
+            resolvedTypeByFeatureId.get(intermediaryId) ??
+            "unit",
+        }));
       }
       if (resolvedDestinationId) {
         baseProperties["destination"] = {
@@ -636,9 +667,10 @@ export const buildImdfArchivePayload = ({
         baseProperties["origin_id"] =
           featureUuidById.get(resolvedOriginId) ?? resolveImdfUuid(resolvedOriginId);
       }
-      if (resolvedIntermediaryId) {
+      if (resolvedIntermediaryIds[0]) {
+        const intermediaryId = resolvedIntermediaryIds[0];
         baseProperties["intermediary_id"] =
-          featureUuidById.get(resolvedIntermediaryId) ?? resolveImdfUuid(resolvedIntermediaryId);
+          featureUuidById.get(intermediaryId) ?? resolveImdfUuid(intermediaryId);
       }
       if (resolvedDestinationId) {
         baseProperties["destination_id"] =
@@ -663,7 +695,11 @@ export const buildImdfArchivePayload = ({
 
     let geometry: FloorFeature["geometry"] | null = null;
     if (spec.geometryType === "Polygon") {
-      const normalized = normalizePolygon(feature.geometry);
+      const normalized =
+        normalizePolygon(feature.geometry) ??
+        ((mappedType === "fixture" || mappedType === "kiosk") && feature.geometry.type === "Point"
+          ? polygonFromPoint(feature.geometry.coordinates)
+          : undefined);
       if (!normalized) {
         warnings.push(`Feature ${feature.id} skipped: invalid polygon geometry for ${mappedType}.`);
         continue;

@@ -189,6 +189,12 @@ const isUuid = (value: unknown): value is string =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isReference = (value: unknown): value is { id: string; feature_type: string } =>
+  isRecord(value) &&
+  isUuid(value["id"]) &&
+  typeof value["feature_type"] === "string" &&
+  value["feature_type"].trim().length > 0;
+
 const isCoordinate = (value: unknown): value is [number, number] =>
   Array.isArray(value) &&
   value.length === 2 &&
@@ -452,7 +458,34 @@ export const validateImdfDatasetFiles = (
         }
       }
 
+      if (type === "relationship") {
+        const intermediary = rawFeature["properties"]["intermediary"];
+        if (intermediary !== undefined) {
+          const validIntermediary =
+            Array.isArray(intermediary) && intermediary.every((entry) => isReference(entry));
+          if (!validIntermediary) {
+            const issue = `${context} properties.intermediary must be an array of references.`;
+            if (mode === "strict") {
+              errors.push(issue);
+            } else {
+              warnings.push(issue);
+            }
+          } else {
+            for (const entry of intermediary) {
+              refs.push({
+                source: String(rawFeature["id"]),
+                target: entry.id,
+                field: "intermediary",
+              });
+            }
+          }
+        }
+      }
+
       for (const [key, value] of Object.entries(rawFeature["properties"])) {
+        if ((key === "origin" || key === "destination") && isReference(value)) {
+          refs.push({ source: String(rawFeature["id"]), target: value.id, field: key });
+        }
         if (key.endsWith("_id")) {
           if (isUuid(value)) {
             refs.push({ source: String(rawFeature["id"]), target: value, field: key });

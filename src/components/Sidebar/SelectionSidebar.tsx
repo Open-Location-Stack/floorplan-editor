@@ -1,4 +1,5 @@
 import type { Selection } from "../../lib/editor/selection";
+import { isFallbackUnitFeature } from "../../lib/imdf/fallbackUnits";
 import { readFeatureType } from "../../lib/imdf/featureDisplay";
 import { getLevelGeometryFeatures, hasLevelGeometry } from "../../lib/imdf/levelGeometry";
 import { validateFloor } from "../../lib/imdf/validate";
@@ -57,7 +58,9 @@ const deriveBuildingFeatureCandidates = (
 
   return {
     anchorCandidates: buildingFeatures.filter((current) => readFeatureType(current) === "anchor"),
-    unitCandidates: buildingFeatures.filter((current) => readFeatureType(current) === "unit"),
+    unitCandidates: buildingFeatures.filter(
+      (current) => readFeatureType(current) === "unit" && !isFallbackUnitFeature(current),
+    ),
   };
 };
 
@@ -304,6 +307,9 @@ export const SelectionSidebar = ({
   }
 
   if (selection.kind === "feature" && feature) {
+    if (isFallbackUnitFeature(feature)) {
+      return <SelectionMessageCard message="Fallback circulation units are system-managed." />;
+    }
     return (
       <FeatureEditor
         feature={feature}
