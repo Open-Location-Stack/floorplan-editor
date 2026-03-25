@@ -1,7 +1,11 @@
-# FORMATION Floorplan Editor
+# Open Location Stack - Floorplan Editor
 
 Browser-based editor for creating and maintaining building/floor plans on top of a live map.  
 The app is local-first (IndexedDB), supports import/export workflows, and is built with React + Vite + TypeScript.
+
+## Status
+
+The map editor is currently still under going a lot of development. While that is happening, expect compatibility breaking changes to import/export formats. A big topic currently is correctness and aligning the format with the specification and what other editors in this space do.
 
 ## Features
 - Interactive map canvas powered by MapLibre + MapTiler.
