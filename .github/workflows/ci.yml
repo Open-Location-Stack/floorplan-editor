@@ -125,6 +125,7 @@ jobs:
       - name: Build
         env:
           VITE_MAPTILER_API_KEY: ${{ secrets.VITE_MAPTILER_API_KEY }}
+          VITE_OPENCAGE_API_KEY: ${{ secrets.VITE_OPENCAGE_API_KEY }}
         run: npm run build
 
       - name: Upload production bundle
