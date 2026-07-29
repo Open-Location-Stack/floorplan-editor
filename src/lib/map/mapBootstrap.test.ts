@@ -7,6 +7,10 @@ import {
   snapDistanceMetersForZoom,
 } from "./mapBootstrap";
 
+const { mockSetWorkerUrl } = vi.hoisted(() => ({
+  mockSetWorkerUrl: vi.fn(),
+}));
+
 type EventHandler = (payload?: unknown) => void;
 
 type DrawFeature = {
@@ -198,6 +202,7 @@ class MockMarker {
 vi.mock("maplibre-gl", () => ({
   Map: MockMap,
   Marker: MockMarker,
+  setWorkerUrl: mockSetWorkerUrl,
 }));
 
 vi.mock("@mapbox/mapbox-gl-draw", () => ({
@@ -390,6 +395,21 @@ describe("createMapController", () => {
     lastMockDrawOptions = undefined;
     mockMarkers = [];
     vi.clearAllMocks();
+  });
+
+  it("configures the bundled MapLibre worker before creating the map", async () => {
+    await createMapController(document.createElement("div"), "fake-key", "basic-v2", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    expect(mockSetWorkerUrl).toHaveBeenCalledOnce();
+    expect(mockSetWorkerUrl).toHaveBeenCalledWith(
+      expect.stringMatching(/maplibre-gl-worker.*\.mjs/),
+    );
   });
 
   it("styles static opening lines with pedestrian and wheelchair path colors", async () => {

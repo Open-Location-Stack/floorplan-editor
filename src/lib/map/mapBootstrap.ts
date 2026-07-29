@@ -1,5 +1,6 @@
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
 import { rotateAroundPoint } from "../geometry/overlayTransforms";
 import { mapPointIconIdForOpeningEndpoint } from "../icons/iconRegistry";
@@ -1947,6 +1948,7 @@ export const createMapController = async (
   },
 ): Promise<MapController> => {
   const maplibre = (await import("maplibre-gl")) as MapLibreModule;
+  maplibre.setWorkerUrl(maplibreWorkerUrl);
   configureDrawClassesForMapLibre(MapboxDraw);
 
   const map = new maplibre.Map({
