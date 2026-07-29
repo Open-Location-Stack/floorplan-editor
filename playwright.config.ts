@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const port = 4173;
+const port = 4174;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -25,7 +25,7 @@ export default defineConfig({
   webServer: {
     command: `VITE_MAPTILER_API_KEY=e2e-test-key VITE_OPENCAGE_API_KEY=e2e-test-key npm run dev -- --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

@@ -3114,9 +3114,9 @@ function App() {
                   </p>
                 ) : (
                   <ul className="space-y-1 text-xs">
-                    {archiveNotices.map((notice, index) => (
+                    {archiveNotices.map((notice) => (
                       <li
-                        key={`${notice.level}-${notice.message}-${index}`}
+                        key={`${notice.level}-${notice.message}`}
                         className={
                           notice.level === "error"
                             ? "text-error"
