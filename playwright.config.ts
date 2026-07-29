@@ -23,7 +23,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `VITE_MAPTILER_API_KEY=e2e-test-key VITE_OPENCAGE_API_KEY=e2e-test-key npm run dev -- --host 127.0.0.1 --port ${port}`,
+    command: `VITE_MAPTILER_API_KEY=e2e-test-key npm run dev -- --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 120_000,

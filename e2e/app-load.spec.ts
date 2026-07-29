@@ -57,7 +57,7 @@ const observePageErrors = (page: Page) => {
 const observeOpenCageRequests = (page: Page) => {
   const openCageRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("api.opencagedata.com")) {
+    if (request.url().includes("/api/geocode")) {
       openCageRequests.push(request.url());
     }
   });

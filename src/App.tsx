@@ -687,7 +687,6 @@ function App() {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const runtimeConfig = getRuntimeConfig();
-  const openCageApiKey = runtimeConfig.ok ? runtimeConfig.config.opencageApiKey : "";
   const lockedFeatureIdsSet = useMemo(() => new Set(lockedFeatureIds), [lockedFeatureIds]);
   const lockedOverlayFloorIdsSet = useMemo(
     () => new Set(lockedOverlayFloorIds),
@@ -1492,7 +1491,7 @@ function App() {
 
   useEffect(() => {
     const trimmedQuery = locationQuery.trim();
-    if (!locationSearchFocused || !openCageApiKey || trimmedQuery.length < 3) {
+    if (!locationSearchFocused || trimmedQuery.length < 3) {
       setLocationSearchStatus("idle");
       setLocationSearchResults([]);
       setLocationSearchNoResults(false);
@@ -1507,7 +1506,7 @@ function App() {
     const timer = window.setTimeout(() => {
       setLocationSearchStatus("loading");
 
-      void searchOpenCage(trimmedQuery, openCageApiKey, {
+      void searchOpenCage(trimmedQuery, {
         limit: 6,
         signal: abortController.signal,
       })
@@ -1539,7 +1538,7 @@ function App() {
       abortController.abort();
       window.clearTimeout(timer);
     };
-  }, [locationQuery, locationSearchFocused, openCageApiKey]);
+  }, [locationQuery, locationSearchFocused]);
 
   const onLocationSearchSelect = useCallback((result: OpenCageSearchResult) => {
     setLocationQuery(result.formatted);
@@ -2190,10 +2189,6 @@ function App() {
 
   const onReverseGeocodeBuildingAddress = useCallback(
     async (buildingId: string) => {
-      if (!openCageApiKey) {
-        return;
-      }
-
       const building = buildings.find((current) => current.id === buildingId);
       if (!building) {
         return;
@@ -2205,7 +2200,7 @@ function App() {
       }
 
       try {
-        const result = await reverseGeocodeOpenCage(centroid, openCageApiKey);
+        const result = await reverseGeocodeOpenCage(centroid);
         if (!result) {
           return;
         }
@@ -2264,7 +2259,7 @@ function App() {
         });
       }
     },
-    [openCageApiKey, buildings, buildingCenter, applyProjectMutation, requestProjectConfirmation],
+    [buildings, buildingCenter, applyProjectMutation, requestProjectConfirmation],
   );
 
   const onExportBuildingArchive = useCallback(

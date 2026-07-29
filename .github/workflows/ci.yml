@@ -125,7 +125,6 @@ jobs:
       - name: Build
         env:
           VITE_MAPTILER_API_KEY: ${{ secrets.VITE_MAPTILER_API_KEY }}
-          VITE_OPENCAGE_API_KEY: ${{ secrets.VITE_OPENCAGE_API_KEY }}
         run: npm run build
 
       - name: Upload production bundle
@@ -152,6 +151,9 @@ jobs:
       group: formation-map-editor-production
       cancel-in-progress: false
     steps:
+      - name: Check out verified commit
+        uses: actions/checkout@v4
+
       - name: Download verified production bundle
         uses: actions/download-artifact@v4
         with:

@@ -24,7 +24,6 @@ describe("App", () => {
 
   it("shows a clear error when maptiler key is missing", () => {
     vi.stubEnv("VITE_MAPTILER_API_KEY", "");
-    vi.stubEnv("VITE_OPENCAGE_API_KEY", "fake-open-cage-key");
 
     render(<App />);
 

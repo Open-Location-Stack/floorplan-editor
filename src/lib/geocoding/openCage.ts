@@ -1,6 +1,6 @@
 import type { Coordinates } from "../types";
 
-const OPENCAGE_BASE_URL = "https://api.opencagedata.com/geocode/v1/json";
+const OPENCAGE_PROXY_URL = "/api/geocode";
 const DEFAULT_RESULT_LIMIT = 5;
 const MAX_RESULT_LIMIT = 10;
 
@@ -58,7 +58,6 @@ const normalizeLimit = (value: number | undefined): number => {
 
 export const searchOpenCage = async (
   query: string,
-  apiKey: string,
   options: {
     limit?: number;
     signal?: AbortSignal;
@@ -69,15 +68,8 @@ export const searchOpenCage = async (
     return [];
   }
 
-  const trimmedApiKey = apiKey.trim();
-  if (!trimmedApiKey) {
-    throw new Error("Missing OpenCage API key.");
-  }
-
   const params = new URLSearchParams({
     q: trimmedQuery,
-    key: trimmedApiKey,
-    no_annotations: "1",
     limit: String(normalizeLimit(options.limit)),
   });
 
@@ -86,7 +78,7 @@ export const searchOpenCage = async (
     requestInit.signal = options.signal;
   }
 
-  const response = await fetch(`${OPENCAGE_BASE_URL}?${params.toString()}`, requestInit);
+  const response = await fetch(`${OPENCAGE_PROXY_URL}?${params.toString()}`, requestInit);
 
   if (!response.ok) {
     throw new Error(`OpenCage request failed with status ${response.status}.`);
@@ -120,20 +112,12 @@ export const searchOpenCage = async (
 
 export const reverseGeocodeOpenCage = async (
   coordinates: Coordinates,
-  apiKey: string,
   options: {
     signal?: AbortSignal;
   } = {},
 ): Promise<OpenCageReverseGeocodeResult | undefined> => {
-  const trimmedApiKey = apiKey.trim();
-  if (!trimmedApiKey) {
-    throw new Error("Missing OpenCage API key.");
-  }
-
   const params = new URLSearchParams({
     q: `${coordinates[1]},${coordinates[0]}`,
-    key: trimmedApiKey,
-    no_annotations: "1",
     limit: "1",
   });
 
@@ -142,7 +126,7 @@ export const reverseGeocodeOpenCage = async (
     requestInit.signal = options.signal;
   }
 
-  const response = await fetch(`${OPENCAGE_BASE_URL}?${params.toString()}`, requestInit);
+  const response = await fetch(`${OPENCAGE_PROXY_URL}?${params.toString()}`, requestInit);
   if (!response.ok) {
     throw new Error(`OpenCage reverse geocode failed with status ${response.status}.`);
   }

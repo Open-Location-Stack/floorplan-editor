@@ -396,7 +396,6 @@ describe("App browser smoke", () => {
       value: vi.fn(),
     });
     vi.stubEnv("VITE_MAPTILER_API_KEY", "fake-key");
-    vi.stubEnv("VITE_OPENCAGE_API_KEY", "fake-open-cage-key");
   });
 
   it("renders successfully with valid configuration", async () => {

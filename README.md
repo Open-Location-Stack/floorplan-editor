@@ -24,7 +24,7 @@ The map editor is currently still under going a lot of development. While that i
 npm install
 ```
 
-3. Create a local env file and add required API keys:
+3. Create a local env file and add the public MapTiler browser key:
 
 ```bash
 cp .env.example .env
@@ -32,7 +32,9 @@ cp .env.example .env
 
 Required variables:
 - `VITE_MAPTILER_API_KEY` (map rendering)
-- `VITE_OPENCAGE_API_KEY` (location search)
+
+OpenCage runs through the server-side `/api/geocode` Pages Function. Configure its
+`OPENCAGE_API_KEY` secret in Cloudflare Pages; never expose it through a `VITE_*` variable.
 
 4. Start the dev server:
 
