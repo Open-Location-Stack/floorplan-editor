@@ -144,6 +144,80 @@ describe("imdf archive export/import", () => {
     expect(imported.value.features.some((feature) => feature.feature_type === "level")).toBe(true);
   });
 
+  it("exports multiple outer walls as one Level MultiPolygon and restores each wall", async () => {
+    const input: Parameters<typeof buildImdfArchivePayload>[0] = {
+      building: { id: "building-1", name: "HQ" },
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "outer-wall-1",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: { level_id: "level-1", building_ids: ["building-1"] },
+        },
+        {
+          type: "Feature",
+          id: "outer-wall-2",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.13, 52.09],
+                [5.131, 52.09],
+                [5.131, 52.091],
+                [5.13, 52.091],
+                [5.13, 52.09],
+              ],
+            ],
+          },
+          properties: { level_id: "level-1", building_ids: ["building-1"] },
+        },
+      ],
+      overlays: [],
+    };
+
+    const payload = buildImdfArchivePayload(input);
+    const levelCollection = payload.files[imdfCollectionFileName("level")] as {
+      features: Array<{
+        geometry: { type: string; coordinates: unknown[] };
+      }>;
+    };
+    expect(levelCollection.features).toHaveLength(1);
+    expect(levelCollection.features[0]?.geometry.type).toBe("MultiPolygon");
+    expect(levelCollection.features[0]?.geometry.coordinates).toHaveLength(2);
+    expect(validateImdfDatasetFiles(payload.files).errors).toEqual([]);
+
+    const { blob } = await exportBuildingImdfZip(input);
+    const imported = await importImdfArchiveZip(
+      new File([blob], "multiple-outer-walls.imdf.zip", { type: "application/zip" }),
+    );
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    const importedLevelId = imported.value.floors[0]?.id;
+    expect(importedLevelId).toBeDefined();
+    expect(
+      imported.value.features.filter(
+        (feature) =>
+          feature.feature_type === "level" && feature.properties.level_id === importedLevelId,
+      ),
+    ).toHaveLength(2);
+  });
+
   it("exports and imports a venue archive with multiple buildings", async () => {
     const { blob } = await exportVenueImdfZip({
       venue: {

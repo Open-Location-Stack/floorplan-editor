@@ -8,6 +8,7 @@ const MockMapCanvas = ({
   relocationRequest,
   features,
   lockedFeatureIds: _lockedFeatureIds,
+  selectedFeature,
   overlay,
   onViewStateChange,
   onFeatureSelectionChange,
@@ -34,8 +35,16 @@ const MockMapCanvas = ({
   };
   features: Array<{
     id: string;
+    type?: "Feature";
+    feature_type?: string;
+    geometry?: {
+      type: "Point" | "LineString" | "Polygon";
+      coordinates: unknown;
+    };
+    properties?: Record<string, unknown>;
   }>;
   lockedFeatureIds: string[];
+  selectedFeature?: { id: string };
   overlay?: {
     floorId: string;
   };
@@ -100,6 +109,7 @@ const MockMapCanvas = ({
       <div data-testid="mock-map-feature-ids">
         {features.map((feature) => feature.id).join(",")}
       </div>
+      <div data-testid="mock-map-selected-feature-id">{selectedFeature?.id ?? "none"}</div>
       <div data-testid="mock-map-overlay-floor">{overlay?.floorId ?? "none"}</div>
       <div data-testid="mock-map-grid-visible">{gridVisible ? "on" : "off"}</div>
       <div data-testid="mock-map-orientation-mode">{orientationMode}</div>
@@ -237,6 +247,57 @@ const MockMapCanvas = ({
         }}
       >
         create polygon feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-create-additional-polygon-feature"
+        onClick={() => {
+          onFeaturesChange([
+            ...features.flatMap((feature) =>
+              feature.type && feature.geometry && feature.properties
+                ? [
+                    {
+                      type: feature.type,
+                      id: feature.id,
+                      ...(feature.feature_type ? { feature_type: feature.feature_type } : {}),
+                      geometry: feature.geometry,
+                      properties: feature.properties,
+                    },
+                  ]
+                : [],
+            ),
+            {
+              type: "Feature",
+              id: "polygon-draft-2",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [5.31, 52.31],
+                    [5.311, 52.312],
+                    [5.312, 52.31],
+                    [5.31, 52.31],
+                  ],
+                ],
+              },
+              properties: {},
+            },
+          ]);
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("polygon-draft-2");
+        }}
+      >
+        create additional polygon feature
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-select-level-geometry"
+        onClick={() => {
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("level-geometry-1");
+        }}
+      >
+        select level geometry
       </button>
       <button
         type="button"
@@ -1784,7 +1845,7 @@ describe("App browser smoke", () => {
     });
   });
 
-  it("manages level geometry with add/remove controls and keeps hierarchy flat", async () => {
+  it("adds multiple outer walls, edits them, and keeps level geometry out of the hierarchy", async () => {
     mockRepository.loadProject.mockResolvedValue({
       id: "default-project",
       name: "test project",
@@ -1827,17 +1888,50 @@ describe("App browser smoke", () => {
 
     expect(screen.queryByRole("button", { name: "Nested Level Feature" })).not.toBeInTheDocument();
 
-    const addGeometryButton = screen.getByRole("button", { name: /add level geometry/i });
+    const addGeometryButton = screen.getByRole("button", { name: /add outer wall/i });
     const removeGeometryButton = screen.getByRole("button", { name: /remove level geometry/i });
     const ordinalInput = screen.getByRole("spinbutton", { name: /level ordinal/i });
     const shortNameInput = screen.getByRole("textbox", { name: /level short name/i });
     const outdoorToggle = screen.getByRole("checkbox", { name: /level outdoor/i });
 
-    expect(addGeometryButton).toBeDisabled();
+    expect(addGeometryButton).toBeEnabled();
     expect(removeGeometryButton).toBeEnabled();
     expect(ordinalInput).toBeEnabled();
     expect(shortNameInput).toBeEnabled();
     expect(outdoorToggle).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("mock-map-select-level-geometry"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-selected-feature-id")).toHaveTextContent(
+        "level-geometry-1",
+      );
+    });
+
+    fireEvent.click(addGeometryButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("polygon");
+    });
+
+    fireEvent.click(screen.getByTestId("mock-map-create-additional-polygon-feature"));
+
+    await waitFor(() => {
+      const saveCalls = mockRepository.saveProject.mock.calls;
+      const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        features: Array<{
+          id: string;
+          feature_type?: string;
+          properties: { level_id?: string };
+        }>;
+      };
+      expect(
+        latestSnapshot.features.filter(
+          (feature) =>
+            feature.feature_type === "level" && feature.properties.level_id === "floor-1",
+        ),
+      ).toHaveLength(2);
+    });
 
     fireEvent.change(ordinalInput, { target: { value: "2" } });
     fireEvent.change(shortNameInput, { target: { value: "G" } });

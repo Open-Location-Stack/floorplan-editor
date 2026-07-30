@@ -8,6 +8,7 @@ import type {
   FloorOverlay,
   ImdfFeatureType,
   JsonValue,
+  PolygonGeometry,
   Venue,
 } from "../types";
 import { IMDF_STANDARD_DATASET_TYPES } from "./archiveExport";
@@ -105,6 +106,35 @@ const toDataUrl = (bytes: Uint8Array, path: string): string => {
   return `data:${mime};base64,${base64}`;
 };
 
+const polygonGeometryFromCoordinates = (coordinates: unknown): PolygonGeometry | undefined => {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) {
+    return undefined;
+  }
+  const rings = coordinates.filter(
+    (ring): ring is [number, number][] =>
+      Array.isArray(ring) && ring.length >= 4 && ring.every(isCoordinate),
+  );
+  if (rings.length !== coordinates.length) {
+    return undefined;
+  }
+  return { type: "Polygon", coordinates: rings };
+};
+
+const polygonGeometriesFromImdf = (geometry: unknown): PolygonGeometry[] => {
+  if (!isRecord(geometry)) {
+    return [];
+  }
+  if (geometry["type"] === "Polygon") {
+    const polygon = polygonGeometryFromCoordinates(geometry["coordinates"]);
+    return polygon ? [polygon] : [];
+  }
+  if (geometry["type"] !== "MultiPolygon" || !Array.isArray(geometry["coordinates"])) {
+    return [];
+  }
+  const polygons = geometry["coordinates"].map(polygonGeometryFromCoordinates);
+  return polygons.every((polygon): polygon is PolygonGeometry => Boolean(polygon)) ? polygons : [];
+};
+
 const geometryFromImdf = (geometry: unknown): FloorFeature["geometry"] | undefined => {
   if (!isRecord(geometry)) {
     return undefined;
@@ -125,12 +155,7 @@ const geometryFromImdf = (geometry: unknown): FloorFeature["geometry"] | undefin
     return undefined;
   }
   if (type === "Polygon") {
-    const coordinates = geometry["coordinates"];
-    const ring = Array.isArray(coordinates) ? coordinates[0] : undefined;
-    if (Array.isArray(ring) && ring.every(isCoordinate)) {
-      return { type: "Polygon", coordinates: [ring] };
-    }
-    return undefined;
+    return polygonGeometryFromCoordinates(geometry["coordinates"]);
   }
   return undefined;
 };
@@ -465,14 +490,14 @@ export const importImdfArchiveZip = async (file: File): Promise<ImportArchiveRes
       name: labelToString(properties["name"]) ?? "Imported floor",
     });
     levelToBuildingId.set(levelFeature["id"], buildingId);
-    const geometry = geometryFromImdf(levelFeature["geometry"]);
-    if (geometry) {
+    const geometries = polygonGeometriesFromImdf(levelFeature["geometry"]);
+    for (const [geometryIndex, geometry] of geometries.entries()) {
       const levelName = labelToString(properties["name"]);
       const levelLabel = toLabelObject(properties["name"], levelName);
       const shortNameLabel = toLabelObject(properties["short_name"], levelName);
       features.push({
         type: "Feature",
-        id: levelFeature["id"],
+        id: geometryIndex === 0 ? levelFeature["id"] : createId(),
         feature_type: "level",
         geometry,
         properties: {

@@ -1443,7 +1443,9 @@ function App() {
         return;
       }
       if (isLevelGeometryFeature(feature)) {
-        setEditorState((current) => selectFeature(current, undefined));
+        setEditorState((current) =>
+          selectFeature(current, lockedFeatureIdsSet.has(feature.id) ? undefined : feature.id),
+        );
         if (activeLevel) {
           setSelection({ kind: "level", id: activeLevel.id });
         }
@@ -2711,13 +2713,6 @@ function App() {
       if (!level) {
         return;
       }
-      if (
-        editorState.features.some(
-          (feature) => isLevelGeometryFeature(feature) && feature.properties.level_id === levelId,
-        )
-      ) {
-        return;
-      }
       setSelection({ kind: "level", id: levelId });
       startDrawMode("polygon");
       setPendingDrawTemplate({
@@ -2727,7 +2722,7 @@ function App() {
         properties: {},
       });
     },
-    [editorState.features, levels, startDrawMode],
+    [levels, startDrawMode],
   );
 
   const onRemoveLevelGeometry = useCallback(

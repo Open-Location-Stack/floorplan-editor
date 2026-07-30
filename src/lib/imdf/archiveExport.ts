@@ -36,11 +36,16 @@ export const IMDF_STANDARD_DATASET_TYPES = [
 
 export type ImdfStandardDatasetType = (typeof IMDF_STANDARD_DATASET_TYPES)[number];
 
+type ImdfMultiPolygonGeometry = {
+  type: "MultiPolygon";
+  coordinates: Coordinates[][][];
+};
+
 export type ImdfFeature = {
   type: "Feature";
   id: string;
   feature_type: ImdfStandardDatasetType;
-  geometry: FloorFeature["geometry"] | null;
+  geometry: FloorFeature["geometry"] | ImdfMultiPolygonGeometry | null;
   properties: Record<string, unknown>;
 };
 
@@ -413,19 +418,27 @@ export const buildImdfArchivePayload = ({
     (feature) => readImdfType(feature.feature_type) === "level",
   );
   for (const floor of floorsInBuilding) {
-    const floorLevelFeature = levelFeatures.find(
+    const floorLevelFeatures = levelFeatures.filter(
       (feature) => feature.properties.level_id === floor.id,
     );
-    const sourcePolygon = floorLevelFeature
-      ? normalizePolygon(floorLevelFeature.geometry)
-      : undefined;
+    const sourcePolygons = floorLevelFeatures
+      .map((feature) => normalizePolygon(feature.geometry))
+      .filter((geometry): geometry is NonNullable<typeof geometry> => Boolean(geometry));
     const floorCoordinates = featuresInBuilding
       .filter((feature) => feature.properties.level_id === floor.id)
       .flatMap((feature) => geometryCoordinates(feature.geometry));
     const fallbackPolygon = polygonFromBbox(bboxFromCoordinates(floorCoordinates), 0);
-    const geometry = sourcePolygon ?? fallbackPolygon;
-    levelPolygons.push(geometry);
+    const polygonParts = sourcePolygons.length > 0 ? sourcePolygons : [fallbackPolygon];
+    const geometry: ImdfFeature["geometry"] =
+      polygonParts.length === 1
+        ? (polygonParts[0] as (typeof polygonParts)[number])
+        : {
+            type: "MultiPolygon",
+            coordinates: polygonParts.map((polygon) => polygon.coordinates),
+          };
+    levelPolygons.push(...polygonParts);
     const levelId = resolveImdfUuid(floor.id);
+    const metadataSource = floorLevelFeatures[0];
     levelByFloor.set(floor.id, levelId);
     collections.level.features.push({
       type: "Feature",
@@ -433,12 +446,15 @@ export const buildImdfArchivePayload = ({
       feature_type: "level",
       geometry,
       properties: {
-        name: createLabel(floor.name, floor.name, defaultLocale),
-        short_name: createLabel(floor.name, floor.name, defaultLocale),
-        ordinal: 0,
-        outdoor: false,
+        name: createLabel(metadataSource?.properties.name, floor.name, defaultLocale),
+        short_name: createLabel(metadataSource?.properties.short_name, floor.name, defaultLocale),
+        ordinal:
+          typeof metadataSource?.properties.ordinal === "number"
+            ? metadataSource.properties.ordinal
+            : 0,
+        outdoor: Boolean(metadataSource?.properties.outdoor),
         building_ids: [buildingId],
-        display_point: polygonCentroid(geometry),
+        display_point: polygonCentroid(polygonParts[0] as (typeof polygonParts)[number]),
       },
     });
   }

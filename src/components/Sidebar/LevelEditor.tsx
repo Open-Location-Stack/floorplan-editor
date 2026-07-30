@@ -157,11 +157,10 @@ export const LevelEditor = ({
             className="btn btn-sm"
             type="button"
             onClick={onAddLevelGeometry}
-            disabled={hasLevelGeometry}
-            aria-label="Add level geometry"
+            aria-label="Add outer wall"
           >
             <AppIcon name="add" />
-            Add geometry
+            Add outer wall
           </button>
           <button
             className="btn btn-sm"

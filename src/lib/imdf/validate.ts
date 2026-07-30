@@ -203,6 +203,11 @@ const isCoordinate = (value: unknown): value is [number, number] =>
   typeof value[1] === "number" &&
   Number.isFinite(value[1]);
 
+const isPolygonCoordinates = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((ring) => Array.isArray(ring) && ring.length >= 4 && ring.every(isCoordinate));
+
 const isLabelObject = (value: unknown): value is Record<string, string> =>
   isRecord(value) &&
   Object.keys(value).length > 0 &&
@@ -241,7 +246,10 @@ const validateGeometry = (
     errors.push(`${context} has invalid geometry.`);
     return;
   }
-  if (geometry["type"] !== expectedType) {
+  const isPolygonal =
+    expectedType === "Polygon" &&
+    (geometry["type"] === "Polygon" || geometry["type"] === "MultiPolygon");
+  if (geometry["type"] !== expectedType && !isPolygonal) {
     errors.push(`${context} must use ${expectedType} geometry.`);
     return;
   }
@@ -259,8 +267,13 @@ const validateGeometry = (
     return;
   }
   const coordinates = geometry["coordinates"];
-  const ring = Array.isArray(coordinates) ? coordinates[0] : undefined;
-  if (!Array.isArray(ring) || ring.length < 4 || !ring.every(isCoordinate)) {
+  const hasValidPolygonCoordinates =
+    geometry["type"] === "MultiPolygon"
+      ? Array.isArray(coordinates) &&
+        coordinates.length > 0 &&
+        coordinates.every(isPolygonCoordinates)
+      : isPolygonCoordinates(coordinates);
+  if (!hasValidPolygonCoordinates) {
     errors.push(`${context} has invalid polygon coordinates.`);
   }
 };

@@ -26,6 +26,11 @@
 - Leverage `@testing-library/react` helpers for component behavior and `src/test/setup.ts` for shared mocks or extensions.
 - Cover calculator edge cases (zero values, large areas) and user interaction flows; ensure new logic includes deterministic assertions before merging.
 - Bug fix policy: each production bug fix must add at least one regression test that fails on old behavior and passes with the fix.
+- Test execution cadence:
+  - Do not automatically run tests after every implementation step or before an ordinary uncommitted handoff; repeated test runs slow down iteration.
+  - Run tests only when diagnosing a problem, when the user explicitly requests validation, or immediately before creating a commit.
+  - While diagnosing, run the smallest relevant targeted test command. Reserve the full completion gate for the final pre-commit run.
+  - If changes are handed off without a commit, state that tests were not run rather than running them automatically.
 - Test run hygiene policy:
   - Never start a new test command if a previous test process is still running.
   - Before any new run, check for active test processes (for example `vitest`, `npm run test`, Playwright) and either wait for completion or explicitly terminate the stale run first.
@@ -39,14 +44,20 @@
 - Confirm all required commands pass locally and that builds remain warning-free prior to requesting review.
 
 ## Definition Of Done
-- Do not declare a coding task complete unless all commands below pass in one final post-change run:
+- Immediately before creating a commit, run the commands below once as the final completion gate:
   - `npm run typecheck`
   - `npm run lint`
   - `npm run test -- --run`
   - `npm run test:browser`
   - `npm run test:e2e`
   - `npm run build`
-- If any command fails or cannot run, report the task as not fully validated.
+- Do not rerun this full gate for an uncommitted handoff unless the user explicitly asks for it or it is needed to diagnose a problem.
+- If any pre-commit command fails or cannot run, do not create the commit and report the validation failure.
+
+## Pre-alpha Backward Compatibility Policy
+- Backward compatibility is not a requirement while the project is in pre-alpha.
+- Before introducing a backward-incompatible change to persisted project data, import/export behavior, or public APIs, ask the user for explicit confirmation.
+- This policy is temporary and should be removed when the project leaves pre-alpha.
 
 ## Environment Notes
 - Tailwind 4 no longer uses a JS config; declare content sources, plugins, and DaisyUI customizations via the directives in `src/index.css`.

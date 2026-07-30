@@ -70,10 +70,11 @@ const deriveLevelEditorState = (
   lockedFeatureIds: string[],
 ) => {
   const levelFeatures = allFeatures.filter((current) => current.properties.level_id === level.id);
-  const levelGeometryFeature = getLevelGeometryFeatures(levelFeatures, level.id)[0];
-  const levelGeometryLocked = Boolean(
-    levelGeometryFeature && lockedFeatureIds.includes(levelGeometryFeature.id),
-  );
+  const levelGeometryFeatures = getLevelGeometryFeatures(levelFeatures, level.id);
+  const levelGeometryFeature = levelGeometryFeatures[0];
+  const levelGeometryLocked =
+    levelGeometryFeatures.length > 0 &&
+    levelGeometryFeatures.every((feature) => lockedFeatureIds.includes(feature.id));
   const levelOrdinal =
     typeof levelGeometryFeature?.properties.ordinal === "number"
       ? levelGeometryFeature.properties.ordinal
@@ -81,6 +82,7 @@ const deriveLevelEditorState = (
 
   return {
     levelFeatures,
+    levelGeometryFeatures,
     levelGeometryFeature,
     levelGeometryLocked,
     levelShortName: readLevelShortName(level, levelGeometryFeature),
@@ -259,6 +261,7 @@ export const SelectionSidebar = ({
   if ((selection.kind === "level" || selection.kind === "floor") && level) {
     const {
       levelFeatures,
+      levelGeometryFeatures,
       levelGeometryFeature,
       levelGeometryLocked,
       levelShortName,
@@ -287,10 +290,13 @@ export const SelectionSidebar = ({
         onUpdateLevelShortName={(shortName) => onUpdateLevelShortName(level.id, shortName)}
         onUpdateLevelOutdoor={(outdoor) => onUpdateLevelOutdoor(level.id, outdoor)}
         onToggleLevelGeometryLock={() => {
-          if (!levelGeometryFeature) {
-            return;
+          const shouldLock = !levelGeometryLocked;
+          for (const geometryFeature of levelGeometryFeatures) {
+            const isLocked = lockedFeatureIds.includes(geometryFeature.id);
+            if (isLocked !== shouldLock) {
+              onFeatureToggleLock(geometryFeature.id);
+            }
           }
-          onFeatureToggleLock(levelGeometryFeature.id);
         }}
         onCreateFeature={onCreateFeature}
         onOverlayUpload={onOverlayUpload}
