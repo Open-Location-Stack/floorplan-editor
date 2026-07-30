@@ -21,6 +21,7 @@ type MapCanvasProps = {
   };
   features: FloorFeature[];
   lockedFeatureIds: string[];
+  nonInteractiveFeatureIds: string[];
   routeOverlayFeatures: FloorFeature[];
   selectedFeature: FloorFeature | undefined;
   overlay: FloorOverlay | undefined;
@@ -51,6 +52,7 @@ export const MapCanvas = ({
   initialView,
   features,
   lockedFeatureIds,
+  nonInteractiveFeatureIds,
   routeOverlayFeatures,
   selectedFeature,
   overlay,
@@ -91,6 +93,7 @@ export const MapCanvas = ({
   const selectedFeatureRef = useRef(selectedFeature);
   const routeOverlayFeaturesRef = useRef(routeOverlayFeatures);
   const lockedFeatureIdsRef = useRef(lockedFeatureIds);
+  const nonInteractiveFeatureIdsRef = useRef(nonInteractiveFeatureIds);
   const overlayRef = useRef(overlay);
   const drawModeRef = useRef(drawMode);
   const snapEnabledRef = useRef(snapEnabled);
@@ -150,6 +153,10 @@ export const MapCanvas = ({
   useEffect(() => {
     lockedFeatureIdsRef.current = lockedFeatureIds;
   }, [lockedFeatureIds]);
+
+  useEffect(() => {
+    nonInteractiveFeatureIdsRef.current = nonInteractiveFeatureIds;
+  }, [nonInteractiveFeatureIds]);
 
   useEffect(() => {
     overlayRef.current = overlay;
@@ -233,6 +240,7 @@ export const MapCanvas = ({
         features: featuresRef.current,
       });
       controller.setLockedFeatureIds(lockedFeatureIdsRef.current);
+      controller.setNonInteractiveFeatureIds(nonInteractiveFeatureIdsRef.current);
       controller.setRouteOverlay({
         type: "FeatureCollection",
         features: routeOverlayFeaturesRef.current,
@@ -273,6 +281,10 @@ export const MapCanvas = ({
   useEffect(() => {
     controllerRef.current?.setLockedFeatureIds(lockedFeatureIds);
   }, [lockedFeatureIds]);
+
+  useEffect(() => {
+    controllerRef.current?.setNonInteractiveFeatureIds(nonInteractiveFeatureIds);
+  }, [nonInteractiveFeatureIds]);
 
   useEffect(() => {
     controllerRef.current?.setRouteOverlay({

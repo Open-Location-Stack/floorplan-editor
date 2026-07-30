@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeatureCollection, FloorOverlay } from "../types";
+import type { FeatureCollection, FloorFeature, FloorOverlay } from "../types";
 import {
   createMapController,
   deriveNavigationOpeningEndpointMarkers,
@@ -426,7 +426,11 @@ describe("createMapController", () => {
       typeof lastMockDrawOptions === "object" &&
       !Array.isArray(lastMockDrawOptions)
         ? (lastMockDrawOptions as {
-            styles?: Array<{ id?: string; paint?: Record<string, unknown> }>;
+            styles?: Array<{
+              id?: string;
+              filter?: unknown[];
+              paint?: Record<string, unknown>;
+            }>;
           })
         : undefined;
 
@@ -437,6 +441,31 @@ describe("createMapController", () => {
     const lineColorExpression = JSON.stringify(staticLineStyle?.paint?.["line-color"]);
     expect(lineColorExpression).toContain('"__draw_line_color"');
     expect(lineColorExpression).toContain('"#dc2626"');
+
+    for (const pointStyleId of ["gl-draw-point-symbol-inactive", "gl-draw-point-symbol-active"]) {
+      const pointStyle = drawOptions?.styles?.find((style) => style.id === pointStyleId);
+      expect(pointStyle?.filter).toContainEqual(["==", "meta", "feature"]);
+      expect(pointStyle?.filter).not.toContainEqual(["!=", "meta", "midpoint"]);
+    }
+
+    for (const fillStyleId of [
+      "gl-draw-polygon-fill-inactive",
+      "gl-draw-polygon-fill-static",
+      "gl-draw-polygon-fill-active",
+    ]) {
+      const fillStyle = drawOptions?.styles?.find((style) => style.id === fillStyleId);
+      expect(fillStyle?.filter).toContainEqual(["!=", "user_feature_type", "level"]);
+    }
+
+    for (const vertexStyleId of [
+      "gl-draw-polygon-and-line-vertex-halo-active",
+      "gl-draw-polygon-and-line-vertex-active",
+    ]) {
+      const vertexStyle = drawOptions?.styles?.find((style) => style.id === vertexStyleId);
+      expect(vertexStyle?.filter).toContainEqual(["==", "meta", "vertex"]);
+      expect(vertexStyle?.filter).toContainEqual(["!=", "mode", "simple_select"]);
+      expect(vertexStyle?.filter).not.toContainEqual(["==", "active", "true"]);
+    }
   });
 
   it("assigns green draw line color to wheelchair openings", async () => {
@@ -2741,6 +2770,45 @@ describe("createMapController", () => {
     controller.destroy();
   });
 
+  it("normalizes draw multi-selection to one feature", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    map.emit("load");
+    (draw.changeMode as unknown as { mockClear: () => void }).mockClear();
+
+    map.emit("draw.selectionchange", {
+      features: [{ id: "shape-1" }, { id: "shape-2" }],
+    });
+
+    expect(draw.changeMode).toHaveBeenCalledWith("simple_select", {
+      featureIds: ["shape-1"],
+    });
+    expect(draw.selectedIds).toEqual(["shape-1"]);
+    expect(onFeatureSelectionChange).toHaveBeenLastCalledWith("shape-1");
+
+    controller.destroy();
+  });
+
   it("syncs external selection and interaction mode to draw", async () => {
     const controller = await createMapController(
       document.createElement("div"),
@@ -3761,6 +3829,162 @@ describe("createMapController", () => {
     expect(draw.mode).toBe("direct_select");
     expect(draw.selectedIds).toEqual(["shape-1"]);
     expect(onFeatureSelectionChange).toHaveBeenCalledWith("shape-1");
+
+    controller.destroy();
+  });
+
+  it("clicks through non-interactive generated geometry to an editable polygon", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const editablePolygon = polygonFeatureCollection().features[0];
+    if (!editablePolygon) {
+      throw new Error("Expected polygon feature");
+    }
+    const generatedPolygon = {
+      ...structuredClone(editablePolygon),
+      id: "fallback-1",
+    };
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [generatedPolygon, editablePolygon],
+    });
+    map.emit("load");
+    controller.setNonInteractiveFeatureIds(["fallback-1"]);
+    controller.setInteractionMode("select");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "fallback-1",
+        properties: {
+          meta: "feature",
+        },
+      },
+      {
+        id: "shape-1",
+        properties: {
+          meta: "feature",
+        },
+      },
+    ] as never);
+
+    map.emit("click", {
+      point: { x: 10, y: 12 },
+    });
+
+    expect(draw.mode).toBe("direct_select");
+    expect(draw.selectedIds).toEqual(["shape-1"]);
+    expect(onFeatureSelectionChange).toHaveBeenLastCalledWith("shape-1");
+
+    controller.destroy();
+  });
+
+  it("selects unit fills and limits level selection to the outer-wall stroke", async () => {
+    const onFeatureSelectionChange = vi.fn();
+    const controller = await createMapController(
+      document.createElement("div"),
+      "fake-key",
+      "basic-v2",
+      {
+        onFeaturesChange: vi.fn(),
+        onFeatureSelectionChange,
+        onViewStateChange: vi.fn(),
+        onInteractionModeChange: vi.fn(),
+        onOverlayCornersChange: vi.fn(),
+      },
+    );
+
+    const map = lastMockMap;
+    const draw = lastMockDraw;
+    expect(map).toBeDefined();
+    expect(draw).toBeDefined();
+    if (!map || !draw) {
+      throw new Error("Expected map and draw instances");
+    }
+
+    const unit = polygonFeatureCollection().features[0];
+    if (!unit || unit.geometry.type !== "Polygon") {
+      throw new Error("Expected unit polygon");
+    }
+    const level: FloorFeature = {
+      ...structuredClone(unit),
+      id: "level-1",
+      feature_type: "level" as const,
+      geometry: {
+        type: "Polygon" as const,
+        coordinates: [
+          [
+            [5.119, 52.088],
+            [5.123, 52.088],
+            [5.123, 52.092],
+            [5.119, 52.092],
+            [5.119, 52.088],
+          ],
+        ],
+      },
+    };
+
+    controller.setFeatures({
+      type: "FeatureCollection",
+      features: [level, unit],
+    });
+    map.emit("load");
+    controller.setInteractionMode("select");
+
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "level-1",
+        properties: { meta: "feature" },
+        layer: { id: "gl-draw-polygon-fill-inactive.cold" },
+      },
+      {
+        id: "shape-1",
+        properties: { meta: "feature" },
+        layer: { id: "gl-draw-polygon-fill-inactive.cold" },
+      },
+    ] as never);
+    map.emit("click", { point: { x: 10, y: 12 } });
+
+    expect(draw.selectedIds).toEqual(["shape-1"]);
+    expect(onFeatureSelectionChange).toHaveBeenLastCalledWith("shape-1");
+
+    controller.setInteractionMode("select");
+    map.queryRenderedFeatures.mockReturnValueOnce([
+      {
+        id: "shape-1",
+        properties: { meta: "feature" },
+        layer: { id: "gl-draw-polygon-fill-inactive.cold" },
+      },
+      {
+        id: "level-1",
+        properties: { meta: "feature" },
+        layer: { id: "gl-draw-polygon-stroke-inactive.cold" },
+      },
+    ] as never);
+    map.emit("click", { point: { x: 14, y: 16 } });
+
+    expect(draw.selectedIds).toEqual(["level-1"]);
+    expect(onFeatureSelectionChange).toHaveBeenLastCalledWith("level-1");
 
     controller.destroy();
   });

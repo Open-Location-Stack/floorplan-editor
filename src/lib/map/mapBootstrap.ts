@@ -1,6 +1,7 @@
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type { Feature as GeoJsonFeature, Geometry as GeoJsonGeometry } from "geojson";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { featureAreaSquareMeters } from "../geometry/measurements";
 import { transformOverlayFromDraggedCorner } from "../geometry/overlayCornerHandles";
 import { rotateAroundPoint } from "../geometry/overlayTransforms";
 import { mapPointIconIdForOpeningEndpoint } from "../icons/iconRegistry";
@@ -31,6 +32,7 @@ type MapClickHandler = (coordinate: Coordinates) => void;
 type MapController = {
   setFeatures: (features: FeatureCollection) => void;
   setLockedFeatureIds: (featureIds: string[]) => void;
+  setNonInteractiveFeatureIds: (featureIds: string[]) => void;
   setRouteOverlay: (features: FeatureCollection) => void;
   setSelection: (feature: FloorFeature | undefined) => void;
   setOverlay: (overlay: FloorOverlay | undefined) => void;
@@ -482,6 +484,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     filter: [
       "all",
       ["==", "$type", "Polygon"],
+      ["!=", "user_feature_type", "level"],
       ["==", "active", "false"],
       ["!=", "mode", "static"],
     ],
@@ -493,7 +496,12 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
   {
     id: "gl-draw-polygon-fill-static",
     type: "fill",
-    filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
+    filter: [
+      "all",
+      ["==", "$type", "Polygon"],
+      ["!=", "user_feature_type", "level"],
+      ["==", "mode", "static"],
+    ],
     paint: {
       "fill-color": drawPolygonFillColorExpression,
       "fill-opacity": drawPolygonFillOpacityExpression,
@@ -502,7 +510,12 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
   {
     id: "gl-draw-polygon-fill-active",
     type: "fill",
-    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
+    filter: [
+      "all",
+      ["==", "$type", "Polygon"],
+      ["!=", "user_feature_type", "level"],
+      ["==", "active", "true"],
+    ],
     paint: {
       "fill-color": drawPolygonFillColorExpression,
       "fill-opacity": drawPolygonFillOpacityExpression,
@@ -602,7 +615,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
     filter: [
       "all",
       ["==", "$type", "Point"],
-      ["!=", "meta", "midpoint"],
+      ["==", "meta", "feature"],
       ["==", "active", "false"],
       ["!=", "mode", "static"],
     ],
@@ -616,7 +629,7 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
   {
     id: "gl-draw-point-symbol-active",
     type: "symbol",
-    filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
+    filter: ["all", ["==", "$type", "Point"], ["==", "meta", "feature"], ["==", "active", "true"]],
     layout: {
       "icon-image": pointIconImageExpression,
       "icon-size": 0.9,
@@ -627,7 +640,12 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
   {
     id: "gl-draw-polygon-and-line-vertex-halo-active",
     type: "circle",
-    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
+    filter: [
+      "all",
+      ["==", "meta", "vertex"],
+      ["==", "$type", "Point"],
+      ["!=", "mode", "simple_select"],
+    ],
     paint: {
       "circle-radius": 10,
       "circle-color": "#ffffff",
@@ -636,7 +654,12 @@ const buildDrawStyles = (): Array<Record<string, unknown>> => [
   {
     id: "gl-draw-polygon-and-line-vertex-active",
     type: "circle",
-    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"], ["==", "active", "true"]],
+    filter: [
+      "all",
+      ["==", "meta", "vertex"],
+      ["==", "$type", "Point"],
+      ["!=", "mode", "simple_select"],
+    ],
     paint: {
       "circle-radius": 6,
       "circle-color": "#dc2626",
@@ -980,20 +1003,89 @@ const configureDrawClassesForMapLibre = (DrawConstructor: typeof MapboxDraw) => 
 const sameFeature = (left: FloorFeature, right: FloorFeature): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
 
-const getRenderableFeatureIdAtPoint = (rendered: RenderedFeatureHit[]): string | undefined => {
-  for (const hit of rendered) {
+const getRenderableFeatureIdAtPoint = (
+  rendered: RenderedFeatureHit[],
+  features: FeatureCollection,
+  excludedFeatureIds: ReadonlySet<string> = new Set(),
+): string | undefined => {
+  const featuresById = new Map(features.features.map((feature) => [feature.id, feature]));
+  const candidates = new Map<
+    string,
+    {
+      feature: FloorFeature;
+      firstHitIndex: number;
+      hasPolygonStrokeHit: boolean;
+    }
+  >();
+
+  for (const [hitIndex, hit] of rendered.entries()) {
     const meta = hit.properties?.meta;
     if (meta !== "feature") {
       continue;
     }
 
     const id = parseFeatureId(hit.id) ?? parseFeatureId(hit.properties?.id);
-    if (id) {
-      return id;
+    if (!id || excludedFeatureIds.has(id)) {
+      continue;
     }
+
+    const feature = featuresById.get(id);
+    if (!feature) {
+      continue;
+    }
+
+    const existing = candidates.get(id);
+    const hasPolygonStrokeHit =
+      typeof hit.layer?.id === "string" && hit.layer.id.startsWith("gl-draw-polygon-stroke-");
+    candidates.set(id, {
+      feature,
+      firstHitIndex: existing?.firstHitIndex ?? hitIndex,
+      hasPolygonStrokeHit: existing?.hasPolygonStrokeHit === true || hasPolygonStrokeHit,
+    });
   }
 
-  return undefined;
+  const geometryRank = (feature: FloorFeature): number => {
+    if (feature.geometry.type === "Point") {
+      return 0;
+    }
+    if (feature.geometry.type === "LineString") {
+      return 1;
+    }
+    return 2;
+  };
+
+  return Array.from(candidates.entries())
+    .filter(
+      ([, candidate]) =>
+        readFeatureTypeString(candidate.feature) !== "level" || candidate.hasPolygonStrokeHit,
+    )
+    .sort(([, left], [, right]) => {
+      const typeOrder = geometryRank(left.feature) - geometryRank(right.feature);
+      if (typeOrder !== 0) {
+        return typeOrder;
+      }
+
+      if (left.feature.geometry.type === "Polygon" && right.feature.geometry.type === "Polygon") {
+        const leftIsLevelStroke =
+          left.hasPolygonStrokeHit && readFeatureTypeString(left.feature) === "level";
+        const rightIsLevelStroke =
+          right.hasPolygonStrokeHit && readFeatureTypeString(right.feature) === "level";
+        if (leftIsLevelStroke !== rightIsLevelStroke) {
+          return leftIsLevelStroke ? -1 : 1;
+        }
+        if (left.hasPolygonStrokeHit !== right.hasPolygonStrokeHit) {
+          return left.hasPolygonStrokeHit ? -1 : 1;
+        }
+
+        const areaOrder =
+          featureAreaSquareMeters(left.feature) - featureAreaSquareMeters(right.feature);
+        if (areaOrder !== 0) {
+          return areaOrder;
+        }
+      }
+
+      return left.firstHitIndex - right.firstHitIndex;
+    })[0]?.[0];
 };
 
 const getActiveDrawFeatureIds = (drawFeatures: GeoJsonFeature[]): string[] =>
@@ -1960,6 +2052,7 @@ export const createMapController = async (
   });
 
   const draw = new MapboxDraw({
+    boxSelect: false,
     displayControlsDefault: false,
     defaultMode: "simple_select",
     userProperties: true,
@@ -1970,6 +2063,7 @@ export const createMapController = async (
   let isSyncingExternalState = false;
   let currentFeatures: FeatureCollection = emptyFeatureCollection();
   let currentLockedFeatureIds = new Set<string>();
+  let currentNonInteractiveFeatureIds = new Set<string>();
   let currentRouteOverlay: FeatureCollection = emptyFeatureCollection();
   let currentSnapMarkers: FeatureCollection = emptyFeatureCollection();
   let currentOverlay: FloorOverlay | undefined;
@@ -2297,7 +2391,12 @@ export const createMapController = async (
       return;
     }
 
-    if (currentSelectedFeatureId && currentLockedFeatureIds.has(currentSelectedFeatureId)) {
+    if (
+      currentSelectedFeatureId &&
+      (currentLockedFeatureIds.has(currentSelectedFeatureId) ||
+        currentNonInteractiveFeatureIds.has(currentSelectedFeatureId))
+    ) {
+      currentSelectedFeatureId = undefined;
       draw.changeMode("simple_select", {
         featureIds: [],
       });
@@ -2954,17 +3053,21 @@ export const createMapController = async (
       .features.map((feature) => normalizeDrawFeature(feature))
       .filter((feature): feature is FloorFeature => Boolean(feature));
 
-    if (currentLockedFeatureIds.size > 0) {
+    const protectedFeatureIds = new Set([
+      ...currentLockedFeatureIds,
+      ...currentNonInteractiveFeatureIds,
+    ]);
+    if (protectedFeatureIds.size > 0) {
       const persistedById = new Map(
         currentFeatures.features.map((feature) => [feature.id, feature]),
       );
       const nextById = new Map(nextFeatures.map((feature) => [feature.id, feature]));
-      for (const lockedFeatureId of currentLockedFeatureIds) {
-        const persisted = persistedById.get(lockedFeatureId);
+      for (const protectedFeatureId of protectedFeatureIds) {
+        const persisted = persistedById.get(protectedFeatureId);
         if (!persisted) {
           continue;
         }
-        nextById.set(lockedFeatureId, persisted);
+        nextById.set(protectedFeatureId, persisted);
       }
       nextFeatures = Array.from(nextById.values());
     }
@@ -3425,9 +3528,62 @@ export const createMapController = async (
     });
   };
 
+  const handleSelectionClick = (event: {
+    point: { x: number; y: number };
+    lngLat: { lng: number; lat: number };
+  }) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+
+    if (currentRoutePickEnabled) {
+      handlers.onMapClick?.([event.lngLat.lng, event.lngLat.lat]);
+      return;
+    }
+
+    const renderedHits = map.queryRenderedFeatures(event.point as never) as RenderedFeatureHit[];
+
+    if (hasVertexOrMidpointHit(renderedHits)) {
+      emitVertexSelectionChange();
+      return;
+    }
+
+    const featureId = getRenderableFeatureIdAtPoint(
+      renderedHits,
+      currentFeatures,
+      currentNonInteractiveFeatureIds,
+    );
+    if (!featureId || currentLockedFeatureIds.has(featureId)) {
+      return;
+    }
+
+    if (currentInteractionMode !== "select") {
+      return;
+    }
+
+    const clickedFeature = draw.get(featureId);
+    if (!clickedFeature || clickedFeature.geometry.type === "Point") {
+      return;
+    }
+
+    withExternalSyncGuard(() => {
+      currentSelectedFeatureId = featureId;
+      draw.changeMode("direct_select", {
+        featureId,
+      });
+    });
+
+    handlers.onFeatureSelectionChange(featureId);
+    handlers.onVertexSelectionChange?.(hasSelectedVertex());
+  };
+
   map.on("load", () => {
     registerPointIcons();
     map.addControl(draw as never, "top-left");
+    // Draw registers its pointer handlers when the control is added. Register our
+    // final selection resolver afterwards so its explicit policy wins.
+    map.on("click", handleSelectionClick);
     if ("ScaleControl" in maplibre) {
       const scaleControl = new maplibre.ScaleControl({
         maxWidth: 120,
@@ -3500,19 +3656,28 @@ export const createMapController = async (
       return;
     }
 
-    const selectedFeatureId = parseFeatureId(event.features?.[0]?.id);
-    if (selectedFeatureId && currentLockedFeatureIds.has(selectedFeatureId)) {
+    const eventFeatureIds = (event.features ?? [])
+      .map((feature) => parseFeatureId(feature.id))
+      .filter((featureId): featureId is string => Boolean(featureId));
+    const firstInteractiveFeatureId = eventFeatureIds.find(
+      (featureId) => !currentNonInteractiveFeatureIds.has(featureId),
+    );
+    const selectedFeatureId =
+      firstInteractiveFeatureId && !currentLockedFeatureIds.has(firstInteractiveFeatureId)
+        ? firstInteractiveFeatureId
+        : undefined;
+    const selectionNeedsNormalization =
+      eventFeatureIds.length !== (selectedFeatureId ? 1 : 0) ||
+      eventFeatureIds[0] !== selectedFeatureId;
+    if (selectionNeedsNormalization) {
       withExternalSyncGuard(() => {
         draw.changeMode("simple_select", {
-          featureIds: [],
+          featureIds: selectedFeatureId ? [selectedFeatureId] : [],
         });
       });
-      currentSelectedFeatureId = undefined;
-      handlers.onFeatureSelectionChange(undefined);
-      emitVertexSelectionChange();
-      return;
     }
 
+    currentSelectedFeatureId = selectedFeatureId;
     if (
       lastSelectedLineVertex &&
       selectedFeatureId &&
@@ -3544,52 +3709,6 @@ export const createMapController = async (
     }
     handlers.onInteractionModeChange(nextMode);
     emitVertexSelectionChange();
-  });
-
-  map.on("click", (event) => {
-    if (suppressNextClick) {
-      suppressNextClick = false;
-      return;
-    }
-
-    if (currentRoutePickEnabled) {
-      handlers.onMapClick?.([event.lngLat.lng, event.lngLat.lat]);
-      return;
-    }
-
-    const renderedHits = map.queryRenderedFeatures(event.point) as RenderedFeatureHit[];
-
-    if (hasVertexOrMidpointHit(renderedHits)) {
-      emitVertexSelectionChange();
-      return;
-    }
-
-    const featureId = getRenderableFeatureIdAtPoint(renderedHits);
-    if (!featureId) {
-      return;
-    }
-    if (currentLockedFeatureIds.has(featureId)) {
-      return;
-    }
-
-    if (currentInteractionMode !== "select") {
-      return;
-    }
-
-    const clickedFeature = draw.get(featureId);
-    if (!clickedFeature || clickedFeature.geometry.type === "Point") {
-      return;
-    }
-
-    withExternalSyncGuard(() => {
-      currentSelectedFeatureId = featureId;
-      draw.changeMode("direct_select", {
-        featureId,
-      });
-    });
-
-    handlers.onFeatureSelectionChange(featureId);
-    handlers.onVertexSelectionChange?.(hasSelectedVertex());
   });
 
   map.on("mousemove", (event) => {
@@ -3625,6 +3744,10 @@ export const createMapController = async (
     }
 
     const cursor = hovered
+      .filter((hit) => {
+        const featureId = parseFeatureId(hit.id) ?? parseFeatureId(hit.properties?.id);
+        return !featureId || !currentNonInteractiveFeatureIds.has(featureId);
+      })
       .map((hit) => toHoverCursor(hit.properties?.meta, currentInteractionMode))
       .find((value) => typeof value === "string");
     map.getCanvas().style.cursor = cursor ?? "";
@@ -3695,6 +3818,16 @@ export const createMapController = async (
       }
       applyPendingState();
     },
+    setNonInteractiveFeatureIds: (featureIds) => {
+      currentNonInteractiveFeatureIds = new Set(featureIds);
+      if (
+        currentSelectedFeatureId &&
+        currentNonInteractiveFeatureIds.has(currentSelectedFeatureId)
+      ) {
+        currentSelectedFeatureId = undefined;
+      }
+      applyPendingState();
+    },
     setRouteOverlay: (features) => {
       currentRouteOverlay = {
         type: "FeatureCollection",
@@ -3756,7 +3889,9 @@ export const createMapController = async (
         draw.trash();
         return;
       }
-      const deletableFeatureIds = selectedIds.filter((id) => !currentLockedFeatureIds.has(id));
+      const deletableFeatureIds = selectedIds.filter(
+        (id) => !currentLockedFeatureIds.has(id) && !currentNonInteractiveFeatureIds.has(id),
+      );
       if (deletableFeatureIds.length === 0) {
         return;
       }

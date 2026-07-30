@@ -8,6 +8,7 @@ const MockMapCanvas = ({
   relocationRequest,
   features,
   lockedFeatureIds: _lockedFeatureIds,
+  nonInteractiveFeatureIds,
   selectedFeature,
   overlay,
   onViewStateChange,
@@ -35,15 +36,16 @@ const MockMapCanvas = ({
   };
   features: Array<{
     id: string;
-    type?: "Feature";
+    type: "Feature";
     feature_type?: string;
-    geometry?: {
+    geometry: {
       type: "Point" | "LineString" | "Polygon";
       coordinates: unknown;
     };
-    properties?: Record<string, unknown>;
+    properties: Record<string, unknown>;
   }>;
   lockedFeatureIds: string[];
+  nonInteractiveFeatureIds: string[];
   selectedFeature?: { id: string };
   overlay?: {
     floorId: string;
@@ -109,7 +111,16 @@ const MockMapCanvas = ({
       <div data-testid="mock-map-feature-ids">
         {features.map((feature) => feature.id).join(",")}
       </div>
+      <div data-testid="mock-map-non-interactive-feature-ids">
+        {nonInteractiveFeatureIds.join(",")}
+      </div>
       <div data-testid="mock-map-selected-feature-id">{selectedFeature?.id ?? "none"}</div>
+      <div data-testid="mock-map-selected-feature-geometry">
+        {JSON.stringify(
+          features.find((feature) => feature.id === selectedFeature?.id)?.geometry.coordinates ??
+            null,
+        )}
+      </div>
       <div data-testid="mock-map-overlay-floor">{overlay?.floorId ?? "none"}</div>
       <div data-testid="mock-map-grid-visible">{gridVisible ? "on" : "off"}</div>
       <div data-testid="mock-map-orientation-mode">{orientationMode}</div>
@@ -294,10 +305,57 @@ const MockMapCanvas = ({
         data-testid="mock-map-select-level-geometry"
         onClick={() => {
           onInteractionModeChange("select");
-          onFeatureSelectionChange("level-geometry-1");
+          onFeatureSelectionChange("floor-1");
         }}
       >
         select level geometry
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-select-fallback-unit"
+        onClick={() => {
+          onInteractionModeChange("select");
+          onFeatureSelectionChange("formation:fallback-unit:floor-1:0");
+        }}
+      >
+        select fallback unit
+      </button>
+      <button
+        type="button"
+        data-testid="mock-map-move-selected-polygon-node"
+        onClick={() => {
+          const selectedId = selectedFeature?.id;
+          if (!selectedId) {
+            return;
+          }
+          onFeaturesChange(
+            features.map((feature) => {
+              if (feature.id !== selectedId || feature.geometry.type !== "Polygon") {
+                return feature;
+              }
+              const coordinates = structuredClone(feature.geometry.coordinates) as number[][][];
+              const firstCoordinate = coordinates[0]?.[0];
+              if (!firstCoordinate) {
+                return feature;
+              }
+              firstCoordinate[0] = (firstCoordinate[0] ?? 0) + 0.001;
+              const lastCoordinate = coordinates[0]?.at(-1);
+              if (lastCoordinate) {
+                lastCoordinate[0] = firstCoordinate[0];
+                lastCoordinate[1] = firstCoordinate[1] ?? 0;
+              }
+              return {
+                ...feature,
+                geometry: {
+                  type: "Polygon" as const,
+                  coordinates,
+                },
+              };
+            }),
+          );
+        }}
+      >
+        move selected polygon node
       </button>
       <button
         type="button"
@@ -1856,7 +1914,7 @@ describe("App browser smoke", () => {
       features: [
         {
           type: "Feature",
-          id: "level-geometry-1",
+          id: "floor-1",
           feature_type: "level",
           geometry: {
             type: "Polygon",
@@ -1888,27 +1946,48 @@ describe("App browser smoke", () => {
 
     expect(screen.queryByRole("button", { name: "Nested Level Feature" })).not.toBeInTheDocument();
 
-    const addGeometryButton = screen.getByRole("button", { name: /add outer wall/i });
-    const removeGeometryButton = screen.getByRole("button", { name: /remove level geometry/i });
-    const ordinalInput = screen.getByRole("spinbutton", { name: /level ordinal/i });
-    const shortNameInput = screen.getByRole("textbox", { name: /level short name/i });
-    const outdoorToggle = screen.getByRole("checkbox", { name: /level outdoor/i });
+    expect(screen.getByRole("button", { name: /add outer wall/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeEnabled();
+    expect(screen.getByRole("spinbutton", { name: /level ordinal/i })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: /level short name/i })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: /level outdoor/i })).toBeEnabled();
 
-    expect(addGeometryButton).toBeEnabled();
-    expect(removeGeometryButton).toBeEnabled();
-    expect(ordinalInput).toBeEnabled();
-    expect(shortNameInput).toBeEnabled();
-    expect(outdoorToggle).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-non-interactive-feature-ids")).toHaveTextContent(
+        "formation:fallback-unit:floor-1:0",
+      );
+    });
+    fireEvent.click(screen.getByTestId("mock-map-select-fallback-unit"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-selected-feature-id")).toHaveTextContent("none");
+      expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByTestId("mock-map-select-level-geometry"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("mock-map-selected-feature-id")).toHaveTextContent(
-        "level-geometry-1",
+      expect(screen.getByTestId("mock-map-selected-feature-id")).toHaveTextContent("floor-1");
+      expect(screen.getByRole("checkbox", { name: /lock feature geometry/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /add outer wall/i })).not.toBeInTheDocument();
+    });
+
+    const originalGeometry = screen.getByTestId("mock-map-selected-feature-geometry").textContent;
+    fireEvent.click(screen.getByTestId("mock-map-move-selected-polygon-node"));
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-selected-feature-geometry").textContent).not.toBe(
+        originalGeometry,
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-map-selected-feature-geometry")).toHaveTextContent(
+        originalGeometry ?? "",
       );
     });
 
-    fireEvent.click(addGeometryButton);
+    fireEvent.click(screen.getByRole("button", { name: "Ground Level" }));
+    fireEvent.click(await screen.findByRole("button", { name: /add outer wall/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-mode")).toHaveTextContent("polygon");
@@ -1933,6 +2012,10 @@ describe("App browser smoke", () => {
       ).toHaveLength(2);
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Ground Level" }));
+    const ordinalInput = await screen.findByRole("spinbutton", { name: /level ordinal/i });
+    const shortNameInput = screen.getByRole("textbox", { name: /level short name/i });
+    const outdoorToggle = screen.getByRole("checkbox", { name: /level outdoor/i });
     fireEvent.change(ordinalInput, { target: { value: "2" } });
     fireEvent.change(shortNameInput, { target: { value: "G" } });
     fireEvent.click(outdoorToggle);
@@ -1960,10 +2043,11 @@ describe("App browser smoke", () => {
       expect(levelFeature?.properties.outdoor).toBe(true);
     });
 
+    const removeGeometryButton = screen.getByRole("button", { name: /remove level geometry/i });
     fireEvent.click(removeGeometryButton);
 
     await waitFor(() => {
-      expect(addGeometryButton).toBeEnabled();
+      expect(screen.getByRole("button", { name: /add outer wall/i })).toBeEnabled();
       expect(removeGeometryButton).toBeDisabled();
     });
 

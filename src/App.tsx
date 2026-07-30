@@ -42,7 +42,7 @@ import {
 } from "./lib/imdf/creationDefaults";
 import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
-import { reconcileFallbackUnits } from "./lib/imdf/fallbackUnits";
+import { isFallbackUnitFeature, reconcileFallbackUnits } from "./lib/imdf/fallbackUnits";
 import { readImdfType } from "./lib/imdf/featureCatalog";
 import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { migrateProjectSnapshotToImdfNavigationV7 } from "./lib/imdf/migrations/v7";
@@ -959,6 +959,11 @@ function App() {
     );
   }, [editorState.features, activeLevel]);
 
+  const nonInteractiveFeatureIds = useMemo(
+    () => visibleFeatures.filter(isFallbackUnitFeature).map((feature) => feature.id),
+    [visibleFeatures],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: feature edits must trigger fallback reconciliation.
   useEffect(() => {
     if (levels.length === 0) {
@@ -1203,6 +1208,10 @@ function App() {
         return;
       }
 
+      if (drawMode === "select" && !pendingDrawTemplate) {
+        pushProjectUndoSnapshot("Geometry edited", snapshotProjectState());
+      }
+
       let consumedPendingTemplate = false;
 
       setEditorState((current) => {
@@ -1424,6 +1433,9 @@ function App() {
       pendingContainmentParent,
       lockedFeatureIdsSet,
       selectedFeature,
+      drawMode,
+      pushProjectUndoSnapshot,
+      snapshotProjectState,
     ],
   );
 
@@ -1442,10 +1454,8 @@ function App() {
         setEditorState((current) => selectFeature(current, undefined));
         return;
       }
-      if (isLevelGeometryFeature(feature)) {
-        setEditorState((current) =>
-          selectFeature(current, lockedFeatureIdsSet.has(feature.id) ? undefined : feature.id),
-        );
+      if (isFallbackUnitFeature(feature)) {
+        setEditorState((current) => selectFeature(current, undefined));
         if (activeLevel) {
           setSelection({ kind: "level", id: activeLevel.id });
         }
@@ -3332,6 +3342,7 @@ function App() {
                     initialView={initialMapView}
                     features={visibleFeatures}
                     lockedFeatureIds={lockedFeatureIds}
+                    nonInteractiveFeatureIds={nonInteractiveFeatureIds}
                     routeOverlayFeatures={routeOverlayFeatures}
                     selectedFeature={selectedFeatureForMap}
                     overlay={selectedOverlayForMap}
