@@ -44,7 +44,7 @@ import { sortFeaturesForRendering } from "./lib/imdf/export";
 import { cloneImdfFeature } from "./lib/imdf/factories";
 import { isFallbackUnitFeature, reconcileFallbackUnits } from "./lib/imdf/fallbackUnits";
 import { readImdfType } from "./lib/imdf/featureCatalog";
-import { getLevelGeometryFeatures, isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
+import { isLevelGeometryFeature } from "./lib/imdf/levelGeometry";
 import { migrateProjectSnapshotToImdfNavigationV7 } from "./lib/imdf/migrations/v7";
 import { normalizeFeature } from "./lib/imdf/normalize";
 import { getImdfSchemaRule } from "./lib/imdf/schema";
@@ -2620,6 +2620,7 @@ function App() {
               properties: {
                 ...feature.properties,
                 name: { en: resolvedName },
+                short_name: { en: resolvedName },
               },
             };
           });
@@ -2735,27 +2736,6 @@ function App() {
     [levels, startDrawMode],
   );
 
-  const onRemoveLevelGeometry = useCallback(
-    (levelId: string) => {
-      const levelGeometryFeatures = getLevelGeometryFeatures(editorState.features, levelId);
-      if (levelGeometryFeatures.length === 0) {
-        return;
-      }
-      const idsToRemove = new Set(levelGeometryFeatures.map((feature) => feature.id));
-      applyProjectMutation("Level geometry removed", () => {
-        setEditorState((current) => {
-          const nextFeatures = current.features.filter((feature) => !idsToRemove.has(feature.id));
-          const nextSelectionId =
-            current.selectedFeatureId && idsToRemove.has(current.selectedFeatureId)
-              ? undefined
-              : current.selectedFeatureId;
-          return selectFeature(replaceAllFeatures(current, nextFeatures), nextSelectionId);
-        });
-      });
-    },
-    [editorState.features, applyProjectMutation],
-  );
-
   const onUpdateLevelOrdinal = useCallback(
     (levelId: string, ordinal: number) => {
       applyProjectMutation("Level ordinal updated", () => {
@@ -2769,70 +2749,6 @@ function App() {
               properties: {
                 ...feature.properties,
                 ordinal,
-              },
-            };
-          });
-          if (areFeatureListsEqual(current.features, nextFeatures)) {
-            return current;
-          }
-          const next = replaceAllFeatures(current, nextFeatures);
-          const nextSelectedId =
-            current.selectedFeatureId &&
-            nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
-              ? current.selectedFeatureId
-              : undefined;
-          return selectFeature(next, nextSelectedId);
-        });
-      });
-    },
-    [applyProjectMutation],
-  );
-
-  const onUpdateLevelShortName = useCallback(
-    (levelId: string, shortName: string) => {
-      applyProjectMutation("Level short name updated", () => {
-        setEditorState((current) => {
-          const nextFeatures = current.features.map((feature) => {
-            if (!isLevelGeometryFeature(feature) || feature.properties.level_id !== levelId) {
-              return feature;
-            }
-            return {
-              ...feature,
-              properties: {
-                ...feature.properties,
-                short_name: { en: shortName },
-              },
-            };
-          });
-          if (areFeatureListsEqual(current.features, nextFeatures)) {
-            return current;
-          }
-          const next = replaceAllFeatures(current, nextFeatures);
-          const nextSelectedId =
-            current.selectedFeatureId &&
-            nextFeatures.some((feature) => feature.id === current.selectedFeatureId)
-              ? current.selectedFeatureId
-              : undefined;
-          return selectFeature(next, nextSelectedId);
-        });
-      });
-    },
-    [applyProjectMutation],
-  );
-
-  const onUpdateLevelOutdoor = useCallback(
-    (levelId: string, outdoor: boolean) => {
-      applyProjectMutation("Level outdoor updated", () => {
-        setEditorState((current) => {
-          const nextFeatures = current.features.map((feature) => {
-            if (!isLevelGeometryFeature(feature) || feature.properties.level_id !== levelId) {
-              return feature;
-            }
-            return {
-              ...feature,
-              properties: {
-                ...feature.properties,
-                outdoor,
               },
             };
           });
@@ -3410,10 +3326,7 @@ function App() {
                 onCloneLevel={onCloneLevel}
                 onDeleteLevel={onDeleteLevel}
                 onAddLevelGeometry={onAddLevelGeometry}
-                onRemoveLevelGeometry={onRemoveLevelGeometry}
                 onUpdateLevelOrdinal={onUpdateLevelOrdinal}
-                onUpdateLevelShortName={onUpdateLevelShortName}
-                onUpdateLevelOutdoor={onUpdateLevelOutdoor}
                 onCreateFeature={onCreateFeature}
                 onUpdateFeatureProperty={(featureId, key, value) => {
                   const level = levels.find(

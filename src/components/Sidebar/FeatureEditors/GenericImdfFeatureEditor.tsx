@@ -91,14 +91,6 @@ export const GenericImdfFeatureEditor = ({
     [allFeatures, feature.id, feature.properties.level_id],
   );
   const isContainerType = canContainChildren(type);
-  const childTypeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of sameFloorFeatures) {
-      const itemType = resolveFeatureType(item);
-      counts.set(itemType, (counts.get(itemType) ?? 0) + 1);
-    }
-    return counts;
-  }, [sameFloorFeatures]);
   const candidatesForField = useMemo(() => {
     const byField: Record<string, FloorFeature[]> = {};
     for (const field of spec.fields) {
@@ -467,11 +459,7 @@ export const GenericImdfFeatureEditor = ({
             );
           })}
 
-          <AddFeatureButtonGroups
-            typeCounts={childTypeCounts}
-            disabled={!isContainerType}
-            onCreateFeature={onCreateFeature}
-          />
+          <AddFeatureButtonGroups disabled={!isContainerType} onCreateFeature={onCreateFeature} />
 
           <div className="rounded-box bg-base-200 p-3 text-sm">
             <div className="mb-2 font-medium">Metadata (JSON object)</div>

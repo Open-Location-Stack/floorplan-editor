@@ -13,7 +13,6 @@ export type AddFeatureRequest =
   | { type: "opening"; mode: "path"; category: NavigationPathCategory };
 
 type AddFeatureButtonGroupsProps = {
-  typeCounts?: Map<string, number>;
   disabled?: boolean;
   onCreateFeature: (request: AddFeatureRequest) => void;
 };
@@ -45,12 +44,11 @@ const EDGE_LABELS: Record<NavigationPathCategory, string> = {
 };
 
 export const AddFeatureButtonGroups = ({
-  typeCounts,
   disabled = false,
   onCreateFeature,
 }: AddFeatureButtonGroupsProps) => (
   <div className="rounded-box border border-base-300 p-3">
-    <div className="mb-2 text-sm font-semibold">Add IMDF feature</div>
+    <div className="mb-2 text-sm font-semibold">Add</div>
     <div className="grid gap-3">
       {ADDABLE_GROUPS.map((group) => (
         <div key={group.title}>
@@ -67,7 +65,7 @@ export const AddFeatureButtonGroups = ({
                   disabled={disabled}
                 >
                   <AppIcon name={type} />
-                  {rule.defaultName} ({typeCounts?.get(type) ?? 0})
+                  {rule.defaultName}
                 </button>
               );
             })}

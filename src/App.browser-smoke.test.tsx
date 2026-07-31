@@ -1931,6 +1931,8 @@ describe("App browser smoke", () => {
           properties: {
             level_id: "floor-1",
             name: "Nested Level Feature",
+            short_name: { en: "Ground Level" },
+            outdoor: true,
           },
         },
       ],
@@ -1941,16 +1943,38 @@ describe("App browser smoke", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /add outer wall/i })).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("button", { name: "Nested Level Feature" })).not.toBeInTheDocument();
+    expect(screen.getByText("Explorer")).toBeInTheDocument();
+    expect(screen.getByText("Properties")).toBeInTheDocument();
+    expect(screen.queryByText("IMDF Hierarchy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Level metadata")).not.toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: /add outer wall/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeEnabled();
+    const addPanel = screen.getByText("Add", { selector: "div" }).parentElement;
+    expect(addPanel).not.toBeNull();
+    expect(within(addPanel as HTMLElement).getByRole("button", { name: "Unit" })).toBeEnabled();
+
+    const addOuterWallButton = screen.getByRole("button", { name: /add outer wall/i });
+    const lockOuterWallsToggle = screen.getByRole("checkbox", { name: /lock outer walls/i });
+    expect(addOuterWallButton).toBeEnabled();
+    expect(lockOuterWallsToggle).toBeEnabled();
     expect(screen.getByRole("spinbutton", { name: /level ordinal/i })).toBeEnabled();
-    expect(screen.getByRole("textbox", { name: /level short name/i })).toBeEnabled();
-    expect(screen.getByRole("checkbox", { name: /level outdoor/i })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: /level name/i })).toBeEnabled();
+    expect(screen.queryByRole("checkbox", { name: /level outdoor/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /remove level geometry/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(lockOuterWallsToggle);
+    await waitFor(() => {
+      expect(addOuterWallButton).toBeDisabled();
+    });
+    fireEvent.click(lockOuterWallsToggle);
+    await waitFor(() => {
+      expect(addOuterWallButton).toBeEnabled();
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-non-interactive-feature-ids")).toHaveTextContent(
@@ -1961,7 +1985,7 @@ describe("App browser smoke", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("mock-map-selected-feature-id")).toHaveTextContent("none");
-      expect(screen.getByRole("button", { name: /remove level geometry/i })).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /lock outer walls/i })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByTestId("mock-map-select-level-geometry"));
@@ -2014,62 +2038,41 @@ describe("App browser smoke", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Ground Level" }));
     const ordinalInput = await screen.findByRole("spinbutton", { name: /level ordinal/i });
-    const shortNameInput = screen.getByRole("textbox", { name: /level short name/i });
-    const outdoorToggle = screen.getByRole("checkbox", { name: /level outdoor/i });
+    const nameInput = screen.getByRole("textbox", { name: /level name/i });
     fireEvent.change(ordinalInput, { target: { value: "2" } });
-    fireEvent.change(shortNameInput, { target: { value: "G" } });
-    fireEvent.click(outdoorToggle);
+    fireEvent.change(nameInput, { target: { value: "Second Floor" } });
 
     await waitFor(() => {
       const saveCalls = mockRepository.saveProject.mock.calls;
       expect(saveCalls.length).toBeGreaterThan(0);
       const latestSnapshot = saveCalls.at(-1)?.[0] as {
+        floors: Array<{ id: string; name: string }>;
         features: Array<{
           id: string;
           feature_type?: string;
           properties: {
             level_id?: string;
+            name?: { en?: string };
             ordinal?: number;
             short_name?: { en?: string };
             outdoor?: boolean;
           };
         }>;
       };
-      const levelFeature = latestSnapshot.features.find(
-        (feature) => feature.feature_type === "level" && feature.properties.level_id === "floor-1",
+      const levelFeature = latestSnapshot.features.find((feature) => feature.id === "floor-1");
+      expect(latestSnapshot.floors.find((floor) => floor.id === "floor-1")?.name).toBe(
+        "Second Floor",
       );
+      expect(levelFeature?.properties.name).toEqual({ en: "Second Floor" });
       expect(levelFeature?.properties.ordinal).toBe(2);
-      expect(levelFeature?.properties.short_name).toEqual({ en: "G" });
+      expect(levelFeature?.properties.short_name).toEqual({ en: "Second Floor" });
       expect(levelFeature?.properties.outdoor).toBe(true);
     });
 
-    const removeGeometryButton = screen.getByRole("button", { name: /remove level geometry/i });
-    fireEvent.click(removeGeometryButton);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /add outer wall/i })).toBeEnabled();
-      expect(removeGeometryButton).toBeDisabled();
-    });
-
-    await waitFor(() => {
-      const saveCalls = mockRepository.saveProject.mock.calls;
-      expect(saveCalls.length).toBeGreaterThan(0);
-      const latestSnapshot = saveCalls.at(-1)?.[0] as {
-        features: Array<{
-          id: string;
-          feature_type?: string;
-          properties: {
-            level_id?: string;
-          };
-        }>;
-      };
-      expect(
-        latestSnapshot.features.some(
-          (feature) =>
-            feature.feature_type === "level" && feature.properties.level_id === "floor-1",
-        ),
-      ).toBe(false);
-    });
+    expect(screen.getByRole("button", { name: /add outer wall/i })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: /remove level geometry/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("allows deleting the last floor and cascades floor data", async () => {

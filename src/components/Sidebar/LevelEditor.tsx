@@ -14,14 +14,9 @@ type LevelEditorProps = {
   onDeleteLevel: () => void;
   hasLevelGeometry: boolean;
   levelOrdinal: number;
-  levelShortName: string;
-  levelOutdoor: boolean;
   levelGeometryLocked: boolean;
   onAddLevelGeometry: () => void;
-  onRemoveLevelGeometry: () => void;
   onUpdateLevelOrdinal: (ordinal: number) => void;
-  onUpdateLevelShortName: (shortName: string) => void;
-  onUpdateLevelOutdoor: (outdoor: boolean) => void;
   onToggleLevelGeometryLock: () => void;
   onCreateFeature: (request: AddFeatureRequest) => void;
   onOverlayUpload: (file: File) => void;
@@ -43,14 +38,9 @@ export const LevelEditor = ({
   onDeleteLevel,
   hasLevelGeometry,
   levelOrdinal,
-  levelShortName,
-  levelOutdoor,
   levelGeometryLocked,
   onAddLevelGeometry,
-  onRemoveLevelGeometry,
   onUpdateLevelOrdinal,
-  onUpdateLevelShortName,
-  onUpdateLevelOutdoor,
   onToggleLevelGeometryLock,
   onCreateFeature,
   onOverlayUpload,
@@ -61,19 +51,6 @@ export const LevelEditor = ({
   rawGeoJsonPreview,
 }: LevelEditorProps) => {
   const [overlayFile, setOverlayFile] = useState<File | undefined>();
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const feature of levelFeatures) {
-      const type =
-        typeof feature.feature_type === "string" ? feature.feature_type : feature.feature_type;
-      if (!type) {
-        continue;
-      }
-      counts.set(type, (counts.get(type) ?? 0) + 1);
-    }
-    return counts;
-  }, [levelFeatures]);
-
   const pathDiagnostics = useMemo(() => {
     const issues: string[] = [];
     const navigationEdges = levelFeatures.filter((feature) => {
@@ -96,21 +73,22 @@ export const LevelEditor = ({
           <AppIcon name="level" />
           Level
         </h2>
-        <label className="fieldset">
-          <span className="fieldset-legend">Name</span>
-          <input
-            className="input input-bordered input-sm"
-            type="text"
-            value={level.name}
-            onChange={(event) => onRenameLevel(event.currentTarget.value)}
-          />
-        </label>
 
         <div className="rounded-box border border-base-300 p-3">
-          <div className="mb-2 text-sm font-semibold">Level metadata</div>
+          <div className="mb-2 text-sm font-semibold">Properties</div>
           <div className="grid gap-2">
             <label className="fieldset">
-              <span className="fieldset-legend">Ordinal (numeric floor level)</span>
+              <span className="fieldset-legend">Name</span>
+              <input
+                className="input input-bordered input-sm"
+                type="text"
+                value={level.name}
+                onChange={(event) => onRenameLevel(event.currentTarget.value)}
+                aria-label="Level name"
+              />
+            </label>
+            <label className="fieldset">
+              <span className="fieldset-legend">Floor Level</span>
               <input
                 className="input input-bordered input-sm"
                 type="number"
@@ -120,73 +98,40 @@ export const LevelEditor = ({
                 aria-label="Level ordinal"
               />
             </label>
-            <label className="fieldset">
-              <span className="fieldset-legend">Short name</span>
-              <input
-                className="input input-bordered input-sm"
-                type="text"
-                value={levelShortName}
-                onChange={(event) => onUpdateLevelShortName(event.currentTarget.value)}
-                disabled={!hasLevelGeometry}
-                aria-label="Level short name"
-              />
-            </label>
-            <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
-              <span className="label-text">Outdoor level</span>
-              <input
-                type="checkbox"
-                className="toggle toggle-sm"
-                checked={levelOutdoor}
-                onChange={(event) => onUpdateLevelOutdoor(event.currentTarget.checked)}
-                disabled={!hasLevelGeometry}
-                aria-label="Level outdoor"
-              />
-            </label>
             {!hasLevelGeometry ? (
-              <p className="text-xs text-base-content/70">
-                Add geometry to enable IMDF level metadata editing.
-              </p>
+              <p className="text-xs text-base-content/70">Add outer walls to set a floor level.</p>
             ) : null}
           </div>
         </div>
 
-        <AddFeatureButtonGroups typeCounts={typeCounts} onCreateFeature={onCreateFeature} />
+        <AddFeatureButtonGroups onCreateFeature={onCreateFeature} />
 
-        <div className="flex gap-2">
+        <div className="grid gap-2 rounded-box border border-base-300 p-3">
           <button
             className="btn btn-sm"
             type="button"
             onClick={onAddLevelGeometry}
+            disabled={levelGeometryLocked}
             aria-label="Add outer wall"
           >
             <AppIcon name="add" />
             Add outer wall
           </button>
-          <button
-            className="btn btn-sm"
-            type="button"
-            onClick={onRemoveLevelGeometry}
-            disabled={!hasLevelGeometry}
-            aria-label="Remove level geometry"
-          >
-            <AppIcon name="delete" />
-            Remove geometry
-          </button>
+          <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
+            <span className="label-text flex items-center gap-2">
+              <AppIcon name={levelGeometryLocked ? "lock" : "unlock"} />
+              Lock Outer Walls
+            </span>
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={levelGeometryLocked}
+              onChange={onToggleLevelGeometryLock}
+              disabled={!hasLevelGeometry}
+              aria-label="Lock outer walls"
+            />
+          </label>
         </div>
-        <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
-          <span className="label-text flex items-center gap-2">
-            <AppIcon name={levelGeometryLocked ? "lock" : "unlock"} />
-            Lock level geometry
-          </span>
-          <input
-            type="checkbox"
-            className="toggle toggle-sm"
-            checked={levelGeometryLocked}
-            onChange={onToggleLevelGeometryLock}
-            disabled={!hasLevelGeometry}
-            aria-label="Lock level geometry"
-          />
-        </label>
 
         <div className="flex gap-2">
           <button className="btn btn-sm" type="button" onClick={onCloneLevel}>

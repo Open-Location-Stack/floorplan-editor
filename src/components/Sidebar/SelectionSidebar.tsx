@@ -27,19 +27,6 @@ const SelectionMessageCard = ({ message }: { message: string }) => (
   </section>
 );
 
-const readLevelShortName = (
-  level: Level,
-  levelGeometryFeature: FloorFeature | undefined,
-): string => {
-  const shortName = levelGeometryFeature?.properties.short_name;
-  if (!shortName || typeof shortName !== "object" || Array.isArray(shortName)) {
-    return level.name;
-  }
-
-  const english = (shortName as { en?: unknown }).en;
-  return typeof english === "string" ? english : level.name;
-};
-
 const deriveBuildingFeatureCandidates = (
   building: Building,
   levels: Level[],
@@ -85,9 +72,7 @@ const deriveLevelEditorState = (
     levelGeometryFeatures,
     levelGeometryFeature,
     levelGeometryLocked,
-    levelShortName: readLevelShortName(level, levelGeometryFeature),
     levelOrdinal,
-    levelOutdoor: Boolean(levelGeometryFeature?.properties.outdoor),
   };
 };
 
@@ -126,10 +111,7 @@ type SelectionSidebarProps = {
   onCloneLevel: (levelId: string) => void;
   onDeleteLevel: (levelId: string) => void;
   onAddLevelGeometry: (levelId: string) => void;
-  onRemoveLevelGeometry: (levelId: string) => void;
   onUpdateLevelOrdinal: (levelId: string, ordinal: number) => void;
-  onUpdateLevelShortName: (levelId: string, shortName: string) => void;
-  onUpdateLevelOutdoor: (levelId: string, outdoor: boolean) => void;
   onCreateFeature: (request: AddFeatureRequest) => void;
   onUpdateFeatureProperty: (featureId: string, key: string, value: JsonValue | undefined) => void;
   onUpdateFeatureMetadata: (featureId: string, metadata: JsonObject) => void;
@@ -172,10 +154,7 @@ export const SelectionSidebar = ({
   onCloneLevel,
   onDeleteLevel,
   onAddLevelGeometry,
-  onRemoveLevelGeometry,
   onUpdateLevelOrdinal,
-  onUpdateLevelShortName,
-  onUpdateLevelOutdoor,
   onCreateFeature,
   onUpdateFeatureProperty,
   onUpdateFeatureMetadata,
@@ -264,9 +243,7 @@ export const SelectionSidebar = ({
       levelGeometryFeatures,
       levelGeometryFeature,
       levelGeometryLocked,
-      levelShortName,
       levelOrdinal,
-      levelOutdoor,
     } = deriveLevelEditorState(level, allFeatures, lockedFeatureIds);
     const validation = validateFloor(level.id, allFeatures);
 
@@ -276,8 +253,6 @@ export const SelectionSidebar = ({
         levelFeatures={levelFeatures}
         hasLevelGeometry={hasLevelGeometry(levelFeatures, level.id)}
         levelOrdinal={levelOrdinal}
-        levelShortName={levelShortName}
-        levelOutdoor={levelOutdoor}
         levelGeometryLocked={levelGeometryLocked}
         overlay={overlay}
         validationWarnings={[...validation.errors, ...validation.warnings]}
@@ -285,10 +260,7 @@ export const SelectionSidebar = ({
         onCloneLevel={() => onCloneLevel(level.id)}
         onDeleteLevel={() => onDeleteLevel(level.id)}
         onAddLevelGeometry={() => onAddLevelGeometry(level.id)}
-        onRemoveLevelGeometry={() => onRemoveLevelGeometry(level.id)}
         onUpdateLevelOrdinal={(ordinal) => onUpdateLevelOrdinal(level.id, ordinal)}
-        onUpdateLevelShortName={(shortName) => onUpdateLevelShortName(level.id, shortName)}
-        onUpdateLevelOutdoor={(outdoor) => onUpdateLevelOutdoor(level.id, outdoor)}
         onToggleLevelGeometryLock={() => {
           const shouldLock = !levelGeometryLocked;
           for (const geometryFeature of levelGeometryFeatures) {

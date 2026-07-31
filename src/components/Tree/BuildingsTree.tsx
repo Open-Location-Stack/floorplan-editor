@@ -143,7 +143,7 @@ export const BuildingsTree = ({
 
   return (
     <div className="rounded-box border border-base-300 bg-base-100 p-2">
-      <div className="mb-2 px-2 text-sm font-semibold">IMDF Hierarchy</div>
+      <div className="mb-2 px-2 text-sm font-semibold">Explorer</div>
       {venues.length === 0 ? (
         <div className="px-2 py-3 text-sm text-base-content/70">No venues.</div>
       ) : null}
