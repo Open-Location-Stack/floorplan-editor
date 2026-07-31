@@ -579,6 +579,25 @@ describe("createMapController", () => {
       expect.objectContaining({ id: "floor-overlay-layer" }),
       undefined,
     );
+    expect(map.addSource).toHaveBeenCalledWith(
+      "floor-overlay-editing-border",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "floor-overlay-editing-border-layer",
+        paint: expect.objectContaining({ "line-dasharray": [1, 1.5] }),
+        layout: expect.objectContaining({ visibility: "visible" }),
+      }),
+      undefined,
+    );
+
+    controller.setOverlay({ ...createOverlay(), locked: true });
+    expect(map.setLayoutProperty).toHaveBeenCalledWith(
+      "floor-overlay-editing-border-layer",
+      "visibility",
+      "none",
+    );
   });
 
   it("drags the overlay bitmap to translate all corners", async () => {
@@ -746,6 +765,12 @@ describe("createMapController", () => {
         4,
     ] as const;
     const rotateHandleStart = rotateMarker.getLngLat();
+    expect(rotateHandleStart.lng).toBeCloseTo(
+      (overlay.corners.topLeft[0] + overlay.corners.topRight[0]) / 2,
+      8,
+    );
+    expect(rotateHandleStart.lat).toBeGreaterThan(overlay.corners.topLeft[1]);
+
     const rotateVector = [
       rotateHandleStart.lng - center[0],
       rotateHandleStart.lat - center[1],

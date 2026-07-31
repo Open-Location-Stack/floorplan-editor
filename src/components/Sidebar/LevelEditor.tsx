@@ -108,7 +108,7 @@ export const LevelEditor = ({
 
         <div className="grid gap-2 rounded-box border border-base-300 p-3">
           <button
-            className="btn btn-sm"
+            className="btn btn-xs justify-self-start gap-1"
             type="button"
             onClick={onAddLevelGeometry}
             disabled={levelGeometryLocked}

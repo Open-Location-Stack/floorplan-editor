@@ -62,6 +62,8 @@ type SnapSettings = {
 
 const OVERLAY_SOURCE_ID = "floor-overlay";
 const OVERLAY_LAYER_ID = "floor-overlay-layer";
+const OVERLAY_EDITING_BORDER_SOURCE_ID = "floor-overlay-editing-border";
+const OVERLAY_EDITING_BORDER_LAYER_ID = "floor-overlay-editing-border-layer";
 const GRID_SOURCE_ID = "grid-overlay";
 const GRID_LINE_LAYER_ID = "grid-overlay-line";
 const GRID_NODE_LAYER_ID = "grid-overlay-node";
@@ -74,12 +76,10 @@ const SNAP_MARKER_SOURCE_ID = "snap-marker-overlay";
 const SNAP_MARKER_LAYER_ID = "snap-marker-overlay-symbol";
 const SNAP_MARKER_ICON_ID = "point-icon-snap-marker";
 const SNAP_MARKER_GRAPH_READY_ICON_ID = "point-icon-snap-marker-graph-ready";
-const OVERLAY_HANDLE_SIZE = 12;
-const OVERLAY_CENTER_HANDLE_SIZE = 16;
-const OVERLAY_ROTATE_HANDLE_SIZE = 14;
-const OVERLAY_HANDLE_COLOR = "#f97316";
-const OVERLAY_CENTER_HANDLE_COLOR = "#0ea5e9";
-const OVERLAY_ROTATE_HANDLE_COLOR = "#14b8a6";
+const OVERLAY_HANDLE_SIZE = 24;
+const OVERLAY_CENTER_HANDLE_SIZE = 28;
+const OVERLAY_ROTATE_HANDLE_SIZE = 26;
+const OVERLAY_CONTROL_COLOR = "#4b5563";
 const OVERLAY_HANDLE_STROKE_COLOR = "#ffffff";
 const OVERLAY_ROTATE_HANDLE_OFFSET_RATIO = 0.2;
 const OVERLAY_ROTATE_HANDLE_OFFSET_MIN_METERS = 1.5;
@@ -1903,12 +1903,39 @@ const rotateOverlayCorners = (
   };
 };
 
+const overlayEditingBorderData = (corners: FloorOverlay["corners"]): FeatureCollection => ({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      id: "overlay-editing-border",
+      feature_type: "formation:overlay-editing-border",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          corners.topLeft,
+          corners.topRight,
+          corners.bottomRight,
+          corners.bottomLeft,
+          corners.topLeft,
+        ],
+      },
+      properties: {},
+    },
+  ],
+});
+
 const rotateHandleCoordinate = (corners: FloorOverlay["corners"]): Coordinates => {
   const center = overlayCenter(corners);
+  const topLeftMeters = toLocalMeters(corners.topLeft, center);
   const topRightMeters = toLocalMeters(corners.topRight, center);
-  const distanceFromCenter = Math.hypot(topRightMeters.x, topRightMeters.y);
+  const topEdgeMidpoint = {
+    x: (topLeftMeters.x + topRightMeters.x) / 2,
+    y: (topLeftMeters.y + topRightMeters.y) / 2,
+  };
+  const distanceFromCenter = Math.hypot(topEdgeMidpoint.x, topEdgeMidpoint.y);
   if (distanceFromCenter < 1e-6) {
-    return corners.topRight;
+    return toCoordinates(topEdgeMidpoint.x, topEdgeMidpoint.y, center);
   }
 
   const offsetDistance = Math.min(
@@ -1919,13 +1946,13 @@ const rotateHandleCoordinate = (corners: FloorOverlay["corners"]): Coordinates =
     ),
   );
   const normalized = {
-    x: topRightMeters.x / distanceFromCenter,
-    y: topRightMeters.y / distanceFromCenter,
+    x: topEdgeMidpoint.x / distanceFromCenter,
+    y: topEdgeMidpoint.y / distanceFromCenter,
   };
 
   return toCoordinates(
-    topRightMeters.x + normalized.x * offsetDistance,
-    topRightMeters.y + normalized.y * offsetDistance,
+    topEdgeMidpoint.x + normalized.x * offsetDistance,
+    topEdgeMidpoint.y + normalized.y * offsetDistance,
     center,
   );
 };
@@ -1968,16 +1995,10 @@ const createOverlayHandleElement = (
       : kind === "rotate"
         ? OVERLAY_ROTATE_HANDLE_SIZE
         : OVERLAY_HANDLE_SIZE;
-  const backgroundColor =
-    kind === "center"
-      ? OVERLAY_CENTER_HANDLE_COLOR
-      : kind === "rotate"
-        ? OVERLAY_ROTATE_HANDLE_COLOR
-        : OVERLAY_HANDLE_COLOR;
   element.style.width = `${size}px`;
   element.style.height = `${size}px`;
   element.style.borderRadius = "9999px";
-  element.style.backgroundColor = backgroundColor;
+  element.style.backgroundColor = OVERLAY_CONTROL_COLOR;
   element.style.border = `2px solid ${OVERLAY_HANDLE_STROKE_COLOR}`;
   element.style.display = "grid";
   element.style.placeItems = "center";
@@ -1985,8 +2006,9 @@ const createOverlayHandleElement = (
   element.style.cursor = kind === "center" ? "move" : "grab";
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("viewBox", "0 0 16 16");
-  icon.setAttribute("width", kind === "center" ? "11" : "10");
-  icon.setAttribute("height", kind === "center" ? "11" : "10");
+  const iconSize = kind === "center" ? 17 : 16;
+  icon.setAttribute("width", `${iconSize}`);
+  icon.setAttribute("height", `${iconSize}`);
   icon.setAttribute("fill", "none");
   icon.setAttribute("stroke", "#ffffff");
   icon.setAttribute("stroke-width", "1.75");
@@ -2000,14 +2022,8 @@ const createOverlayHandleElement = (
     icon.innerHTML =
       '<path d="M12.5 5.5a4.8 4.8 0 1 0 .2 4.6"/><path d="m11.5 1.7 2.8-.2-.2 2.8"/>';
   } else {
-    icon.innerHTML = '<path d="M4 12 12 4"/><path d="m8.6 4H12v3.4"/>';
-    const rotationByCorner: Record<OverlayCornerKey, string> = {
-      topLeft: "180deg",
-      topRight: "0deg",
-      bottomRight: "90deg",
-      bottomLeft: "270deg",
-    };
-    icon.style.transform = `rotate(${rotationByCorner[corner ?? "topRight"]})`;
+    icon.innerHTML =
+      '<path d="M6 2H2v4"/><path d="M10 2h4v4"/><path d="M2 10v4h4"/><path d="M14 10v4h-4"/>';
   }
 
   element.append(icon);
@@ -2790,6 +2806,12 @@ export const createMapController = async (
 
   const applyOverlay = () => {
     if (!currentOverlay?.imageDataUrl) {
+      if (map.getLayer(OVERLAY_EDITING_BORDER_LAYER_ID)) {
+        map.removeLayer(OVERLAY_EDITING_BORDER_LAYER_ID);
+      }
+      if (map.getSource(OVERLAY_EDITING_BORDER_SOURCE_ID)) {
+        map.removeSource(OVERLAY_EDITING_BORDER_SOURCE_ID);
+      }
       if (map.getLayer(OVERLAY_LAYER_ID)) {
         map.removeLayer(OVERLAY_LAYER_ID);
       }
@@ -2842,22 +2864,57 @@ export const createMapController = async (
         },
         beforeLayerId,
       );
-      syncOverlayHandles();
-      applyGridOverlay();
-      if (currentOrientationMode === "grid") {
-        applyOrientationBearing(true);
-      }
-      return;
+    } else {
+      map.setPaintProperty(OVERLAY_LAYER_ID, "raster-opacity", currentOverlay.opacity / 100);
+      map.setLayoutProperty(
+        OVERLAY_LAYER_ID,
+        "visibility",
+        currentOverlay.visible === false ? "none" : "visible",
+      );
     }
 
-    map.setPaintProperty(OVERLAY_LAYER_ID, "raster-opacity", currentOverlay.opacity / 100);
-    map.setLayoutProperty(
-      OVERLAY_LAYER_ID,
-      "visibility",
-      currentOverlay.visible === false ? "none" : "visible",
-    );
+    const borderData = overlayEditingBorderData(currentOverlay.corners);
+    const borderSource = map.getSource(OVERLAY_EDITING_BORDER_SOURCE_ID);
+    if (isGeoJsonSourceWithSetData(borderSource)) {
+      borderSource.setData(borderData);
+    } else if (!borderSource) {
+      map.addSource(OVERLAY_EDITING_BORDER_SOURCE_ID, {
+        type: "geojson",
+        data: borderData,
+      });
+    }
+
+    const showEditingBorder = !currentOverlay.locked && currentOverlay.visible !== false;
+    if (!map.getLayer(OVERLAY_EDITING_BORDER_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: OVERLAY_EDITING_BORDER_LAYER_ID,
+          type: "line",
+          source: OVERLAY_EDITING_BORDER_SOURCE_ID,
+          paint: {
+            "line-color": OVERLAY_CONTROL_COLOR,
+            "line-width": 2,
+            "line-dasharray": [1, 1.5],
+          },
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+            visibility: showEditingBorder ? "visible" : "none",
+          },
+        },
+        beforeLayerId,
+      );
+    } else {
+      map.setLayoutProperty(
+        OVERLAY_EDITING_BORDER_LAYER_ID,
+        "visibility",
+        showEditingBorder ? "visible" : "none",
+      );
+    }
+
     if (beforeLayerId) {
       map.moveLayer(OVERLAY_LAYER_ID, beforeLayerId);
+      map.moveLayer(OVERLAY_EDITING_BORDER_LAYER_ID, beforeLayerId);
     }
     syncOverlayHandles();
     applyGridOverlay();
