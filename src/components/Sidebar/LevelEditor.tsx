@@ -107,6 +107,7 @@ export const LevelEditor = ({
         <AddFeatureButtonGroups onCreateFeature={onCreateFeature} />
 
         <div className="grid gap-2 rounded-box border border-base-300 p-3">
+          <h3 className="text-sm font-semibold">Outer walls</h3>
           <button
             className="btn btn-xs justify-self-start gap-1"
             type="button"
@@ -156,7 +157,7 @@ export const LevelEditor = ({
         ) : null}
 
         <details className="rounded-box border border-base-300 p-3" open>
-          <summary className="cursor-pointer font-medium">Bitmap editor</summary>
+          <summary className="cursor-pointer font-medium">Bitmap Base Map</summary>
           <div className="mt-3 grid gap-3">
             <input
               type="file"
@@ -220,7 +221,7 @@ export const LevelEditor = ({
             <label className="label cursor-pointer rounded-box border border-base-300 px-3 py-2">
               <span className="label-text flex items-center gap-2">
                 <AppIcon name={overlayLocked ? "lock" : "unlock"} />
-                Lock bitmap geometry
+                Lock Base Map
               </span>
               <input
                 type="checkbox"
@@ -228,7 +229,7 @@ export const LevelEditor = ({
                 checked={overlayLocked}
                 onChange={onOverlayToggleLock}
                 disabled={!overlay}
-                aria-label="Lock level bitmap geometry"
+                aria-label="Lock Base Map"
               />
             </label>
           </div>

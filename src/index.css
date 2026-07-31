@@ -131,6 +131,7 @@
 
 .floorplan-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
   order: 1;
+  margin-bottom: 10px;
 }
 
 .floorplan-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale {

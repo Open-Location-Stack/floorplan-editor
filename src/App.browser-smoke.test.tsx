@@ -669,7 +669,9 @@ describe("App browser smoke", () => {
     const levelHeading = await screen.findByRole("heading", { name: "Level" });
     const levelSection = levelHeading.closest("section");
     expect(levelSection).not.toBeNull();
-    const nameInput = within(levelSection as HTMLElement).getByRole("textbox", { name: /^name$/i });
+    const nameInput = within(levelSection as HTMLElement).getByRole("textbox", {
+      name: /level name/i,
+    });
     fireEvent.change(nameInput, { target: { value: "Second Floor" } });
 
     await waitFor(() => {
@@ -1373,7 +1375,7 @@ describe("App browser smoke", () => {
     render(<App />);
 
     const bitmapLockSwitch = await screen.findByRole("checkbox", {
-      name: /lock level bitmap geometry/i,
+      name: /lock base map/i,
     });
     expect(bitmapLockSwitch).not.toBeChecked();
     fireEvent.click(bitmapLockSwitch);
@@ -1568,7 +1570,7 @@ describe("App browser smoke", () => {
     render(<App />);
 
     const bitmapLockSwitch = await screen.findByRole("checkbox", {
-      name: /lock level bitmap geometry/i,
+      name: /lock base map/i,
     });
     expect(bitmapLockSwitch).toBeChecked();
     expect(
