@@ -123,3 +123,16 @@
     min-height: 100%;
   }
 }
+
+.floorplan-map .maplibregl-ctrl-bottom-right {
+  display: flex;
+  align-items: flex-end;
+}
+
+.floorplan-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
+  order: 1;
+}
+
+.floorplan-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale {
+  order: 2;
+}

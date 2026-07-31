@@ -365,7 +365,7 @@ export const MapCanvas = ({
     <div
       ref={rootRef}
       data-testid="map-canvas"
-      className="h-full min-h-[320px] w-full rounded-box border border-base-300"
+      className="floorplan-map h-full min-h-[320px] w-full rounded-box border border-base-300"
     />
   );
 };

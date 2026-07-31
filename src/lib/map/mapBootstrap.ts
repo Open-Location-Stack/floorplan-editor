@@ -2032,6 +2032,14 @@ const createOverlayHandleElement = (
 
 const normalizeBearingDegrees = (value: number): number => (((value % 360) + 540) % 360) - 180;
 
+const collapseAttributionControl = (container: HTMLElement) => {
+  // MapLibre renders its compact control expanded until the map is first moved.
+  // Start with only the info button visible instead.
+  const attributionControl = container.querySelector<HTMLElement>(".maplibregl-ctrl-attrib");
+  attributionControl?.removeAttribute("open");
+  attributionControl?.classList.remove("maplibregl-compact-show");
+};
+
 export const createMapController = async (
   container: HTMLElement,
   maptilerApiKey: string,
@@ -2066,6 +2074,7 @@ export const createMapController = async (
     zoom: initialView?.zoom ?? 17,
     maxZoom: 24,
   });
+  collapseAttributionControl(container);
 
   const draw = new MapboxDraw({
     boxSelect: false,
@@ -3635,7 +3644,14 @@ export const createMapController = async (
     handlers.onVertexSelectionChange?.(hasSelectedVertex());
   };
 
+  map.on("styledata", () => {
+    if (!isStyleReady) {
+      collapseAttributionControl(container);
+    }
+  });
+
   map.on("load", () => {
+    collapseAttributionControl(container);
     registerPointIcons();
     map.addControl(draw as never, "top-left");
     // Draw registers its pointer handlers when the control is added. Register our

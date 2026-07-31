@@ -77,6 +77,51 @@ test("app loads without triggering error boundary", async ({ page }) => {
   expect(pageErrors).toEqual([]);
 });
 
+test("map info control sits left of the scale control", async ({ page }) => {
+  await page.goto("/");
+
+  await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.className = "floorplan-map maplibregl-map";
+    fixture.style.width = "800px";
+    fixture.style.height = "200px";
+    fixture.style.position = "relative";
+
+    const controlContainer = document.createElement("div");
+    controlContainer.className = "maplibregl-control-container";
+
+    const corner = document.createElement("div");
+    corner.className = "maplibregl-ctrl-bottom-right";
+
+    const info = document.createElement("div");
+    info.className = "maplibregl-ctrl maplibregl-ctrl-attrib";
+    info.dataset.testid = "map-info-control";
+    info.style.width = "240px";
+    info.style.height = "32px";
+
+    const scale = document.createElement("div");
+    scale.className = "maplibregl-ctrl maplibregl-ctrl-scale";
+    scale.dataset.testid = "map-scale-control";
+    scale.style.width = "120px";
+    scale.style.height = "32px";
+
+    // MapLibre may insert these controls in either order. The app layout must
+    // keep attribution on the left and the scale on the right.
+    corner.append(scale, info);
+    controlContainer.append(corner);
+    fixture.append(controlContainer);
+    document.body.append(fixture);
+  });
+
+  const infoBox = await page.getByTestId("map-info-control").boundingBox();
+  const scaleBox = await page.getByTestId("map-scale-control").boundingBox();
+
+  expect(infoBox).not.toBeNull();
+  expect(scaleBox).not.toBeNull();
+  expect(infoBox?.x ?? 0).toBeLessThan(scaleBox?.x ?? 0);
+  expect(infoBox?.y).toBe(scaleBox?.y);
+});
+
 test("app loads with persisted overlay data", async ({ page }) => {
   const pageErrors = observePageErrors(page);
   const openCageRequests = observeOpenCageRequests(page);

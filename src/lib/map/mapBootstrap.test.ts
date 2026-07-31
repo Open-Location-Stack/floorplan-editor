@@ -83,8 +83,17 @@ class MockMap {
     disable: vi.fn(),
   };
 
-  constructor(_options: unknown) {
+  constructor(options: unknown) {
     lastMockMap = this;
+
+    const container = (options as { container?: HTMLElement }).container;
+    if (container) {
+      const attributionControl = document.createElement("details");
+      attributionControl.className =
+        "maplibregl-ctrl maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show";
+      attributionControl.setAttribute("open", "");
+      container.append(attributionControl);
+    }
   }
 
   on = (event: string, handler: EventHandler) => {
@@ -410,6 +419,27 @@ describe("createMapController", () => {
     expect(mockSetWorkerUrl).toHaveBeenCalledWith(
       expect.stringMatching(/maplibre-gl-worker.*\.mjs/),
     );
+  });
+
+  it("starts the compact attribution control collapsed", async () => {
+    const container = document.createElement("div");
+
+    await createMapController(container, "fake-key", "basic-v2", {
+      onFeaturesChange: vi.fn(),
+      onFeatureSelectionChange: vi.fn(),
+      onViewStateChange: vi.fn(),
+      onInteractionModeChange: vi.fn(),
+      onOverlayCornersChange: vi.fn(),
+    });
+
+    const attributionControl = container.querySelector(".maplibregl-ctrl-attrib");
+    expect(attributionControl).not.toHaveAttribute("open");
+    expect(attributionControl).not.toHaveClass("maplibregl-compact-show");
+
+    attributionControl?.classList.add("maplibregl-compact-show");
+    lastMockMap?.emit("styledata", { dataType: "style" });
+
+    expect(attributionControl).not.toHaveClass("maplibregl-compact-show");
   });
 
   it("styles static opening lines with pedestrian and wheelchair path colors", async () => {
