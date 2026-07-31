@@ -93,6 +93,70 @@ describe("imdf archive export/import", () => {
     expect(validation.errors).toEqual([]);
   });
 
+  it("normalizes feature reference IDs to UUIDs before validation", () => {
+    const payload = buildImdfArchivePayload({
+      building: { id: "building-1", name: "HQ" },
+      floors: [{ id: "level-1", buildingId: "building-1", name: "Ground Floor" }],
+      features: [
+        {
+          type: "Feature",
+          id: "level-geometry-1",
+          feature_type: "level",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.12, 52.09],
+                [5.121, 52.09],
+                [5.121, 52.091],
+                [5.12, 52.091],
+                [5.12, 52.09],
+              ],
+            ],
+          },
+          properties: { level_id: "level-1" },
+        },
+        {
+          type: "Feature",
+          id: "unit-1",
+          feature_type: "unit",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [5.1201, 52.0901],
+                [5.1205, 52.0901],
+                [5.1205, 52.0905],
+                [5.1201, 52.0905],
+                [5.1201, 52.0901],
+              ],
+            ],
+          },
+          properties: { level_id: "level-1", category: "room" },
+        },
+        {
+          type: "Feature",
+          id: "anchor-1",
+          feature_type: "anchor",
+          geometry: { type: "Point", coordinates: [5.1202, 52.0902] },
+          properties: { level_id: "level-1", unit_id: "unit-1" },
+        },
+      ],
+      overlays: [],
+    });
+
+    const validation = validateImdfDatasetFiles(payload.files);
+    expect(validation.errors).toEqual([]);
+
+    const unitCollection = payload.files[imdfCollectionFileName("unit")] as {
+      features: Array<{ id: string }>;
+    };
+    const anchorCollection = payload.files[imdfCollectionFileName("anchor")] as {
+      features: Array<{ properties: { unit_id: string } }>;
+    };
+    expect(anchorCollection.features[0]?.properties.unit_id).toBe(unitCollection.features[0]?.id);
+  });
+
   it("round-trips an exported zip into building/floor/features", async () => {
     const { blob } = await exportBuildingImdfZip({
       building: {

@@ -407,6 +407,8 @@ export const buildImdfArchivePayload = ({
   const featureUuidById = new Map(
     featuresInBuilding.map((feature) => [feature.id, resolveImdfUuid(feature.id)]),
   );
+  const resolveFeatureReferenceUuid = (sourceId: string): string =>
+    featureUuidById.get(sourceId) ?? resolveImdfUuid(sourceId);
   const exportedFeatureIds = new Set<string>();
   const levelByFloor = new Map<string, string>();
   const buildingId = resolveImdfUuid(building.id);
@@ -541,8 +543,12 @@ export const buildImdfArchivePayload = ({
         ...(typeof entry.phone === "string" ? { phone: entry.phone } : {}),
         ...(typeof entry.website === "string" ? { website: entry.website } : {}),
         ...(typeof entry.hours === "string" ? { hours: entry.hours } : {}),
-        ...(Array.isArray(entry.unit_ids) ? { unit_ids: entry.unit_ids } : {}),
-        ...(typeof entry.anchor_id === "string" ? { anchor_id: entry.anchor_id } : {}),
+        ...(Array.isArray(entry.unit_ids)
+          ? { unit_ids: entry.unit_ids.map(resolveFeatureReferenceUuid) }
+          : {}),
+        ...(typeof entry.anchor_id === "string"
+          ? { anchor_id: resolveFeatureReferenceUuid(entry.anchor_id) }
+          : {}),
         ...(entry.metadata && typeof entry.metadata === "object"
           ? { metadata: entry.metadata }
           : {}),
@@ -608,7 +614,21 @@ export const buildImdfArchivePayload = ({
     ]) {
       const value = feature.properties[key];
       if (value !== undefined) {
-        baseProperties[key] = value;
+        if (key === "unit_ids" && Array.isArray(value)) {
+          baseProperties[key] = value
+            .filter((entry): entry is string => typeof entry === "string")
+            .map(resolveFeatureReferenceUuid);
+        } else if (
+          (key === "anchor_id" ||
+            key === "address_id" ||
+            key === "section_id" ||
+            key === "unit_id") &&
+          typeof value === "string"
+        ) {
+          baseProperties[key] = resolveFeatureReferenceUuid(value);
+        } else {
+          baseProperties[key] = value;
+        }
       }
     }
     const relation = feature.properties["formation:relation"] ?? feature.properties.relation;
