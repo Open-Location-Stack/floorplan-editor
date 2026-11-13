@@ -1,5 +1,7 @@
 # Open Location Stack - Floorplan Editor
 
+**Update**. We decided to develop a new floor plan editor in house at FORMATION. For now that means I'm not planning any further updates to this editor. Reasons for this included the need to integrate with out backend and the notion that a lot of content there is not necessarily IMDF compatible. We are considering adding IMDF export options as there may be demand for people to use it for targeting the Apple Maps ecosystem or things like MS Places. 
+
 Browser-based editor for creating and maintaining building/floor plans on top of a live map.  
 The app is local-first (IndexedDB), supports import/export workflows, and is built with React + Vite + TypeScript.
 
